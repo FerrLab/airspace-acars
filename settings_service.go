@@ -13,6 +13,7 @@ type Settings struct {
 	SimType    string `json:"simType"`
 	XPlaneHost string `json:"xplaneHost"`
 	XPlanePort int    `json:"xplanePort"`
+	APIBaseURL string `json:"apiBaseURL"`
 }
 
 type SettingsService struct {
@@ -32,6 +33,7 @@ func NewSettingsService() *SettingsService {
 			SimType:    "auto",
 			XPlaneHost: "127.0.0.1",
 			XPlanePort: 49000,
+			APIBaseURL: "https://airspace.ferrlab.com",
 		},
 	}
 	s.load()

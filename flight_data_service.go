@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,14 +15,15 @@ import (
 )
 
 type FlightDataService struct {
-	db        *sql.DB
-	app       *application.App
-	connector SimConnector
-	mu        sync.Mutex
-	recording bool
-	stopCh    chan struct{}
-	startTime time.Time
-	dataCount int
+	db           *sql.DB
+	app          *application.App
+	connector    SimConnector
+	mu           sync.Mutex
+	recording    bool
+	startTime    time.Time
+	dataCount    int
+	streaming    bool
+	streamStopCh chan struct{}
 }
 
 func NewFlightDataService(db *sql.DB) *FlightDataService {
@@ -39,6 +41,7 @@ func (f *FlightDataService) ConnectSim(simType string) error {
 	defer f.mu.Unlock()
 
 	if f.connector != nil {
+		f.stopDataStreamLocked()
 		f.connector.Disconnect()
 	}
 
@@ -66,15 +69,28 @@ func (f *FlightDataService) ConnectSim(simType string) error {
 
 	f.connector = connector
 	slog.Info("connected to simulator", "adapter", connector.Name())
+
+	if f.app != nil {
+		f.app.Event.Emit("connection-state", true)
+	}
+
+	f.startDataStreamLocked()
 	return nil
 }
 
 func (f *FlightDataService) DisconnectSim() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	f.stopDataStreamLocked()
+
 	if f.connector != nil {
 		f.connector.Disconnect()
 		f.connector = nil
+	}
+
+	if f.app != nil {
+		f.app.Event.Emit("connection-state", false)
 	}
 }
 
@@ -96,11 +112,8 @@ func (f *FlightDataService) StartRecording() error {
 	}
 
 	f.recording = true
-	f.stopCh = make(chan struct{})
 	f.startTime = time.Now()
 	f.dataCount = 0
-
-	go f.recordLoop()
 
 	if f.app != nil {
 		f.app.Event.Emit("recording-state", true)
@@ -117,7 +130,6 @@ func (f *FlightDataService) StopRecording() {
 	}
 
 	f.recording = false
-	close(f.stopCh)
 
 	if f.app != nil {
 		f.app.Event.Emit("recording-state", false)
@@ -147,7 +159,7 @@ func (f *FlightDataService) GetRecordingInfo() map[string]interface{} {
 }
 
 func (f *FlightDataService) ExportCSV(filePath string) error {
-	rows, err := f.db.Query(`SELECT timestamp, altitude, heading, pitch, roll, airspeed, ground_speed, vertical_speed FROM flight_data ORDER BY id`)
+	rows, err := f.db.Query(`SELECT timestamp, data FROM flight_data ORDER BY id`)
 	if err != nil {
 		return fmt.Errorf("query data: %w", err)
 	}
@@ -162,23 +174,53 @@ func (f *FlightDataService) ExportCSV(filePath string) error {
 	w := csv.NewWriter(file)
 	defer w.Flush()
 
-	w.Write([]string{"timestamp", "altitude", "heading", "pitch", "roll", "airspeed", "ground_speed", "vertical_speed"})
+	w.Write([]string{
+		"timestamp",
+		"latitude", "longitude", "altitude", "altitudeAGL",
+		"pitch", "roll", "headingTrue", "headingMag", "vs", "ias", "tas", "gs",
+		"eng1Running", "eng1N1", "eng1N2", "eng1Throttle",
+		"eng2Running", "eng2N1", "eng2N2", "eng2Throttle",
+		"onGround", "stallWarning", "overspeedWarning",
+		"com1", "com2", "nav1", "nav2", "xpdrCode",
+		"apMaster", "apHeading", "apAltitude", "apVS", "apSpeed",
+		"altimeterInHg",
+		"beacon", "strobe", "landing",
+		"elevator", "aileron", "rudder", "flaps", "spoilers", "gearDown",
+	})
+
+	ff := func(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }
+	fb := func(v bool) string {
+		if v {
+			return "1"
+		}
+		return "0"
+	}
 
 	for rows.Next() {
-		var ts string
-		var alt, hdg, pitch, roll, aspd, gspd, vspd float64
-		if err := rows.Scan(&ts, &alt, &hdg, &pitch, &roll, &aspd, &gspd, &vspd); err != nil {
+		var ts, dataJSON string
+		if err := rows.Scan(&ts, &dataJSON); err != nil {
 			return fmt.Errorf("scan row: %w", err)
 		}
+
+		var d FlightData
+		if err := json.Unmarshal([]byte(dataJSON), &d); err != nil {
+			return fmt.Errorf("unmarshal row: %w", err)
+		}
+
 		w.Write([]string{
 			ts,
-			strconv.FormatFloat(alt, 'f', 2, 64),
-			strconv.FormatFloat(hdg, 'f', 2, 64),
-			strconv.FormatFloat(pitch, 'f', 2, 64),
-			strconv.FormatFloat(roll, 'f', 2, 64),
-			strconv.FormatFloat(aspd, 'f', 2, 64),
-			strconv.FormatFloat(gspd, 'f', 2, 64),
-			strconv.FormatFloat(vspd, 'f', 2, 64),
+			ff(d.Position.Latitude), ff(d.Position.Longitude), ff(d.Position.Altitude), ff(d.Position.AltitudeAGL),
+			ff(d.Attitude.Pitch), ff(d.Attitude.Roll), ff(d.Attitude.HeadingTrue), ff(d.Attitude.HeadingMag),
+			ff(d.Attitude.VS), ff(d.Attitude.IAS), ff(d.Attitude.TAS), ff(d.Attitude.GS),
+			fb(d.Engines[0].Running), ff(d.Engines[0].N1), ff(d.Engines[0].N2), ff(d.Engines[0].ThrottlePos),
+			fb(d.Engines[1].Running), ff(d.Engines[1].N1), ff(d.Engines[1].N2), ff(d.Engines[1].ThrottlePos),
+			fb(d.Sensors.OnGround), fb(d.Sensors.StallWarning), fb(d.Sensors.OverspeedWarning),
+			ff(d.Radios.Com1), ff(d.Radios.Com2), ff(d.Radios.Nav1), ff(d.Radios.Nav2), ff(d.Radios.XpdrCode),
+			fb(d.Autopilot.Master), ff(d.Autopilot.Heading), ff(d.Autopilot.Altitude), ff(d.Autopilot.VS), ff(d.Autopilot.Speed),
+			ff(d.Altimeter),
+			fb(d.Lights.Beacon), fb(d.Lights.Strobe), fb(d.Lights.Landing),
+			ff(d.Controls.Elevator), ff(d.Controls.Aileron), ff(d.Controls.Rudder),
+			ff(d.Controls.Flaps), ff(d.Controls.Spoilers), fb(d.Controls.GearDown),
 		})
 	}
 
@@ -195,17 +237,41 @@ func (f *FlightDataService) ExportCSV(filePath string) error {
 	return nil
 }
 
-func (f *FlightDataService) recordLoop() {
+// startDataStreamLocked starts the continuous data stream goroutine.
+// Must be called with f.mu held.
+func (f *FlightDataService) startDataStreamLocked() {
+	if f.streaming {
+		return
+	}
+	f.streaming = true
+	f.streamStopCh = make(chan struct{})
+	go f.dataStreamLoop()
+}
+
+// stopDataStreamLocked stops the continuous data stream goroutine.
+// Must be called with f.mu held.
+func (f *FlightDataService) stopDataStreamLocked() {
+	if !f.streaming {
+		return
+	}
+	f.streaming = false
+	close(f.streamStopCh)
+}
+
+// dataStreamLoop is the single goroutine that polls SimConnect.
+// It always emits flight-data events, and writes to DB when recording.
+func (f *FlightDataService) dataStreamLoop() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-f.stopCh:
+		case <-f.streamStopCh:
 			return
 		case <-ticker.C:
 			f.mu.Lock()
 			connector := f.connector
+			recording := f.recording
 			f.mu.Unlock()
 
 			if connector == nil {
@@ -214,26 +280,47 @@ func (f *FlightDataService) recordLoop() {
 
 			data, err := connector.GetFlightData()
 			if err != nil {
-				slog.Error("failed to get flight data", "error", err)
+				slog.Error("data stream: failed to get flight data", "error", err)
 				continue
 			}
-
-			_, err = f.db.Exec(
-				`INSERT INTO flight_data (altitude, heading, pitch, roll, airspeed, ground_speed, vertical_speed) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				data.Altitude, data.Heading, data.Pitch, data.Roll, data.Airspeed, data.GroundSpeed, data.VerticalSpeed,
-			)
-			if err != nil {
-				slog.Error("failed to insert flight data", "error", err)
-				continue
-			}
-
-			f.mu.Lock()
-			f.dataCount++
-			f.mu.Unlock()
 
 			if f.app != nil {
 				f.app.Event.Emit("flight-data", data)
 			}
+
+			if recording {
+				jsonBytes, err := json.Marshal(data)
+				if err != nil {
+					slog.Error("failed to marshal flight data", "error", err)
+					continue
+				}
+
+				_, err = f.db.Exec(
+					`INSERT INTO flight_data (data) VALUES (?)`,
+					string(jsonBytes),
+				)
+				if err != nil {
+					slog.Error("failed to insert flight data", "error", err)
+					continue
+				}
+
+				f.mu.Lock()
+				f.dataCount++
+				f.mu.Unlock()
+			}
 		}
 	}
+}
+
+// GetFlightDataNow returns a one-shot read of the current flight data.
+func (f *FlightDataService) GetFlightDataNow() (*FlightData, error) {
+	f.mu.Lock()
+	connector := f.connector
+	f.mu.Unlock()
+
+	if connector == nil {
+		return nil, fmt.Errorf("no simulator connected")
+	}
+
+	return connector.GetFlightData()
 }

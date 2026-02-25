@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "@/context/theme-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -9,6 +10,7 @@ import { SettingsService } from "../../bindings/airspace-acars";
 export function SettingsTab() {
   const { theme, setTheme } = useTheme();
   const [simType, setSimType] = useState("auto");
+  const [apiBaseURL, setApiBaseURL] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -16,6 +18,7 @@ export function SettingsTab() {
       try {
         const settings = await SettingsService.GetSettings();
         setSimType(settings.simType);
+        setApiBaseURL(settings.apiBaseURL);
         if (settings.theme === "light" || settings.theme === "dark") {
           setTheme(settings.theme);
         }
@@ -44,6 +47,13 @@ export function SettingsTab() {
     } catch { /* ignore */ }
   };
 
+  const handleApiBaseURLBlur = async () => {
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, apiBaseURL: apiBaseURL });
+    } catch { /* ignore */ }
+  };
+
   if (!loaded) return null;
 
   return (
@@ -56,6 +66,29 @@ export function SettingsTab() {
       </div>
 
       <Separator />
+
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Connection</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="shrink-0">
+              <p className="text-sm font-medium">API Base URL</p>
+              <p className="text-xs text-muted-foreground">
+                Airspace platform endpoint
+              </p>
+            </div>
+            <Input
+              value={apiBaseURL}
+              onChange={(e) => setApiBaseURL(e.target.value)}
+              onBlur={handleApiBaseURLBlur}
+              placeholder="https://airspace.ferrlab.com"
+              className="max-w-[300px] font-mono text-xs"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-border/50">
         <CardHeader>

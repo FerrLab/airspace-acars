@@ -16,11 +16,16 @@ export function RecordingControls({ isRecording, isConnected }: RecordingControl
 
   useEffect(() => {
     if (isRecording) {
-      setDuration(0);
+      // Fetch actual elapsed time from backend (survives tab switches)
+      FlightDataService.GetRecordingInfo().then((info) => {
+        setDuration(Math.floor(info.duration as number));
+        setDataCount(info.dataCount as number);
+      }).catch(() => {});
+
       intervalRef.current = setInterval(async () => {
-        setDuration((d) => d + 1);
         try {
           const info = await FlightDataService.GetRecordingInfo();
+          setDuration(Math.floor(info.duration as number));
           setDataCount(info.dataCount as number);
         } catch { /* ignore */ }
       }, 1000);

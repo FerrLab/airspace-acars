@@ -2,9 +2,9 @@ import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Radio, Settings, LogOut } from "lucide-react";
+import { Radio, Settings, LogOut, Bug, MessageSquare } from "lucide-react";
 
-export type Tab = "acars" | "settings";
+export type Tab = "acars" | "chat" | "debug" | "settings";
 
 interface SidebarProps {
   activeTab: Tab;
@@ -16,6 +16,8 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "acars", label: "ACARS", icon: <Radio className="h-4 w-4" /> },
+    { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
+    { id: "debug", label: "Debug", icon: <Bug className="h-4 w-4" /> },
     { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
   ];
 

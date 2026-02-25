@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"log"
 	"log/slog"
+	"net/http"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -15,6 +17,8 @@ var assets embed.FS
 func init() {
 	application.RegisterEvent[*FlightData]("flight-data")
 	application.RegisterEvent[bool]("recording-state")
+	application.RegisterEvent[bool]("connection-state")
+	application.RegisterEvent[string]("flight-state")
 }
 
 func main() {
@@ -24,16 +28,12 @@ func main() {
 	}
 	defer db.Close()
 
-	mockAuth := NewMockAuthServer()
-	addr, err := mockAuth.Start()
-	if err != nil {
-		log.Fatal("failed to start mock auth server:", err)
-	}
-	slog.Info("mock auth server running", "addr", addr)
-
-	authService := &AuthService{mockServerAddr: addr}
 	settingsService := NewSettingsService()
+	authService := &AuthService{httpClient: &http.Client{Timeout: 30 * time.Second}, settings: settingsService}
 	flightDataService := NewFlightDataService(db)
+	flightService := NewFlightService(authService, flightDataService)
+	chatService := NewChatService(authService)
+	audioService := NewAudioService(authService)
 
 	app := application.New(application.Options{
 		Name:        "Airspace ACARS",
@@ -42,6 +42,9 @@ func main() {
 			application.NewService(authService),
 			application.NewService(settingsService),
 			application.NewService(flightDataService),
+			application.NewService(flightService),
+			application.NewService(chatService),
+			application.NewService(audioService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -52,6 +55,15 @@ func main() {
 	})
 
 	flightDataService.setApp(app)
+	flightService.setApp(app)
+
+	go func() {
+		time.Sleep(time.Second)
+		settings := settingsService.GetSettings()
+		if err := flightDataService.ConnectSim(settings.SimType); err != nil {
+			slog.Warn("auto-connect failed", "error", err)
+		}
+	}()
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",

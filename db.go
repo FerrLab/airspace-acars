@@ -26,16 +26,17 @@ func initDB() (*sql.DB, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
+	// Migrate: drop old column-per-field schema if it exists
+	var colCount int
+	row := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('flight_data') WHERE name = 'altitude'`)
+	if err := row.Scan(&colCount); err == nil && colCount > 0 {
+		db.Exec(`DROP TABLE flight_data`)
+	}
+
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS flight_data (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-		altitude REAL,
-		heading REAL,
-		pitch REAL,
-		roll REAL,
-		airspeed REAL,
-		ground_speed REAL,
-		vertical_speed REAL
+		data TEXT NOT NULL
 	)`)
 	if err != nil {
 		db.Close()
