@@ -125,7 +125,10 @@ jobs:
         run: |
           $resDir = "C:\Program Files (x86)\solicus\InstallForge\res"
           foreach ($f in "manifestDefault.manifest","manifestVisualStylesEnabled.manifest") {
-            (Get-Content "$resDir\$f") -replace 'requireAdministrator','asInvoker' | Set-Content "$resDir\$f"
+            $path = "$resDir\$f"
+            $text = [System.IO.File]::ReadAllText($path)
+            $text = $text -replace 'requireAdministrator','asInvoker'
+            [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
           }
 
       - name: Prepare installer
@@ -134,10 +137,10 @@ jobs:
           Copy-Item "bin\airspace-acars-windows-amd64.exe" "Airspace ACARS.exe"
           $version = "${{ needs.build.outputs.version }}"
           $workspace = "${{ github.workspace }}"
-          $content = Get-Content "installer.ifp" -Raw
+          $content = [System.IO.File]::ReadAllText("$PWD\installer.ifp")
           $content = $content -replace '__VERSION__', $version
           $content = $content -replace '__WORKSPACE__', $workspace
-          Set-Content "installer.ifp" $content
+          [System.IO.File]::WriteAllText("$PWD\installer.ifp", $content, [System.Text.UTF8Encoding]::new($false))
 
       - name: Build installer
         shell: pwsh
