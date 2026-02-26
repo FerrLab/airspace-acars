@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { SettingsService } from "../../bindings/airspace-acars";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { SettingsService, UpdateService } from "../../bindings/airspace-acars";
 
 interface SettingsTabProps {
   localMode?: boolean;
@@ -153,27 +155,118 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         </CardContent>
       </Card>
 
-      <Card className="border-border/50">
-        <CardHeader>
-          <CardTitle className="text-sm font-medium">About</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Application</span>
-              <span>Airspace ACARS</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Version</span>
-              <span className="tabular-nums">1.0.0</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Runtime</span>
-              <span>Wails v3</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <AboutSection />
     </div>
+  );
+}
+
+type UpdateStatus = "idle" | "checking" | "up-to-date" | "update-available" | "downloading" | "done";
+
+function AboutSection() {
+  const [version, setVersion] = useState("...");
+  const [status, setStatus] = useState<UpdateStatus>("idle");
+  const [latestVersion, setLatestVersion] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    UpdateService.GetCurrentVersion().then(setVersion).catch(() => {});
+  }, []);
+
+  const handleCheck = async () => {
+    setStatus("checking");
+    setError("");
+    try {
+      const info = await UpdateService.CheckForUpdate();
+      if (info.updateAvailable) {
+        setLatestVersion(info.latestVersion);
+        setStatus("update-available");
+      } else {
+        setStatus("up-to-date");
+      }
+    } catch (e) {
+      setError(String(e));
+      setStatus("idle");
+    }
+  };
+
+  const handleUpdate = async () => {
+    setStatus("downloading");
+    setError("");
+    try {
+      await UpdateService.ApplyUpdate();
+      setStatus("done");
+    } catch (e) {
+      setError(String(e));
+      setStatus("update-available");
+    }
+  };
+
+  return (
+    <Card className="border-border/50">
+      <CardHeader>
+        <CardTitle className="text-sm font-medium">About</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Application</span>
+            <span>Airspace ACARS</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Version</span>
+            <span className="tabular-nums">{version}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Runtime</span>
+            <span>Wails v3</span>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium">Updates</p>
+            <p className="text-xs text-muted-foreground">
+              {status === "checking" && "Checking for updates..."}
+              {status === "up-to-date" && "You're on the latest version."}
+              {status === "update-available" && (
+                <>
+                  New version available:{" "}
+                  <Badge variant="secondary" className="ml-1">{latestVersion}</Badge>
+                </>
+              )}
+              {status === "downloading" && "Downloading update..."}
+              {status === "done" && "Update installed — restart to apply."}
+              {status === "idle" && "Check for new releases from GitHub."}
+            </p>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
+
+          <div className="flex gap-2 shrink-0">
+            {(status === "idle" || status === "up-to-date") && (
+              <Button variant="outline" size="sm" onClick={handleCheck}>
+                Check for updates
+              </Button>
+            )}
+            {status === "checking" && (
+              <Button variant="outline" size="sm" disabled>
+                Checking...
+              </Button>
+            )}
+            {status === "update-available" && (
+              <Button size="sm" onClick={handleUpdate}>
+                Update now
+              </Button>
+            )}
+            {status === "downloading" && (
+              <Button size="sm" disabled>
+                Downloading...
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

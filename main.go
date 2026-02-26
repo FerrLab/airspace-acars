@@ -34,6 +34,7 @@ func main() {
 	flightService := NewFlightService(authService, flightDataService)
 	chatService := NewChatService(authService)
 	audioService := NewAudioService(authService)
+	updateService := &UpdateService{}
 
 	app := application.New(application.Options{
 		Name:        "Airspace ACARS",
@@ -45,6 +46,7 @@ func main() {
 			application.NewService(flightService),
 			application.NewService(chatService),
 			application.NewService(audioService),
+			application.NewService(updateService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

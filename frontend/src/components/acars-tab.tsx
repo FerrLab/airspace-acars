@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Slider } from "@/components/ui/slider";
 import { Plug, Unplug, Plane, Square, CheckCircle2 } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
@@ -262,13 +263,13 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
         <span className="text-sm text-muted-foreground w-28">
           Cabin Audio
         </span>
-        <input
-          type="range"
+        <Slider
           min={0}
           max={100}
-          value={volume}
-          onChange={(e) => handleVolumeChange(Number(e.target.value))}
-          className="flex-1 accent-primary cursor-pointer"
+          step={1}
+          value={[volume]}
+          onValueChange={([v]) => handleVolumeChange(v)}
+          className="flex-1"
         />
         <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
           {volume}%
