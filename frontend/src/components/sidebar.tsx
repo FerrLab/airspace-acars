@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Settings, LogOut, Bug, MessageSquare, Radio } from "lucide-react";
 import { AppLogo } from "@/components/app-logo";
+import { useDevMode } from "@/hooks/use-dev-mode";
 
 export type Tab = "acars" | "chat" | "debug" | "settings";
 
@@ -17,11 +18,12 @@ interface SidebarProps {
 
 export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: SidebarProps) {
   const { logout } = useAuth();
+  const devMode = useDevMode();
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "acars", label: "ACARS", icon: <Radio className="h-4 w-4" /> },
     { id: "chat", label: "Chat", icon: <MessageSquare className={`h-4 w-4 ${hasUnreadChat && activeTab !== "chat" ? "animate-pulse text-yellow-400" : ""}`} /> },
-    { id: "debug", label: "Debug", icon: <Bug className="h-4 w-4" /> },
+    ...(devMode ? [{ id: "debug" as Tab, label: "Debug", icon: <Bug className="h-4 w-4" /> }] : []),
     { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
   ];
 

@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SettingsService, UpdateService } from "../../bindings/airspace-acars";
+import { useDevMode } from "@/hooks/use-dev-mode";
 
 interface SettingsTabProps {
   localMode?: boolean;
@@ -16,6 +17,7 @@ interface SettingsTabProps {
 
 export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTabProps) {
   const { theme, setTheme } = useTheme();
+  const devMode = useDevMode();
   const [simType, setSimType] = useState("auto");
   const [apiBaseURL, setApiBaseURL] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -82,37 +84,39 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 
       <Separator />
 
-      <Card className="border-border/50">
-        <CardHeader>
-          <CardTitle className="text-sm font-medium">Connection</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="shrink-0">
-              <p className="text-sm font-medium">API Base URL</p>
-              <p className="text-xs text-muted-foreground">
-                Airspace platform endpoint
-              </p>
+      {devMode && (
+        <Card className="border-border/50">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Connection</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="shrink-0">
+                <p className="text-sm font-medium">API Base URL</p>
+                <p className="text-xs text-muted-foreground">
+                  Airspace platform endpoint
+                </p>
+              </div>
+              <Input
+                value={apiBaseURL}
+                onChange={(e) => setApiBaseURL(e.target.value)}
+                onBlur={handleApiBaseURLBlur}
+                placeholder="https://airspace.ferrlab.com"
+                className="max-w-[300px] font-mono text-xs"
+              />
             </div>
-            <Input
-              value={apiBaseURL}
-              onChange={(e) => setApiBaseURL(e.target.value)}
-              onBlur={handleApiBaseURLBlur}
-              placeholder="https://airspace.ferrlab.com"
-              className="max-w-[300px] font-mono text-xs"
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Local mode</p>
-              <p className="text-xs text-muted-foreground">
-                Only use authentication, disable flights, chat, and cabin audio
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Local mode</p>
+                <p className="text-xs text-muted-foreground">
+                  Only use authentication, disable flights, chat, and cabin audio
+                </p>
+              </div>
+              <Switch checked={localMode} onCheckedChange={handleLocalModeToggle} />
             </div>
-            <Switch checked={localMode} onCheckedChange={handleLocalModeToggle} />
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-border/50">
         <CardHeader>
