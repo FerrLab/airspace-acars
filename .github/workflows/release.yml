@@ -107,7 +107,8 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://github.com/soner-boztas/installforge/releases/download/v1.6.1/IFInst.exe" -OutFile IFInst.exe
-          Start-Process -FilePath .\IFInst.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -NoNewWindow
+          $dest = "C:\Program Files (x86)\solicus\InstallForge"
+          & "C:\Program Files\7-Zip\7z.exe" x IFInst.exe -o"$dest" -y
 
       - name: Patch InstallForge manifests for no UAC
         shell: pwsh
