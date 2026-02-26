@@ -103,49 +103,18 @@ jobs:
           name: build-output
           path: bin
 
-      - name: Install InstallForge
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/soner-boztas/installforge/releases/download/v1.6.1/IFInst.exe" -OutFile IFInst.exe
-          & "C:\Program Files\7-Zip\7z.exe" x IFInst.exe -oIFExtracted -y
-          $dest = "C:\Program Files (x86)\solicus\InstallForge"
-          function Copy-DecodedTree($src, $dst) {
-            New-Item -Path $dst -ItemType Directory -Force | Out-Null
-            foreach ($item in Get-ChildItem $src) {
-              if ($item.Name -like '*empty.empty') { continue }
-              try { $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($item.Name)) } catch { continue }
-              if ($item.PSIsContainer) { Copy-DecodedTree $item.FullName "$dst\$decoded" }
-              else { Copy-Item $item.FullName "$dst\$decoded" }
-            }
-          }
-          Copy-DecodedTree "IFExtracted" $dest
-
-      - name: Patch InstallForge manifests for no UAC
-        shell: pwsh
-        run: |
-          $resDir = "C:\Program Files (x86)\solicus\InstallForge\res"
-          foreach ($f in "manifestDefault.manifest","manifestVisualStylesEnabled.manifest") {
-            $path = "$resDir\$f"
-            $text = [System.IO.File]::ReadAllText($path)
-            $text = $text -replace 'requireAdministrator','asInvoker'
-            [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
-          }
-
       - name: Prepare installer
         shell: pwsh
         run: |
           Copy-Item "bin\airspace-acars-windows-amd64.exe" "Airspace ACARS.exe"
           $version = "${{ needs.build.outputs.version }}"
-          $workspace = "${{ github.workspace }}"
-          $content = [System.IO.File]::ReadAllText("$PWD\installer.ifp")
-          $content = $content -replace '__VERSION__', $version
-          $content = $content -replace '__WORKSPACE__', $workspace
-          [System.IO.File]::WriteAllText("$PWD\installer.ifp", $content, [System.Text.UTF8Encoding]::new($false))
+          (Get-Content "installer.iss" -Raw) -replace '__VERSION__', $version |
+            Set-Content "installer.iss" -NoNewline
 
       - name: Build installer
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\solicus\InstallForge\bin\ifbuildx86.exe" -i installer.ifp -o bin\airspace-acars-windows-amd64-setup.exe --no-color
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
