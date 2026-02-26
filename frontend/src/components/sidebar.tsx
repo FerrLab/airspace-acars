@@ -1,22 +1,26 @@
 import { useAuth } from "@/context/auth-context";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Radio, Settings, LogOut, Bug, MessageSquare } from "lucide-react";
+import { Settings, LogOut, Bug, MessageSquare, Radio } from "lucide-react";
+import { AppLogo } from "@/components/app-logo";
 
 export type Tab = "acars" | "chat" | "debug" | "settings";
 
 interface SidebarProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
+  hasUnreadChat?: boolean;
+  localMode?: boolean;
 }
 
-export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: SidebarProps) {
   const { logout } = useAuth();
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "acars", label: "ACARS", icon: <Radio className="h-4 w-4" /> },
-    { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
+    { id: "chat", label: "Chat", icon: <MessageSquare className={`h-4 w-4 ${hasUnreadChat && activeTab !== "chat" ? "animate-pulse text-yellow-400" : ""}`} /> },
     { id: "debug", label: "Debug", icon: <Bug className="h-4 w-4" /> },
     { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
   ];
@@ -24,8 +28,13 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   return (
     <div className="flex h-full w-[220px] flex-col border-r border-border/50 bg-card">
       <div className="flex h-14 items-center gap-2 px-5">
-        <Radio className="h-5 w-5 text-primary" />
+        <AppLogo className="h-6 w-6" />
         <span className="text-sm font-semibold tracking-tight">Airspace ACARS</span>
+        {localMode && (
+          <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-yellow-500/50 text-yellow-500">
+            Local
+          </Badge>
+        )}
       </div>
 
       <Separator />
@@ -43,6 +52,9 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           >
             {tab.icon}
             {tab.label}
+            {tab.id === "chat" && hasUnreadChat && activeTab !== "chat" && (
+              <span className="ml-auto h-2 w-2 rounded-full bg-yellow-400 animate-pulse" />
+            )}
           </button>
         ))}
       </nav>

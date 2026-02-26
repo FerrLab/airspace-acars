@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { Events } from "@wailsio/runtime";
@@ -55,7 +56,118 @@ export function DebugTab() {
     setUpdateCount((c) => c + 1);
   }, [flightData]);
 
+  const [copied, setCopied] = useState(false);
+
   const d = flightData;
+
+  const payloadJson = useMemo(() => {
+    if (!d) return null;
+    const m = (value: number | string, unit: string) => ({ value, unit });
+    const zuluSec = Math.floor(d.simTime.zuluTime);
+    const payload = {
+      callsign: "—",
+      departure: "—",
+      arrival: "—",
+      timestamp: new Date().toISOString(),
+      elapsedTime: m(0, "s"),
+      position: {
+        latitude: m(d.position.latitude, "deg"),
+        longitude: m(d.position.longitude, "deg"),
+        altitude: m(d.position.altitude, "ft"),
+        altitudeAgl: m(d.position.altitudeAGL, "ft"),
+      },
+      attitude: {
+        pitch: m(d.attitude.pitch, "deg"),
+        roll: m(d.attitude.roll, "deg"),
+        headingTrue: m(d.attitude.headingTrue, "deg"),
+        headingMag: m(d.attitude.headingMag, "deg"),
+        vs: m(d.attitude.vs, "fpm"),
+        ias: m(d.attitude.ias, "kts"),
+        tas: m(d.attitude.tas, "kts"),
+        gs: m(d.attitude.gs, "kts"),
+        gForce: m(d.attitude.gForce, "G"),
+      },
+      engines: d.engines.map((e) => ({
+        running: e.running,
+        n1: m(e.n1, "%"),
+        n2: m(e.n2, "%"),
+        throttle: m(e.throttlePos, "%"),
+        mixture: m(e.mixturePos, "%"),
+        propeller: m(e.propPos, "%"),
+      })),
+      sensors: {
+        onGround: d.sensors.onGround,
+        stallWarning: d.sensors.stallWarning,
+        overspeedWarning: d.sensors.overspeedWarning,
+        simulationRate: m(d.sensors.simulationRate, "x"),
+      },
+      radios: {
+        com1: m(d.radios.com1, "MHz"),
+        com2: m(d.radios.com2, "MHz"),
+        nav1: m(d.radios.nav1, "MHz"),
+        nav2: m(d.radios.nav2, "MHz"),
+        nav1Obs: m(d.radios.nav1OBS, "deg"),
+        nav2Obs: m(d.radios.nav2OBS, "deg"),
+        transponderCode: m(d.radios.xpdrCode, ""),
+        transponderState: d.radios.xpdrState,
+      },
+      autopilot: {
+        master: d.autopilot.master,
+        heading: m(d.autopilot.heading, "deg"),
+        altitude: m(d.autopilot.altitude, "ft"),
+        vs: m(d.autopilot.vs, "fpm"),
+        speed: m(d.autopilot.speed, "kts"),
+        approachHold: d.autopilot.approachHold,
+        navLock: d.autopilot.navLock,
+      },
+      altimeter: m(d.altimeterInHg, "inHg"),
+      lights: {
+        beacon: d.lights.beacon,
+        strobe: d.lights.strobe,
+        landing: d.lights.landing,
+      },
+      controls: {
+        elevator: m(d.controls.elevator, "position"),
+        aileron: m(d.controls.aileron, "position"),
+        rudder: m(d.controls.rudder, "position"),
+        flaps: m(d.controls.flaps, "%"),
+        spoilers: m(d.controls.spoilers, "%"),
+        gearDown: d.controls.gearDown,
+      },
+      apu: {
+        switchOn: d.apu.switchOn,
+        rpm: m(d.apu.rpmPercent, "%"),
+        genSwitch: d.apu.genSwitch,
+        genActive: d.apu.genActive,
+      },
+      doors: d.doors.map((door) => ({
+        open: m(door.openRatio, "ratio"),
+      })),
+      simTime: {
+        zuluHour: m(Math.floor(zuluSec / 3600), "h"),
+        zuluMin: m(Math.floor((zuluSec % 3600) / 60), "min"),
+        zuluSec: m(zuluSec % 60, "s"),
+        zuluDay: m(d.simTime.zuluDay, ""),
+        zuluMonth: m(d.simTime.zuluMonth, ""),
+        zuluYear: m(d.simTime.zuluYear, ""),
+        localTime: m(d.simTime.localTime, "s"),
+      },
+      aircraftName: d.aircraftName || "",
+      weight: {
+        total: m(d.weight?.totalWeight ?? 0, "lbs"),
+        fuel: m(d.weight?.fuelWeight ?? 0, "lbs"),
+      },
+    };
+    return JSON.stringify(payload, null, 2);
+  }, [d]);
+
+  function handleCopy() {
+    if (!payloadJson) return;
+    navigator.clipboard.writeText(payloadJson).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -182,8 +294,30 @@ export function DebugTab() {
               { label: "Gear Down", value: <BoolBadge value={d.controls.gearDown} /> },
             ]} />
 
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">APU</h3>
+            <DataTable rows={[
+              { label: "Switch", value: <BoolBadge value={d.apu.switchOn} /> },
+              { label: "RPM", value: fmt(d.apu.rpmPercent, 1), unit: "%" },
+              { label: "Gen Switch", value: <BoolBadge value={d.apu.genSwitch} /> },
+              { label: "Gen Active", value: <BoolBadge value={d.apu.genActive} /> },
+            ]} />
+
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Doors</h3>
+            <DataTable rows={d.doors.map((door, i) => ({
+              label: `Door ${i}`,
+              value: fmt(door.openRatio * 100, 0),
+              unit: "%",
+            }))} />
+
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Weight</h3>
+            <DataTable rows={[
+              { label: "Total", value: fmt(d.weight?.totalWeight ?? 0, 0), unit: "lbs" },
+              { label: "Fuel", value: fmt(d.weight?.fuelWeight ?? 0, 0), unit: "lbs" },
+            ]} />
+
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Misc</h3>
             <DataTable rows={[
+              { label: "Aircraft", value: d.aircraftName || "—" },
               { label: "Altimeter", value: fmt(d.altimeterInHg, 2), unit: "inHg" },
               { label: "Zulu Time", value: fmt(d.simTime.zuluTime, 0), unit: "sec" },
               { label: "Local Time", value: fmt(d.simTime.localTime, 0), unit: "sec" },
@@ -192,6 +326,24 @@ export function DebugTab() {
         </div>
       )}
 
+      {payloadJson && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                API Payload Preview
+              </h3>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleCopy}>
+                {copied ? "Copied!" : "Copy JSON"}
+              </Button>
+            </div>
+            <pre className="rounded-md border border-border bg-muted/50 p-3 text-[11px] font-mono leading-relaxed overflow-auto max-h-[400px]">
+              {payloadJson}
+            </pre>
+          </div>
+        </>
+      )}
     </div>
   );
 }

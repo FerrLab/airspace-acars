@@ -3,7 +3,8 @@ import { useAuth, type TenantInfo } from "@/context/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Search, Building2, Radio, CheckCircle2 } from "lucide-react";
+import { Loader2, Search, Building2, CheckCircle2 } from "lucide-react";
+import { AppLogo } from "@/components/app-logo";
 import { AuthService } from "../../bindings/airspace-acars";
 
 interface TenantSelectorProps {
@@ -66,8 +67,8 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
     <div className="flex h-full items-center justify-center bg-background">
       <Card className="w-[480px] border-border/50">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Radio className="h-6 w-6 text-primary" />
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center">
+            <AppLogo className="h-12 w-12" />
           </div>
           <CardTitle className="text-2xl tracking-tight">Airspace ACARS</CardTitle>
           <p className="text-sm text-muted-foreground">

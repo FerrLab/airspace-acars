@@ -10,14 +10,29 @@ interface SoundInstruction {
 
 export function useSoundPlayer(volume: number, active: boolean) {
   const volumeRef = useRef(volume);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const queueRef = useRef<SoundInstruction[]>([]);
   const processingRef = useRef(false);
 
+  function ensureAudioGraph() {
+    if (!ctxRef.current) {
+      const ctx = new AudioContext();
+      const gain = ctx.createGain();
+      gain.gain.value = volumeRef.current / 100;
+      gain.connect(ctx.destination);
+      ctxRef.current = ctx;
+      gainRef.current = gain;
+    }
+    return { ctx: ctxRef.current, gain: gainRef.current! };
+  }
+
+  // Update volume via GainNode
   useEffect(() => {
     volumeRef.current = volume;
-    if (audioRef.current) {
-      audioRef.current.volume = Math.min(volume / 100, 1);
+    if (gainRef.current) {
+      gainRef.current.gain.value = volume / 100;
     }
   }, [volume]);
 
@@ -66,39 +81,47 @@ export function useSoundPlayer(volume: number, active: boolean) {
 
     function playAudio(base64Data: string, contentType: string): Promise<void> {
       return new Promise((resolve) => {
-        try {
-          const binary = atob(base64Data);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
+        (async () => {
+          try {
+            const { ctx, gain } = ensureAudioGraph();
+            if (ctx.state === "suspended") await ctx.resume();
+
+            const binary = atob(base64Data);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              bytes[i] = binary.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: contentType });
+            const url = URL.createObjectURL(blob);
+
+            const audio = new Audio(url);
+            audioRef.current = audio;
+
+            // Route through GainNode for reliable volume control
+            const source = ctx.createMediaElementSource(audio);
+            source.connect(gain);
+
+            audio.addEventListener("ended", () => {
+              URL.revokeObjectURL(url);
+              audioRef.current = null;
+              resolve();
+            });
+
+            audio.addEventListener("error", () => {
+              URL.revokeObjectURL(url);
+              audioRef.current = null;
+              resolve();
+            });
+
+            audio.play().catch(() => {
+              URL.revokeObjectURL(url);
+              audioRef.current = null;
+              resolve();
+            });
+          } catch {
+            resolve();
           }
-          const blob = new Blob([bytes], { type: contentType });
-          const url = URL.createObjectURL(blob);
-
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          audio.volume = Math.min(volumeRef.current / 100, 1);
-
-          audio.addEventListener("ended", () => {
-            URL.revokeObjectURL(url);
-            audioRef.current = null;
-            resolve();
-          });
-
-          audio.addEventListener("error", () => {
-            URL.revokeObjectURL(url);
-            audioRef.current = null;
-            resolve();
-          });
-
-          audio.play().catch(() => {
-            URL.revokeObjectURL(url);
-            audioRef.current = null;
-            resolve();
-          });
-        } catch {
-          resolve();
-        }
+        })();
       });
     }
 
@@ -114,6 +137,15 @@ export function useSoundPlayer(volume: number, active: boolean) {
       processingRef.current = false;
     };
   }, [active]);
+
+  // Close AudioContext on unmount
+  useEffect(() => {
+    return () => {
+      ctxRef.current?.close();
+      ctxRef.current = null;
+      gainRef.current = null;
+    };
+  }, []);
 }
 
 function sleep(ms: number): Promise<void> {

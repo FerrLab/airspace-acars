@@ -15,6 +15,7 @@ type FlightData struct {
 	APU          APUData           `json:"apu"`
 	Doors        [5]DoorData       `json:"doors"`
 	AircraftName string            `json:"aircraftName"`
+	Weight       WeightData        `json:"weight"`
 }
 
 type PositionData struct {
@@ -33,6 +34,7 @@ type AttitudeData struct {
 	IAS        float64 `json:"ias"`
 	TAS        float64 `json:"tas"`
 	GS         float64 `json:"gs"`
+	GForce     float64 `json:"gForce"`
 }
 
 type EngineData struct {
@@ -104,6 +106,11 @@ type APUData struct {
 
 type DoorData struct {
 	OpenRatio float64 `json:"openRatio"` // 0.0=closed, 1.0=open
+}
+
+type WeightData struct {
+	TotalWeight float64 `json:"totalWeight"` // lbs
+	FuelWeight  float64 `json:"fuelWeight"`  // lbs
 }
 
 // TransponderStateString maps a numeric transponder mode to a human-readable string.

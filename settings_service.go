@@ -14,6 +14,7 @@ type Settings struct {
 	XPlaneHost string `json:"xplaneHost"`
 	XPlanePort int    `json:"xplanePort"`
 	APIBaseURL string `json:"apiBaseURL"`
+	LocalMode  bool   `json:"localMode"`
 }
 
 type SettingsService struct {

@@ -46,7 +46,7 @@ func (f *FlightDataService) ConnectSim(simType string) error {
 	}
 
 	var connector SimConnector
-	var err error
+	connected := false
 
 	switch simType {
 	case "xplane":
@@ -57,14 +57,24 @@ func (f *FlightDataService) ConnectSim(simType string) error {
 			return fmt.Errorf("SimConnect not available on this platform")
 		}
 	default: // "auto"
-		connector = NewSimConnectAdapter()
+		sc := NewSimConnectAdapter()
+		if sc != nil {
+			if err := sc.Connect(); err == nil {
+				connector = sc
+				connected = true
+			} else {
+				slog.Info("SimConnect not available, trying X-Plane", "error", err)
+			}
+		}
 		if connector == nil {
 			connector = NewXPlaneAdapter("127.0.0.1", 49000)
 		}
 	}
 
-	if err = connector.Connect(); err != nil {
-		return fmt.Errorf("connect to %s: %w", connector.Name(), err)
+	if !connected {
+		if err := connector.Connect(); err != nil {
+			return fmt.Errorf("connect to %s: %w", connector.Name(), err)
+		}
 	}
 
 	f.connector = connector

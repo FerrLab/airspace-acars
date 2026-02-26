@@ -88,7 +88,11 @@ function usePingSound() {
   }, []);
 }
 
-export function ChatTab() {
+interface ChatTabProps {
+  localMode?: boolean;
+}
+
+export function ChatTab({ localMode = false }: ChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -122,6 +126,7 @@ export function ChatTab() {
 
   // Fetch latest messages (page 1) on mount and poll every 5s
   useEffect(() => {
+    if (localMode) return;
     let active = true;
 
     async function fetchLatest() {
@@ -168,7 +173,7 @@ export function ChatTab() {
       active = false;
       clearInterval(interval);
     };
-  }, [myUserId, scrollToBottom, playPing]);
+  }, [localMode, myUserId, scrollToBottom, playPing]);
 
   // Auto-scroll when new messages appear
   useEffect(() => {
@@ -280,6 +285,22 @@ export function ChatTab() {
   }
 
   const sorted = [...messages].sort((a, b) => a.id - b.id);
+
+  if (localMode) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center">
+        <div className="text-center space-y-2">
+          <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">
+            Local Mode
+          </Badge>
+          <h2 className="text-lg font-semibold tracking-tight">Chat</h2>
+          <p className="text-sm text-muted-foreground">
+            Chat is unavailable in local mode
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">

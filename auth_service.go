@@ -65,6 +65,14 @@ func (a *AuthService) FetchTenants() ([]Tenant, error) {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
+	// Resolve relative logo URLs against the API base URL
+	for i, t := range tr.Data {
+		if t.LogoURL != nil && len(*t.LogoURL) > 0 && (*t.LogoURL)[0] == '/' {
+			full := baseURL + *t.LogoURL
+			tr.Data[i].LogoURL = &full
+		}
+	}
+
 	return tr.Data, nil
 }
 

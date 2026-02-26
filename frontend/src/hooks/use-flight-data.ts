@@ -18,6 +18,7 @@ export interface AttitudeData {
   ias: number;
   tas: number;
   gs: number;
+  gForce: number;
 }
 
 export interface EngineData {
@@ -80,6 +81,22 @@ export interface SimTimeData {
   localTime: number;
 }
 
+export interface APUData {
+  switchOn: boolean;
+  rpmPercent: number;
+  genSwitch: boolean;
+  genActive: boolean;
+}
+
+export interface DoorData {
+  openRatio: number;
+}
+
+export interface WeightData {
+  totalWeight: number;
+  fuelWeight: number;
+}
+
 export interface FlightData {
   position: PositionData;
   attitude: AttitudeData;
@@ -91,6 +108,10 @@ export interface FlightData {
   lights: LightData;
   controls: FlightControlData;
   simTime: SimTimeData;
+  apu: APUData;
+  doors: DoorData[];
+  aircraftName: string;
+  weight: WeightData;
 }
 
 export function useFlightData() {

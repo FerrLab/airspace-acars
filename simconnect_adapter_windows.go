@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -133,6 +132,13 @@ type simReport struct {
 	Door3Open float64 `name:"EXIT OPEN:3" unit:"Percent Over 100"`
 	Door4Open float64 `name:"EXIT OPEN:4" unit:"Percent Over 100"`
 
+	// G-Force
+	GForce float64 `name:"G FORCE" unit:"GForce"`
+
+	// Weight
+	TotalWeight float64 `name:"TOTAL WEIGHT" unit:"pounds"`
+	FuelWeight  float64 `name:"FUEL TOTAL QUANTITY WEIGHT" unit:"pounds"`
+
 	// Aircraft Title — must be last (256-byte array misaligns subsequent float64s)
 	AircraftTitle [256]byte `name:"TITLE" unit:""`
 }
@@ -244,6 +250,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						IAS:         r.IAS,
 						TAS:         r.TAS,
 						GS:          r.GS,
+						GForce:      r.GForce,
 					},
 					Engines: [4]EngineData{
 						{
@@ -325,6 +332,24 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						ZuluYear:  r.ZuluYear,
 						LocalTime: r.LocalTime,
 					},
+					APU: APUData{
+						SwitchOn:   r.APUSwitch != 0,
+						RPMPercent: r.APURPMPct,
+						GenSwitch:  r.APUGenSwitch != 0,
+						GenActive:  r.APUGenActive != 0,
+					},
+					Doors: [5]DoorData{
+						{OpenRatio: r.Door0Open},
+						{OpenRatio: r.Door1Open},
+						{OpenRatio: r.Door2Open},
+						{OpenRatio: r.Door3Open},
+						{OpenRatio: r.Door4Open},
+					},
+					AircraftName: trimNullBytes(r.AircraftTitle[:]),
+					Weight: WeightData{
+						TotalWeight: r.TotalWeight,
+						FuelWeight:  r.FuelWeight,
+					},
 				}
 				s.mu.Lock()
 				s.latestData = fd
@@ -334,6 +359,16 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 			}
 		}
 	}
+}
+
+// trimNullBytes returns a string from a null-padded byte slice.
+func trimNullBytes(b []byte) string {
+	for i, v := range b {
+		if v == 0 {
+			return string(b[:i])
+		}
+	}
+	return string(b)
 }
 
 // GetFlightData returns the most recently cached flight data.

@@ -7,7 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { SettingsService } from "../../bindings/airspace-acars";
 
-export function SettingsTab() {
+interface SettingsTabProps {
+  localMode?: boolean;
+  onLocalModeChange?: (localMode: boolean) => void;
+}
+
+export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTabProps) {
   const { theme, setTheme } = useTheme();
   const [simType, setSimType] = useState("auto");
   const [apiBaseURL, setApiBaseURL] = useState("");
@@ -54,6 +59,14 @@ export function SettingsTab() {
     } catch { /* ignore */ }
   };
 
+  const handleLocalModeToggle = async (checked: boolean) => {
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, localMode: checked });
+      onLocalModeChange?.(checked);
+    } catch { /* ignore */ }
+  };
+
   if (!loaded) return null;
 
   return (
@@ -86,6 +99,15 @@ export function SettingsTab() {
               placeholder="https://airspace.ferrlab.com"
               className="max-w-[300px] font-mono text-xs"
             />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Local mode</p>
+              <p className="text-xs text-muted-foreground">
+                Only use authentication, disable flights, chat, and cabin audio
+              </p>
+            </div>
+            <Switch checked={localMode} onCheckedChange={handleLocalModeToggle} />
           </div>
         </CardContent>
       </Card>

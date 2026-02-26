@@ -9,7 +9,11 @@ import { useSoundPlayer } from "@/hooks/use-sound-player";
 import { FlightDataService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
 
-export function AcarsTab() {
+interface AcarsTabProps {
+  localMode?: boolean;
+}
+
+export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const { isRecording } = useFlightData();
   const [isConnected, setIsConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -22,17 +26,19 @@ export function AcarsTab() {
     return stored ? parseInt(stored, 10) : 50;
   });
 
-  // Sound player: active when flight is active
-  useSoundPlayer(volume, flightState === "active");
+  // Sound player: active when flight is active and not in local mode
+  useSoundPlayer(volume, flightState === "active" && !localMode);
 
   useEffect(() => {
     FlightDataService.IsConnected().then(setIsConnected).catch(() => {});
-    FlightService.GetFlightState().then((s) => setFlightState(s as any)).catch(() => {});
+    if (!localMode) {
+      FlightService.GetFlightState().then((s) => setFlightState(s as any)).catch(() => {});
+    }
 
     const cancelConn = Events.On("connection-state", (event: any) => {
       setIsConnected(event.data);
     });
-    const cancelFlight = Events.On("flight-state", (event: any) => {
+    const cancelFlight = localMode ? () => {} : Events.On("flight-state", (event: any) => {
       setFlightState(event.data);
     });
 
@@ -40,7 +46,7 @@ export function AcarsTab() {
       cancelConn();
       cancelFlight();
     };
-  }, []);
+  }, [localMode]);
 
   const fetchBooking = useCallback(async () => {
     try {
@@ -51,13 +57,13 @@ export function AcarsTab() {
     }
   }, []);
 
-  // Poll booking every 10s when idle and connected
+  // Poll booking every 10s when idle and connected (skip in local mode)
   useEffect(() => {
-    if (!isConnected || flightState === "active") return;
+    if (localMode || !isConnected || flightState === "active") return;
     fetchBooking();
     const interval = setInterval(fetchBooking, 10_000);
     return () => clearInterval(interval);
-  }, [isConnected, flightState, fetchBooking]);
+  }, [localMode, isConnected, flightState, fetchBooking]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -152,8 +158,20 @@ export function AcarsTab() {
 
       <Separator />
 
+      {/* Local Mode indicator */}
+      {localMode && (
+        <div className="rounded-lg border border-dashed border-yellow-500/50 bg-yellow-500/5 p-4 text-center">
+          <Badge variant="outline" className="mb-2 border-yellow-500/50 text-yellow-500">
+            Local Mode
+          </Badge>
+          <p className="text-sm text-muted-foreground">
+            Flights, booking, and cabin audio are disabled. Simulator connection and recording are still available.
+          </p>
+        </div>
+      )}
+
       {/* Flight Controls */}
-      {isConnected && (
+      {!localMode && isConnected && (
         <div className="space-y-4">
           {flightState === "idle" && booking && (
             <div className="rounded-lg border border-border p-4 space-y-3">
@@ -250,7 +268,7 @@ export function AcarsTab() {
           max={100}
           value={volume}
           onChange={(e) => handleVolumeChange(Number(e.target.value))}
-          className="flex-1 h-1.5 accent-primary cursor-pointer"
+          className="flex-1 accent-primary cursor-pointer"
         />
         <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
           {volume}%

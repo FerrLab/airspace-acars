@@ -39,17 +39,17 @@ var xplaneDatarefs = []string{
 	"sim/flightmodel/position/groundspeed",       // 11: GS (m/s → knots)
 
 	// Engine 1 (12-17)
-	"sim/flightmodel/engine/ENGN_running",         // 12: engine 1 running
-	"sim/flightmodel/engine/ENGN_N1_",             // 13: engine 1 N1
-	"sim/flightmodel/engine/ENGN_N2_",             // 14: engine 1 N2
-	"sim/cockpit2/engine/actuators/throttle_ratio", // 15: engine 1 throttle
-	"sim/cockpit2/engine/actuators/mixture_ratio",  // 16: engine 1 mixture
-	"sim/cockpit2/engine/actuators/prop_ratio",     // 17: engine 1 prop
+	"sim/flightmodel/engine/ENGN_running[0]",              // 12: engine 1 running
+	"sim/flightmodel/engine/ENGN_N1_[0]",                  // 13: engine 1 N1
+	"sim/flightmodel/engine/ENGN_N2_[0]",                  // 14: engine 1 N2
+	"sim/cockpit2/engine/actuators/throttle_ratio[0]",     // 15: engine 1 throttle
+	"sim/cockpit2/engine/actuators/mixture_ratio[0]",      // 16: engine 1 mixture
+	"sim/cockpit2/engine/actuators/prop_ratio[0]",         // 17: engine 1 prop
 
 	// Sensors (18-21)
 	"sim/flightmodel/failures/onground_any",      // 18: on ground
 	"sim/cockpit2/annunciators/stall_warning",    // 19: stall warning
-	"sim/cockpit2/annunciators/speedbrake",       // 20: overspeed (proxy)
+	"sim/cockpit2/annunciators/overspeed",        // 20: overspeed warning
 	"sim/time/sim_speed",                         // 21: simulation rate
 
 	// Radios (22-29)
@@ -80,9 +80,9 @@ var xplaneDatarefs = []string{
 	"sim/cockpit/electrical/landing_lights_on",   // 40: landing
 
 	// Controls (41-46)
-	"sim/flightmodel/controls/elv1_def",          // 41: elevator
-	"sim/flightmodel/controls/ail1_def",          // 42: aileron
-	"sim/flightmodel/controls/rud1_def",          // 43: rudder
+	"sim/cockpit2/controls/yoke_pitch_ratio",     // 41: elevator (-1 to 1)
+	"sim/cockpit2/controls/yoke_roll_ratio",      // 42: aileron (-1 to 1)
+	"sim/cockpit2/controls/yoke_heading_ratio",   // 43: rudder (-1 to 1)
 	"sim/cockpit2/controls/flap_ratio",           // 44: flaps (0-1 → percent)
 	"sim/cockpit2/controls/speedbrake_ratio",     // 45: spoilers (0-1 → percent)
 	"sim/cockpit/switches/gear_handle_status",    // 46: gear down
@@ -93,6 +93,37 @@ var xplaneDatarefs = []string{
 	"sim/time/local_date_days",                   // 49: zulu month (proxy)
 	"sim/time/local_date_days",                   // 50: zulu year (proxy)
 	"sim/time/local_time_sec",                    // 51: local time (seconds)
+
+	// G-Force (52)
+	"sim/flightmodel/position/g_nrml",            // 52: normal G-force
+
+	// Engine 2 (53-58)
+	"sim/flightmodel/engine/ENGN_running[1]",              // 53: engine 2 running
+	"sim/flightmodel/engine/ENGN_N1_[1]",                  // 54: engine 2 N1
+	"sim/flightmodel/engine/ENGN_N2_[1]",                  // 55: engine 2 N2
+	"sim/cockpit2/engine/actuators/throttle_ratio[1]",     // 56: engine 2 throttle
+	"sim/cockpit2/engine/actuators/mixture_ratio[1]",      // 57: engine 2 mixture
+	"sim/cockpit2/engine/actuators/prop_ratio[1]",         // 58: engine 2 prop
+
+	// Engine 3 (59-64)
+	"sim/flightmodel/engine/ENGN_running[2]",              // 59: engine 3 running
+	"sim/flightmodel/engine/ENGN_N1_[2]",                  // 60: engine 3 N1
+	"sim/flightmodel/engine/ENGN_N2_[2]",                  // 61: engine 3 N2
+	"sim/cockpit2/engine/actuators/throttle_ratio[2]",     // 62: engine 3 throttle
+	"sim/cockpit2/engine/actuators/mixture_ratio[2]",      // 63: engine 3 mixture
+	"sim/cockpit2/engine/actuators/prop_ratio[2]",         // 64: engine 3 prop
+
+	// Engine 4 (65-70)
+	"sim/flightmodel/engine/ENGN_running[3]",              // 65: engine 4 running
+	"sim/flightmodel/engine/ENGN_N1_[3]",                  // 66: engine 4 N1
+	"sim/flightmodel/engine/ENGN_N2_[3]",                  // 67: engine 4 N2
+	"sim/cockpit2/engine/actuators/throttle_ratio[3]",     // 68: engine 4 throttle
+	"sim/cockpit2/engine/actuators/mixture_ratio[3]",      // 69: engine 4 mixture
+	"sim/cockpit2/engine/actuators/prop_ratio[3]",         // 70: engine 4 prop
+
+	// Weight (71-72)
+	"sim/flightmodel/weight/m_total",                      // 71: total weight (kg → lbs)
+	"sim/flightmodel/weight/m_fuel_total",                 // 72: fuel weight (kg → lbs)
 }
 
 func NewXPlaneAdapter(host string, port int) SimConnector {
@@ -345,6 +376,58 @@ func (x *XPlaneAdapter) listenLoop() {
 				x.data.SimTime.ZuluYear = float64(val)
 			case 51:
 				x.data.SimTime.LocalTime = float64(val)
+
+			// G-Force
+			case 52:
+				x.data.Attitude.GForce = float64(val)
+
+			// Engine 2
+			case 53:
+				x.data.Engines[1].Running = val != 0
+			case 54:
+				x.data.Engines[1].N1 = float64(val)
+			case 55:
+				x.data.Engines[1].N2 = float64(val)
+			case 56:
+				x.data.Engines[1].ThrottlePos = float64(val) * 100
+			case 57:
+				x.data.Engines[1].MixturePos = float64(val) * 100
+			case 58:
+				x.data.Engines[1].PropPos = float64(val) * 100
+
+			// Engine 3
+			case 59:
+				x.data.Engines[2].Running = val != 0
+			case 60:
+				x.data.Engines[2].N1 = float64(val)
+			case 61:
+				x.data.Engines[2].N2 = float64(val)
+			case 62:
+				x.data.Engines[2].ThrottlePos = float64(val) * 100
+			case 63:
+				x.data.Engines[2].MixturePos = float64(val) * 100
+			case 64:
+				x.data.Engines[2].PropPos = float64(val) * 100
+
+			// Engine 4
+			case 65:
+				x.data.Engines[3].Running = val != 0
+			case 66:
+				x.data.Engines[3].N1 = float64(val)
+			case 67:
+				x.data.Engines[3].N2 = float64(val)
+			case 68:
+				x.data.Engines[3].ThrottlePos = float64(val) * 100
+			case 69:
+				x.data.Engines[3].MixturePos = float64(val) * 100
+			case 70:
+				x.data.Engines[3].PropPos = float64(val) * 100
+
+			// Weight
+			case 71:
+				x.data.Weight.TotalWeight = float64(val) * 2.20462 // kg to lbs
+			case 72:
+				x.data.Weight.FuelWeight = float64(val) * 2.20462
 			}
 			x.mu.Unlock()
 		}
