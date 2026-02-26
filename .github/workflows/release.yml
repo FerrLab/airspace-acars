@@ -107,8 +107,18 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://github.com/soner-boztas/installforge/releases/download/v1.6.1/IFInst.exe" -OutFile IFInst.exe
+          & "C:\Program Files\7-Zip\7z.exe" x IFInst.exe -oIFExtracted -y
           $dest = "C:\Program Files (x86)\solicus\InstallForge"
-          & "C:\Program Files\7-Zip\7z.exe" x IFInst.exe -o"$dest" -y
+          function Copy-DecodedTree($src, $dst) {
+            New-Item -Path $dst -ItemType Directory -Force | Out-Null
+            foreach ($item in Get-ChildItem $src) {
+              if ($item.Name -like '*empty.empty') { continue }
+              try { $decoded = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($item.Name)) } catch { continue }
+              if ($item.PSIsContainer) { Copy-DecodedTree $item.FullName "$dst\$decoded" }
+              else { Copy-Item $item.FullName "$dst\$decoded" }
+            }
+          }
+          Copy-DecodedTree "IFExtracted" $dest
 
       - name: Patch InstallForge manifests for no UAC
         shell: pwsh
