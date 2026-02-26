@@ -34,8 +34,12 @@ func (s *UpdateService) GetCurrentVersion() string {
 	return Version
 }
 
+func (s *UpdateService) isBeta() bool {
+	return strings.Contains(Version, "-beta")
+}
+
 func (s *UpdateService) isStableRelease() bool {
-	return Version != "dev" && !strings.Contains(Version, "-beta")
+	return Version != "dev" && !s.isBeta()
 }
 
 func (s *UpdateService) comparableVersion() string {
@@ -86,7 +90,11 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 	if found {
 		info.LatestVersion = latest.Version()
 		info.ReleaseURL = latest.ReleaseNotes
-		if latest.GreaterThan(s.comparableVersion()) {
+		// Beta builds should only update to other beta versions
+		isBetaUpdate := strings.Contains(latest.Version(), "-beta")
+		if s.isBeta() && !isBetaUpdate {
+			slog.Info("skipping stable release for beta build", "latest", latest.Version())
+		} else if latest.GreaterThan(s.comparableVersion()) {
 			info.UpdateAvailable = true
 			s.latest = latest
 		}
