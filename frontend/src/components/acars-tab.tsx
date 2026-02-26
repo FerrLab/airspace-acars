@@ -6,6 +6,7 @@ import { Slider } from "@/components/ui/slider";
 import { Plug, Unplug, Plane, Square, CheckCircle2 } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
+import { useDevMode } from "@/hooks/use-dev-mode";
 import { useSoundPlayer } from "@/hooks/use-sound-player";
 import { FlightDataService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
@@ -16,12 +17,15 @@ interface AcarsTabProps {
 
 export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const { isRecording } = useFlightData();
+  const devMode = useDevMode();
   const [isConnected, setIsConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [flightState, setFlightState] = useState<"idle" | "active">("idle");
   const [booking, setBooking] = useState<any>(null);
   const [startingFlight, setStartingFlight] = useState(false);
   const [endingFlight, setEndingFlight] = useState(false);
+  const [onGround, setOnGround] = useState(false);
+  const [groundSpeed, setGroundSpeed] = useState(0);
   const [volume, setVolume] = useState(() => {
     const stored = localStorage.getItem("acars_volume");
     return stored ? parseInt(stored, 10) : 50;
@@ -42,10 +46,16 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
     const cancelFlight = localMode ? () => {} : Events.On("flight-state", (event: any) => {
       setFlightState(event.data);
     });
+    const cancelData = Events.On("flight-data", (event: any) => {
+      const d = event.data;
+      if (d?.sensors) setOnGround(d.sensors.onGround ?? false);
+      if (d?.attitude) setGroundSpeed(d.attitude.gs ?? 0);
+    });
 
     return () => {
       cancelConn();
       cancelFlight();
+      cancelData();
     };
   }, [localMode]);
 
@@ -203,12 +213,17 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
               <Button
                 size="sm"
                 onClick={handleStartFlight}
-                disabled={startingFlight}
+                disabled={startingFlight || !onGround || groundSpeed >= 1}
                 className="gap-2"
               >
                 <Plane className="h-3 w-3" />
                 {startingFlight ? "Starting..." : "Start Flight"}
               </Button>
+              {(!onGround || groundSpeed >= 1) && (
+                <p className="text-xs text-muted-foreground">
+                  Aircraft must be on the ground and stationary
+                </p>
+              )}
             </div>
           )}
 
@@ -278,7 +293,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
 
       <Separator />
 
-      <RecordingControls isRecording={isRecording} isConnected={isConnected} />
+      {devMode && <RecordingControls isRecording={isRecording} isConnected={isConnected} />}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -26,6 +27,13 @@ func init() {
 }
 
 func main() {
+	si, err := NewSingleInstance()
+	if err != nil {
+		slog.Info("another instance is running, bringing to foreground")
+		os.Exit(0)
+	}
+	defer si.Close()
+
 	db, err := initDB()
 	if err != nil {
 		log.Fatal("failed to init database:", err)
@@ -78,6 +86,11 @@ func main() {
 		},
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
+	})
+
+	si.SetOnShow(func() {
+		window.Show()
+		window.Focus()
 	})
 
 	// Hide to tray instead of closing

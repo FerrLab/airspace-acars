@@ -14,10 +14,11 @@ type XPlaneAdapter struct {
 	host string
 	port int
 
-	mu   sync.Mutex
-	conn *net.UDPConn
-	data FlightData
-	stop chan struct{}
+	mu           sync.Mutex
+	conn         *net.UDPConn
+	data         FlightData
+	lastReceived time.Time
+	stop         chan struct{}
 }
 
 // RREF dataref paths — indices match the switch cases in listenLoop.
@@ -194,6 +195,10 @@ func (x *XPlaneAdapter) GetFlightData() (*FlightData, error) {
 
 	if x.conn == nil {
 		return nil, fmt.Errorf("not connected")
+	}
+
+	if x.lastReceived.IsZero() || time.Since(x.lastReceived) > 3*time.Second {
+		return nil, fmt.Errorf("no data from simulator")
 	}
 
 	data := x.data
@@ -431,5 +436,9 @@ func (x *XPlaneAdapter) listenLoop() {
 			}
 			x.mu.Unlock()
 		}
+
+		x.mu.Lock()
+		x.lastReceived = time.Now()
+		x.mu.Unlock()
 	}
 }

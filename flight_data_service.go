@@ -24,6 +24,7 @@ type FlightDataService struct {
 	dataCount    int
 	streaming    bool
 	streamStopCh chan struct{}
+	simActive    bool
 }
 
 func NewFlightDataService(db *sql.DB) *FlightDataService {
@@ -78,11 +79,8 @@ func (f *FlightDataService) ConnectSim(simType string) error {
 	}
 
 	f.connector = connector
+	f.simActive = false
 	slog.Info("connected to simulator", "adapter", connector.Name())
-
-	if f.app != nil {
-		f.app.Event.Emit("connection-state", true)
-	}
 
 	f.startDataStreamLocked()
 	return nil
@@ -99,6 +97,7 @@ func (f *FlightDataService) DisconnectSim() {
 		f.connector = nil
 	}
 
+	f.simActive = false
 	if f.app != nil {
 		f.app.Event.Emit("connection-state", false)
 	}
@@ -107,7 +106,7 @@ func (f *FlightDataService) DisconnectSim() {
 func (f *FlightDataService) IsConnected() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.connector != nil
+	return f.simActive
 }
 
 func (f *FlightDataService) StartRecording() error {
@@ -282,6 +281,7 @@ func (f *FlightDataService) dataStreamLoop() {
 			f.mu.Lock()
 			connector := f.connector
 			recording := f.recording
+			wasActive := f.simActive
 			f.mu.Unlock()
 
 			if connector == nil {
@@ -290,8 +290,26 @@ func (f *FlightDataService) dataStreamLoop() {
 
 			data, err := connector.GetFlightData()
 			if err != nil {
-				slog.Error("data stream: failed to get flight data", "error", err)
+				if wasActive {
+					f.mu.Lock()
+					f.simActive = false
+					f.mu.Unlock()
+					if f.app != nil {
+						f.app.Event.Emit("connection-state", false)
+					}
+					slog.Warn("simulator data lost", "error", err)
+				}
 				continue
+			}
+
+			if !wasActive {
+				f.mu.Lock()
+				f.simActive = true
+				f.mu.Unlock()
+				if f.app != nil {
+					f.app.Event.Emit("connection-state", true)
+				}
+				slog.Info("simulator data received")
 			}
 
 			if f.app != nil {
