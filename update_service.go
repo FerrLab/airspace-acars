@@ -26,8 +26,15 @@ func (s *UpdateService) GetCurrentVersion() string {
 	return Version
 }
 
-func (s *UpdateService) isBeta() bool {
-	return strings.Contains(Version, "-beta")
+func (s *UpdateService) isStableRelease() bool {
+	return Version != "dev" && !strings.Contains(Version, "-beta")
+}
+
+func (s *UpdateService) comparableVersion() string {
+	if Version == "dev" {
+		return "0.0.0"
+	}
+	return Version
 }
 
 func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
@@ -40,7 +47,8 @@ func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
 		Source:  source,
 		Filters: []string{"airspace-acars-windows-amd64.exe$"},
 	}
-	if s.isBeta() {
+	// Only stable releases skip pre-releases; dev and beta builds see everything
+	if !s.isStableRelease() {
 		cfg.Prerelease = true
 	}
 
@@ -70,7 +78,7 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 	if found {
 		info.LatestVersion = latest.Version()
 		info.ReleaseURL = latest.ReleaseNotes
-		if latest.GreaterThan(Version) {
+		if latest.GreaterThan(s.comparableVersion()) {
 			info.UpdateAvailable = true
 			s.latest = latest
 		}
