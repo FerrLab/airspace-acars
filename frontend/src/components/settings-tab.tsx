@@ -177,7 +177,7 @@ function AboutSection() {
     setError("");
     try {
       const info = await UpdateService.CheckForUpdate();
-      if (info.updateAvailable) {
+      if (info && info.updateAvailable) {
         setLatestVersion(info.latestVersion);
         setStatus("update-available");
       } else {

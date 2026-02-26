@@ -3,6 +3,7 @@ module airspace-acars
 go 1.26
 
 require (
+	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/lian/msfs2020-go v0.0.7
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.72
@@ -20,7 +21,6 @@ require (
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
-	github.com/creativeprojects/go-selfupdate v1.5.2 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
