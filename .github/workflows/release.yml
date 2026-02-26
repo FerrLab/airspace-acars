@@ -56,7 +56,7 @@ jobs:
       - name: Build Windows exe
         shell: bash
         run: |
-          wails3 task windows:build VERSION=${{ steps.version.outputs.version }}
+          wails3 task windows:build VERSION=${{ steps.version.outputs.version }} APP_NAME=airspace-acars
 
       - name: Rename artifact
         shell: bash
