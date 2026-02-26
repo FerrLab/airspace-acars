@@ -20,10 +20,11 @@ type AuthService struct {
 }
 
 type Tenant struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	LogoURL *string  `json:"logo_url"`
-	Domains []string `json:"domains"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	LogoURL   *string  `json:"logo_url"`
+	BannerURL *string  `json:"banner_url"`
+	Domains   []string `json:"domains"`
 }
 
 type tenantsResponse struct {
@@ -63,14 +64,6 @@ func (a *AuthService) FetchTenants() ([]Tenant, error) {
 	var tr tenantsResponse
 	if err := json.Unmarshal(body, &tr); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	// Resolve relative logo URLs against the API base URL
-	for i, t := range tr.Data {
-		if t.LogoURL != nil && len(*t.LogoURL) > 0 && (*t.LogoURL)[0] == '/' {
-			full := baseURL + *t.LogoURL
-			tr.Data[i].LogoURL = &full
-		}
 	}
 
 	return tr.Data, nil

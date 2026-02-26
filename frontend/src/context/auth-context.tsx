@@ -6,6 +6,7 @@ export interface TenantInfo {
   name: string;
   domain: string;
   logo_url?: string;
+  banner_url?: string;
 }
 
 interface StoredTokens {

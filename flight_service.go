@@ -219,7 +219,7 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 			}
 
 			report := f.buildPositionReport(fd)
-			_, _, err = f.auth.doRequest("POST", "/api/acars/position", report)
+			_, _, err = f.auth.doRequest("POST", "/api/v2/acars/position", report)
 			if err != nil {
 				slog.Debug("position report failed", "error", err)
 			}
