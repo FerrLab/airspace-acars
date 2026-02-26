@@ -9,10 +9,14 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 func init() {
 	application.RegisterEvent[*FlightData]("flight-data")
@@ -51,23 +55,19 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
+		Windows: application.WindowsOptions{
+			DisableQuitOnLastWindowClosed: true,
+		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
 
 	flightDataService.setApp(app)
 	flightService.setApp(app)
+	updateService.setApp(app)
 
-	go func() {
-		time.Sleep(time.Second)
-		settings := settingsService.GetSettings()
-		if err := flightDataService.ConnectSim(settings.SimType); err != nil {
-			slog.Warn("auto-connect failed", "error", err)
-		}
-	}()
-
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",
 		Width:  1100,
 		Height: 700,
@@ -79,6 +79,45 @@ func main() {
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
 	})
+
+	// Hide to tray instead of closing
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		window.Hide()
+		e.Cancel()
+	})
+
+	// System tray
+	trayMenu := app.NewMenu()
+	trayMenu.Add("Show").OnClick(func(ctx *application.Context) {
+		window.Show()
+		window.Focus()
+	})
+	trayMenu.AddSeparator()
+	trayMenu.Add("Quit").OnClick(func(ctx *application.Context) {
+		app.Quit()
+	})
+
+	systray := app.SystemTray.New()
+	systray.SetIcon(appIcon)
+	systray.SetTooltip("Airspace ACARS")
+	systray.SetMenu(trayMenu)
+	systray.OnClick(func() {
+		window.Show()
+		window.Focus()
+	})
+
+	go func() {
+		time.Sleep(time.Second)
+
+		// Auto-update on startup
+		updateService.AutoUpdate()
+
+		// Auto-connect to sim
+		settings := settingsService.GetSettings()
+		if err := flightDataService.ConnectSim(settings.SimType); err != nil {
+			slog.Warn("auto-connect failed", "error", err)
+		}
+	}()
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

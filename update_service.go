@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/creativeprojects/go-selfupdate"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 var Version = "dev"
@@ -20,6 +23,11 @@ type UpdateInfo struct {
 
 type UpdateService struct {
 	latest *selfupdate.Release
+	app    *application.App
+}
+
+func (s *UpdateService) setApp(app *application.App) {
+	s.app = app
 }
 
 func (s *UpdateService) GetCurrentVersion() string {
@@ -104,4 +112,33 @@ func (s *UpdateService) ApplyUpdate() error {
 
 	slog.Info("update applied", "version", s.latest.Version())
 	return nil
+}
+
+func (s *UpdateService) AutoUpdate() {
+	info, err := s.CheckForUpdate()
+	if err != nil {
+		slog.Warn("auto-update check failed", "error", err)
+		return
+	}
+	if !info.UpdateAvailable {
+		slog.Info("no update available")
+		return
+	}
+
+	slog.Info("update available, applying", "version", info.LatestVersion)
+	if err := s.ApplyUpdate(); err != nil {
+		slog.Error("auto-update apply failed", "error", err)
+		return
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		slog.Error("failed to get executable path", "error", err)
+		return
+	}
+	if err := exec.Command(exe).Start(); err != nil {
+		slog.Error("failed to restart after update", "error", err)
+		return
+	}
+	s.app.Quit()
 }
