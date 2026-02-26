@@ -3,8 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Settings, LogOut, Bug, MessageSquare, Radio } from "lucide-react";
-import { AppLogo } from "@/components/app-logo";
+import { Settings, LogOut, Bug, MessageSquare, Radio, Building2 } from "lucide-react";
 import { useDevMode } from "@/hooks/use-dev-mode";
 
 export type Tab = "acars" | "chat" | "debug" | "settings";
@@ -17,7 +16,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: SidebarProps) {
-  const { logout } = useAuth();
+  const { logout, tenant } = useAuth();
   const devMode = useDevMode();
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -29,15 +28,29 @@ export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: Si
 
   return (
     <div className="flex h-full w-[220px] flex-col border-r border-border/50 bg-card">
-      <div className="flex h-14 items-center gap-2 px-5">
-        <AppLogo className="h-6 w-6" />
-        <span className="text-sm font-semibold tracking-tight">Airspace ACARS</span>
-        {localMode && (
-          <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-yellow-500/50 text-yellow-500">
-            Local
-          </Badge>
-        )}
-      </div>
+      {tenant?.banner_url ? (
+        <img
+          src={tenant.banner_url}
+          alt={tenant.name}
+          className="w-full max-h-20 object-cover"
+        />
+      ) : (
+        <div className="flex h-14 items-center gap-2 px-5">
+          {tenant?.logo_url ? (
+            <img src={tenant.logo_url} alt="" className="h-6 w-6 rounded object-contain" />
+          ) : (
+            <Building2 className="h-6 w-6 text-muted-foreground" />
+          )}
+          <span className="text-sm font-semibold tracking-tight truncate">
+            {tenant?.name ?? "Airspace ACARS"}
+          </span>
+          {localMode && (
+            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-yellow-500/50 text-yellow-500">
+              Local
+            </Badge>
+          )}
+        </div>
+      )}
 
       <Separator />
 

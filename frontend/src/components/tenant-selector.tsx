@@ -30,6 +30,7 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
             name: t.name,
             domain: t.domains[0],
             logo_url: t.logo_url ?? undefined,
+            banner_url: t.banner_url ?? undefined,
           }))
         );
         setStatus("ready");

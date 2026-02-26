@@ -20,10 +20,11 @@ type AuthService struct {
 }
 
 type Tenant struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	LogoURL *string  `json:"logo_url"`
-	Domains []string `json:"domains"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	LogoURL   *string  `json:"logo_url"`
+	BannerURL *string  `json:"banner_url"`
+	Domains   []string `json:"domains"`
 }
 
 type tenantsResponse struct {

@@ -115,6 +115,10 @@ func (s *UpdateService) ApplyUpdate() error {
 }
 
 func (s *UpdateService) AutoUpdate() {
+	if Version == "dev" {
+		slog.Info("skipping auto-update in dev mode")
+		return
+	}
 	info, err := s.CheckForUpdate()
 	if err != nil {
 		slog.Warn("auto-update check failed", "error", err)
