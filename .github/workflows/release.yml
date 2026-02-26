@@ -22,6 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
@@ -35,15 +37,12 @@ jobs:
 
       - name: Determine version
         id: version
-        shell: bash
         run: |
           if [ "${{ github.ref_name }}" = "production" ]; then
-            # Production: use date-based semver
             VERSION="1.$(date +%Y%m%d).${GITHUB_RUN_NUMBER}"
             PRERELEASE=false
             TAG="v${VERSION}"
           else
-            # Beta: use date-based semver with beta suffix
             SHORT_SHA="${GITHUB_SHA::7}"
             VERSION="0.$(date +%Y%m%d).${GITHUB_RUN_NUMBER}-beta.${SHORT_SHA}"
             PRERELEASE=true
@@ -53,15 +52,34 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
 
-      - name: Build Windows exe
-        shell: bash
-        run: |
-          wails3 task windows:build VERSION=${{ steps.version.outputs.version }} APP_NAME=airspace-acars
+      - name: Generate bindings
+        run: wails3 generate bindings -f '-tags production -trimpath -buildvcs=false' -clean=true -ts
 
-      - name: Rename artifact
-        shell: bash
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+
+      - name: Generate icons
+        run: wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico
+        working-directory: build
+
+      - name: Generate syso
+        run: wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_amd64.syso
+        working-directory: build
+
+      - name: Build Windows exe
         run: |
-          mv bin/airspace-acars.exe bin/airspace-acars-windows-amd64.exe
+          mkdir -p bin
+          go build -tags production -trimpath -buildvcs=false \
+            -ldflags="-w -s -H windowsgui -X main.Version=${{ steps.version.outputs.version }}" \
+            -o bin/airspace-acars-windows-amd64.exe
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "0"
+
+      - name: Clean up syso
+        run: rm -f *.syso
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
