@@ -4,6 +4,7 @@ AppVersion=__VERSION__
 AppPublisher=Airspace ACARS
 DefaultDirName={commonappdata}\Airspace ACARS
 DefaultGroupName=Airspace ACARS
+UsePreviousGroup=yes
 UninstallDisplayIcon={app}\Airspace ACARS.exe
 OutputDir=bin
 OutputBaseFilename=airspace-acars-windows-amd64-setup
@@ -17,8 +18,8 @@ WizardStyle=modern
 Source: "Airspace ACARS.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Airspace ACARS"; Filename: "{app}\Airspace ACARS.exe"
-Name: "{commondesktop}\Airspace ACARS"; Filename: "{app}\Airspace ACARS.exe"
+Name: "{userprograms}\Airspace ACARS\Airspace ACARS"; Filename: "{app}\Airspace ACARS.exe"
+Name: "{userdesktop}\Airspace ACARS"; Filename: "{app}\Airspace ACARS.exe"
 
 [Run]
 Filename: "{app}\Airspace ACARS.exe"; Description: "Launch Airspace ACARS"; Flags: nowait postinstall skipifsilent
