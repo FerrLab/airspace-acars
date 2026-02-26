@@ -12,6 +12,10 @@ permissions:
 jobs:
   build:
     runs-on: ubicloud-standard-2
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
 
@@ -81,11 +85,61 @@ jobs:
       - name: Clean up syso
         run: rm -f *.syso
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: bin/airspace-acars-windows-amd64.exe
+
+  release:
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: bin
+
+      - name: Install InstallForge
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/soner-boztas/installforge/releases/download/v1.6.1/IFInst.exe" -OutFile IFInst.exe
+          Start-Process -FilePath .\IFInst.exe -ArgumentList '/SILENT' -Wait -NoNewWindow
+
+      - name: Patch InstallForge manifests for no UAC
+        shell: pwsh
+        run: |
+          $resDir = "C:\Program Files (x86)\solicus\InstallForge\res"
+          foreach ($f in "manifestDefault.manifest","manifestVisualStylesEnabled.manifest") {
+            (Get-Content "$resDir\$f") -replace 'requireAdministrator','asInvoker' | Set-Content "$resDir\$f"
+          }
+
+      - name: Prepare installer
+        shell: pwsh
+        run: |
+          Copy-Item "bin\airspace-acars-windows-amd64.exe" "Airspace ACARS.exe"
+          $version = "${{ needs.build.outputs.version }}"
+          $workspace = "${{ github.workspace }}"
+          $content = Get-Content "installer.ifp" -Raw
+          $content = $content -replace '__VERSION__', $version
+          $content = $content -replace '__WORKSPACE__', $workspace
+          Set-Content "installer.ifp" $content
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\solicus\InstallForge\bin\ifbuildx86.exe" -i installer.ifp -o bin\airspace-acars-windows-amd64-setup.exe --no-color
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.prerelease == 'true' && format('Beta {0}', steps.version.outputs.version) || steps.version.outputs.version }}
-          prerelease: ${{ steps.version.outputs.prerelease }}
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: ${{ needs.build.outputs.prerelease == 'true' && format('Beta {0}', needs.build.outputs.version) || needs.build.outputs.version }}
+          prerelease: ${{ needs.build.outputs.prerelease }}
           generate_release_notes: true
-          files: bin/airspace-acars-windows-amd64.exe
+          files: |
+            bin/airspace-acars-windows-amd64.exe
+            bin/airspace-acars-windows-amd64-setup.exe

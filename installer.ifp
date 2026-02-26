@@ -1,0 +1,104 @@
+[Header]
+ProjectFileVersion = 1.1
+[General]
+Program name = Airspace ACARS
+Program version = __VERSION__
+Windows 2000 = 0
+Windows XP = 0
+Windows Server 2003 = 0
+Windows Vista = 0
+Windows Server 2008 = 0
+Windows 7 = 0
+Windows 8 = 0
+Windows 10 = 1
+Windows Server 2016 = 0
+DoNotCheckOS = 0
+Company name = Airspace ACARS
+Website =
+SFA = 0
+DFA = 0
+Comp = 1
+[Graphics]
+Wizard image =
+Header image =
+Install-icon image = __WORKSPACE__\build\windows\icon.ico
+Show Label = 1
+VisualStylesEnabled = 1
+[Files]
+Installation path = <CommonApplicationData>\Airspace ACARS\
+Autcip = 1
+[Uninstall]
+Vwau = 0
+Website =
+Include uninstaller = 1
+Uninstaller filename = Uninstall
+UseCustomDisplayIcon = 0
+CustomDisplayIcon = <InstallPath>\
+[Licence]
+Licence dialog = 0
+[Finish]
+Sart program = 1
+Reboot computer = 0
+Program = <InstallPath>\Airspace ACARS.exe
+ProgramArguments =
+[Shortcuts]
+Allowtc = 0
+Shortcut path = Airspace ACARS\
+[Serialoptions]
+Allows = 0
+Number = 1000
+Mask = #####-#####-#####-#####
+[SplashScreen]
+Image =
+Sound =
+Time = 2
+PlaySound = 0
+Allow = 0
+[Build]
+File = bin\airspace-acars-windows-amd64-setup.exe
+SetupIconPath = __WORKSPACE__\build\windows\icon.ico
+UninstallIconPath = __WORKSPACE__\build\windows\icon.ico
+CompressionMethod = 0
+CompressionLevel = 0
+[Updater]
+Allow = 0
+1 = <AppName>
+2 = <AppVersion>
+3 = http://
+4 = http://
+5 = http://
+6 = Update
+Language = 0
+RunProg =
+RunProgs = 0
+Execdlls = 0
+[Languages]
+[Files/Dirs]
+__WORKSPACE__\Airspace ACARS.exe
+0 KB
+exe
+[Licence_Begin]
+114
+{\rtf1\ansi\ansicpg1252\deff0\deflang1033{\fonttbl{\f0\fnil\fcharset0 Arial;}}
+\viewkind4\uc1\pard\fs20\par
+}
+ [Licence_End]
+[Registry]
+[Variables]
+[SCs]
+Desktop
+Airspace ACARS
+<InstallPath>\Airspace ACARS.exe
+
+
+0
+Startmenu
+Airspace ACARS
+<InstallPath>\Airspace ACARS.exe
+
+
+0
+[IFP_End]
+[Serials]
+[Serials_End]
+[Commands]
