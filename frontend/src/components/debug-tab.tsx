@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -7,9 +8,10 @@ import { Events } from "@wailsio/runtime";
 import { FlightDataService } from "../../bindings/airspace-acars";
 
 function BoolBadge({ value }: { value: boolean }) {
+  const { t } = useTranslation();
   return (
     <Badge variant={value ? "default" : "secondary"} className="text-[10px] px-1.5 py-0">
-      {value ? "ON" : "OFF"}
+      {value ? t("debug.on") : t("debug.off")}
     </Badge>
   );
 }
@@ -37,6 +39,7 @@ function fmt(v: number, d: number = 2): string {
 }
 
 export function DebugTab() {
+  const { t } = useTranslation();
   const { flightData } = useFlightData();
   const [isConnected, setIsConnected] = useState(false);
   const [updateCount, setUpdateCount] = useState(0);
@@ -173,17 +176,17 @@ export function DebugTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Debug</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("debug.title")}</h2>
           <p className="text-sm text-muted-foreground">
-            Raw simulator data in real time
+            {t("debug.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={isConnected ? "default" : "secondary"}>
-            {isConnected ? "Connected" : "Disconnected"}
+            {isConnected ? t("debug.connected") : t("debug.disconnected")}
           </Badge>
           <span className="text-xs text-muted-foreground tabular-nums">
-            {updateCount} updates
+            {t("debug.updates", { count: updateCount })}
           </span>
         </div>
       </div>
@@ -191,11 +194,11 @@ export function DebugTab() {
       <Separator />
 
       {!d ? (
-        <p className="text-sm text-muted-foreground">Waiting for data...</p>
+        <p className="text-sm text-muted-foreground">{t("debug.waitingForData")}</p>
       ) : (
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Position</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.position")}</h3>
             <DataTable rows={[
               { label: "Latitude", value: fmt(d.position.latitude, 6), unit: "deg" },
               { label: "Longitude", value: fmt(d.position.longitude, 6), unit: "deg" },
@@ -203,7 +206,7 @@ export function DebugTab() {
               { label: "AGL", value: fmt(d.position.altitudeAGL, 0), unit: "ft" },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Attitude & Speed</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.attitudeSpeed")}</h3>
             <DataTable rows={[
               { label: "Pitch", value: fmt(d.attitude.pitch), unit: "deg" },
               { label: "Roll", value: fmt(d.attitude.roll), unit: "deg" },
@@ -215,14 +218,14 @@ export function DebugTab() {
               { label: "GS", value: fmt(d.attitude.gs, 1), unit: "kts" },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sensors</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.sensors")}</h3>
             <DataTable rows={[
               { label: "On Ground", value: <BoolBadge value={d.sensors.onGround} /> },
               { label: "Stall Warning", value: <BoolBadge value={d.sensors.stallWarning} /> },
               { label: "Overspeed", value: <BoolBadge value={d.sensors.overspeedWarning} /> },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lights</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.lights")}</h3>
             <DataTable rows={[
               { label: "Beacon", value: <BoolBadge value={d.lights.beacon} /> },
               { label: "Strobe", value: <BoolBadge value={d.lights.strobe} /> },
@@ -231,7 +234,7 @@ export function DebugTab() {
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Engines</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.engines")}</h3>
             <div className="rounded-md border border-border">
               <table className="w-full text-sm">
                 <thead>
@@ -261,7 +264,7 @@ export function DebugTab() {
               </table>
             </div>
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Radios</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.radios")}</h3>
             <DataTable rows={[
               { label: "COM1", value: fmt(d.radios.com1, 3), unit: "MHz" },
               { label: "COM2", value: fmt(d.radios.com2, 3), unit: "MHz" },
@@ -273,7 +276,7 @@ export function DebugTab() {
               { label: "XPDR State", value: d.radios.xpdrState || "—" },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Autopilot</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.autopilot")}</h3>
             <DataTable rows={[
               { label: "Master", value: <BoolBadge value={d.autopilot.master} /> },
               { label: "Heading", value: fmt(d.autopilot.heading, 0), unit: "deg" },
@@ -284,7 +287,7 @@ export function DebugTab() {
               { label: "NAV Lock", value: <BoolBadge value={d.autopilot.navLock} /> },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Controls</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.controls")}</h3>
             <DataTable rows={[
               { label: "Elevator", value: fmt(d.controls.elevator, 3) },
               { label: "Aileron", value: fmt(d.controls.aileron, 3) },
@@ -294,7 +297,7 @@ export function DebugTab() {
               { label: "Gear Down", value: <BoolBadge value={d.controls.gearDown} /> },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">APU</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.apu")}</h3>
             <DataTable rows={[
               { label: "Switch", value: <BoolBadge value={d.apu.switchOn} /> },
               { label: "RPM", value: fmt(d.apu.rpmPercent, 1), unit: "%" },
@@ -302,20 +305,20 @@ export function DebugTab() {
               { label: "Gen Active", value: <BoolBadge value={d.apu.genActive} /> },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Doors</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.doors")}</h3>
             <DataTable rows={d.doors.map((door, i) => ({
               label: `Door ${i}`,
               value: fmt(door.openRatio * 100, 0),
               unit: "%",
             }))} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Weight</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.weight")}</h3>
             <DataTable rows={[
               { label: "Total", value: fmt(d.weight?.totalWeight ?? 0, 0), unit: "lbs" },
               { label: "Fuel", value: fmt(d.weight?.fuelWeight ?? 0, 0), unit: "lbs" },
             ]} />
 
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Misc</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("debug.misc")}</h3>
             <DataTable rows={[
               { label: "Aircraft", value: d.aircraftName || "—" },
               { label: "Altimeter", value: fmt(d.altimeterInHg, 2), unit: "inHg" },
@@ -332,10 +335,10 @@ export function DebugTab() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                API Payload Preview
+                {t("debug.apiPayload")}
               </h3>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleCopy}>
-                {copied ? "Copied!" : "Copy JSON"}
+                {copied ? t("debug.copied") : t("debug.copyJson")}
               </Button>
             </div>
             <pre className="rounded-md border border-border bg-muted/50 p-3 text-[11px] font-mono leading-relaxed overflow-auto max-h-[400px]">

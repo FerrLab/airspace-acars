@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -9,6 +10,7 @@ import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
 import { FlightDataService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
+import { translateError } from "@/lib/translate-error";
 
 interface AcarsTabProps {
   localMode?: boolean;
@@ -17,6 +19,7 @@ interface AcarsTabProps {
 }
 
 export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTabProps) {
+  const { t } = useTranslation();
   const { isRecording } = useFlightData();
   const devMode = useDevMode();
   const [connectedAdapter, setConnectedAdapter] = useState("");
@@ -78,7 +81,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       setConnectedAdapter(adapter);
     } catch (e: any) {
       console.error("Failed to connect:", e);
-      alert("Failed to connect: " + e);
+      alert(translateError(t, "Failed to connect: " + e));
     } finally {
       setConnecting(false);
     }
@@ -102,7 +105,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       const arrival = booking.arrival ?? booking.arr ?? "";
       await FlightService.StartFlight(callsign, departure, arrival);
     } catch (e: any) {
-      alert("Failed to start flight: " + e);
+      alert(translateError(t, "Failed to start flight: " + e));
     } finally {
       setStartingFlight(false);
     }
@@ -113,7 +116,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     try {
       await FlightService.StopFlight();
     } catch (e: any) {
-      alert("Failed to stop flight: " + e);
+      alert(translateError(t, "Failed to stop flight: " + e));
     } finally {
       setEndingFlight(false);
     }
@@ -124,7 +127,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     try {
       await FlightService.FinishFlight();
     } catch (e: any) {
-      alert("Failed to finish flight: " + e);
+      alert(translateError(t, "Failed to finish flight: " + e));
     } finally {
       setEndingFlight(false);
     }
@@ -138,24 +141,24 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Flight Data</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("acars.title")}</h2>
           <p className="text-sm text-muted-foreground">
-            Connect to your simulator to view live telemetry
+            {t("acars.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={isConnected ? "default" : "secondary"}>
-            {isConnected ? `Connected to ${connectedAdapter}` : "Disconnected"}
+            {isConnected ? t("acars.connectedTo", { adapter: connectedAdapter }) : t("acars.disconnected")}
           </Badge>
           {!isConnected ? (
             <Button size="sm" onClick={handleConnect} disabled={connecting} className="gap-2">
               <Plug className="h-3 w-3" />
-              {connecting ? "Connecting..." : "Connect"}
+              {connecting ? t("acars.connecting") : t("acars.connect")}
             </Button>
           ) : (
             <Button size="sm" variant="outline" onClick={handleDisconnect} className="gap-2">
               <Unplug className="h-3 w-3" />
-              Disconnect
+              {t("acars.disconnect")}
             </Button>
           )}
         </div>
@@ -167,10 +170,10 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       {localMode && (
         <div className="rounded-lg border border-dashed border-yellow-500/50 bg-yellow-500/5 p-4 text-center">
           <Badge variant="outline" className="mb-2 border-yellow-500/50 text-yellow-500">
-            Local Mode
+            {t("acars.localMode")}
           </Badge>
           <p className="text-sm text-muted-foreground">
-            Flights, booking, and cabin audio are disabled. Simulator connection and recording are still available.
+            {t("acars.localModeDesc")}
           </p>
         </div>
       )}
@@ -182,23 +185,23 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
             <div className="rounded-lg border border-border p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Plane className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">Active Booking</span>
+                <span className="text-sm font-medium">{t("acars.activeBooking")}</span>
               </div>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <span className="text-xs text-muted-foreground block">Callsign</span>
+                  <span className="text-xs text-muted-foreground block">{t("acars.callsign")}</span>
                   <span className="font-mono font-medium">
                     {booking.callsign ?? booking.flight_number ?? "---"}
                   </span>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground block">Departure</span>
+                  <span className="text-xs text-muted-foreground block">{t("acars.departure")}</span>
                   <span className="font-mono font-medium">
                     {booking.departure ?? booking.dep ?? "---"}
                   </span>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground block">Arrival</span>
+                  <span className="text-xs text-muted-foreground block">{t("acars.arrival")}</span>
                   <span className="font-mono font-medium">
                     {booking.arrival ?? booking.arr ?? "---"}
                   </span>
@@ -211,11 +214,11 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                 className="gap-2"
               >
                 <Plane className="h-3 w-3" />
-                {startingFlight ? "Starting..." : "Start Flight"}
+                {startingFlight ? t("acars.starting") : t("acars.startFlight")}
               </Button>
               {(!onGround || groundSpeed >= 1) && (
                 <p className="text-xs text-muted-foreground">
-                  Aircraft must be on the ground and stationary
+                  {t("acars.groundRequired")}
                 </p>
               )}
             </div>
@@ -224,7 +227,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
           {flightState === "idle" && !booking && (
             <div className="rounded-lg border border-dashed border-border p-4 text-center">
               <p className="text-sm text-muted-foreground">
-                No active booking. Create a booking on the VA website to start a flight.
+                {t("acars.noBooking")}
               </p>
             </div>
           )}
@@ -233,9 +236,9 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
             <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-sm font-medium">Flight Active</span>
+                <span className="text-sm font-medium">{t("acars.flightActive")}</span>
                 <Badge variant="outline" className="ml-auto text-xs">
-                  Position reporting
+                  {t("acars.positionReporting")}
                 </Badge>
               </div>
               <div className="flex items-center gap-2">
@@ -247,7 +250,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                   className="gap-2"
                 >
                   <CheckCircle2 className="h-3 w-3" />
-                  {endingFlight ? "Finishing..." : "Finish Flight"}
+                  {endingFlight ? t("acars.finishing") : t("acars.finishFlight")}
                 </Button>
                 <Button
                   size="sm"
@@ -257,7 +260,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                   className="gap-2"
                 >
                   <Square className="h-3 w-3" />
-                  Cancel
+                  {t("acars.cancel")}
                 </Button>
               </div>
             </div>
@@ -270,7 +273,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       {/* Volume Control */}
       <div className="flex items-center gap-3">
         <span className="text-sm text-muted-foreground w-28">
-          Cabin Audio
+          {t("acars.cabinAudio")}
         </span>
         <Slider
           min={0}

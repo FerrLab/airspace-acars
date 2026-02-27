@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/context/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,14 +17,15 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: SidebarProps) {
+  const { t } = useTranslation();
   const { logout, tenant } = useAuth();
   const devMode = useDevMode();
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "acars", label: "ACARS", icon: <Radio className="h-4 w-4" /> },
-    { id: "chat", label: "Chat", icon: <MessageSquare className={`h-4 w-4 ${hasUnreadChat && activeTab !== "chat" ? "animate-pulse text-yellow-400" : ""}`} /> },
-    ...(devMode ? [{ id: "debug" as Tab, label: "Debug", icon: <Bug className="h-4 w-4" /> }] : []),
-    { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
+    { id: "acars", label: t("sidebar.acars"), icon: <Radio className="h-4 w-4" /> },
+    { id: "chat", label: t("sidebar.chat"), icon: <MessageSquare className={`h-4 w-4 ${hasUnreadChat && activeTab !== "chat" ? "animate-pulse text-yellow-400" : ""}`} /> },
+    ...(devMode ? [{ id: "debug" as Tab, label: t("sidebar.debug"), icon: <Bug className="h-4 w-4" /> }] : []),
+    { id: "settings", label: t("sidebar.settings"), icon: <Settings className="h-4 w-4" /> },
   ];
 
   return (
@@ -42,11 +44,11 @@ export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: Si
             <Building2 className="h-6 w-6 text-muted-foreground" />
           )}
           <span className="text-sm font-semibold tracking-tight truncate">
-            {tenant?.name ?? "Airspace ACARS"}
+            {tenant?.name ?? t("sidebar.defaultName")}
           </span>
           {localMode && (
             <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-yellow-500/50 text-yellow-500">
-              Local
+              {t("sidebar.local")}
             </Badge>
           )}
         </div>
@@ -85,10 +87,10 @@ export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: Si
               onClick={logout}
             >
               <LogOut className="h-4 w-4" />
-              Log out
+              {t("sidebar.logout")}
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">Sign out of your account</TooltipContent>
+          <TooltipContent side="right">{t("sidebar.logoutTooltip")}</TooltipContent>
         </Tooltip>
       </div>
     </div>

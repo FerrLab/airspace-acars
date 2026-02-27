@@ -14,15 +14,61 @@ import (
 
 const discordClientID = "1471884432234381494"
 
-var idlePhrases = []string{
-	"Going through security at %s",
-	"Checking weather in %s",
-	"Grabbing coffee in %s",
-	"Pre-flighting in %s",
-	"Reviewing charts at %s",
-	"In the crew lounge at %s",
-	"Loading cargo in %s",
-	"Briefing crew in %s",
+var idlePhrasesI18n = map[string][]string{
+	"en": {
+		"Going through security at %s",
+		"Checking weather in %s",
+		"Grabbing coffee in %s",
+		"Pre-flighting in %s",
+		"Reviewing charts at %s",
+		"In the crew lounge at %s",
+		"Loading cargo in %s",
+		"Briefing crew in %s",
+	},
+	"es": {
+		"Pasando seguridad en %s",
+		"Revisando el clima en %s",
+		"Tomando un café en %s",
+		"Pre-vuelo en %s",
+		"Revisando cartas en %s",
+		"En la sala de tripulación en %s",
+		"Cargando en %s",
+		"Briefing de tripulación en %s",
+	},
+	"pt": {
+		"Passando pela segurança em %s",
+		"Verificando o clima em %s",
+		"Tomando um café em %s",
+		"Pré-voo em %s",
+		"Revisando cartas em %s",
+		"Na sala da tripulação em %s",
+		"Carregando em %s",
+		"Briefing da tripulação em %s",
+	},
+	"fr": {
+		"Passage de la sécurité à %s",
+		"Vérification de la météo à %s",
+		"Pause café à %s",
+		"Pré-vol à %s",
+		"Révision des cartes à %s",
+		"Dans le salon équipage à %s",
+		"Chargement à %s",
+		"Briefing équipage à %s",
+	},
+}
+
+var flyingToI18n = map[string]string{
+	"en": "Flying to %s",
+	"es": "Volando a %s",
+	"pt": "Voando para %s",
+	"fr": "En vol vers %s",
+}
+
+var standbyI18n = map[string]string{
+	"en": "Standing by for dispatch",
+	"es": "En espera de despacho",
+	"pt": "Aguardando despacho",
+	"fr": "En attente de dispatch",
 }
 
 type DiscordService struct {
@@ -58,7 +104,7 @@ func NewDiscordService(settings *SettingsService, auth *AuthService, flight *Fli
 		auth:       auth,
 		flight:     flight,
 		nudge:      make(chan struct{}, 1),
-		phraseIdx:  rand.Intn(len(idlePhrases)),
+		phraseIdx:  rand.Intn(len(idlePhrasesI18n["en"])),
 		phraseTime: time.Now(),
 	}
 }
@@ -254,6 +300,14 @@ func (d *DiscordService) resolveTenant() (string, string) {
 	return "", ""
 }
 
+func (d *DiscordService) lang() string {
+	lang := d.settings.GetSettings().Language
+	if lang == "" {
+		return "en"
+	}
+	return lang
+}
+
 func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string]interface{} {
 	d.flight.mu.Lock()
 	state := d.flight.state
@@ -262,6 +316,7 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 	startTime := d.flight.startTime
 	d.flight.mu.Unlock()
 
+	lang := d.lang()
 	activity := map[string]interface{}{}
 
 	if tenantLogo != "" {
@@ -277,8 +332,12 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 			details = fmt.Sprintf("%s — %s", tenantName, callsign)
 		}
 		arrCity := d.cityFromBooking("arrival", arrival)
+		flyFmt := flyingToI18n[lang]
+		if flyFmt == "" {
+			flyFmt = flyingToI18n["en"]
+		}
 		activity["details"] = details
-		activity["state"] = fmt.Sprintf("Flying to %s", arrCity)
+		activity["state"] = fmt.Sprintf(flyFmt, arrCity)
 		activity["timestamps"] = map[string]interface{}{
 			"start": startTime.Unix(),
 		}
@@ -289,7 +348,11 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 			dep := d.cityFromBooking("departure", d.bookingField(booking, "departure", "dep"))
 			activity["state"] = d.idlePhrase(dep)
 		} else {
-			activity["state"] = "Standing by for dispatch"
+			standby := standbyI18n[lang]
+			if standby == "" {
+				standby = standbyI18n["en"]
+			}
+			activity["state"] = standby
 		}
 	}
 
@@ -332,12 +395,21 @@ func (d *DiscordService) cityFromBooking(which, fallbackCode string) string {
 }
 
 func (d *DiscordService) idlePhrase(city string) string {
+	lang := d.lang()
 	if city == "" {
-		return "Standing by for dispatch"
+		standby := standbyI18n[lang]
+		if standby == "" {
+			standby = standbyI18n["en"]
+		}
+		return standby
+	}
+	phrases := idlePhrasesI18n[lang]
+	if len(phrases) == 0 {
+		phrases = idlePhrasesI18n["en"]
 	}
 	if time.Since(d.phraseTime) > 2*time.Minute {
-		d.phraseIdx = (d.phraseIdx + 1) % len(idlePhrases)
+		d.phraseIdx = (d.phraseIdx + 1) % len(phrases)
 		d.phraseTime = time.Now()
 	}
-	return fmt.Sprintf(idlePhrases[d.phraseIdx], city)
+	return fmt.Sprintf(phrases[d.phraseIdx%len(phrases)], city)
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/context/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ interface DeviceCodeAuthProps {
 }
 
 export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
+  const { t } = useTranslation();
   const { tenant, setAuthenticated } = useAuth();
   const [userCode, setUserCode] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "polling" | "success" | "expired" | "error">("idle");
@@ -95,9 +97,9 @@ export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Radio className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-2xl tracking-tight">Airspace ACARS</CardTitle>
+          <CardTitle className="text-2xl tracking-tight">{t("auth.title")}</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Signing in to {tenant?.name ?? "your organization"}
+            {t("auth.signingIn", { org: tenant?.name ?? "your organization" })}
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -111,7 +113,7 @@ export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
             <>
               <div className="text-center">
                 <p className="mb-3 text-sm text-muted-foreground">
-                  Enter this code on the authorization page
+                  {t("auth.enterCode")}
                 </p>
                 <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted px-6 py-3">
                   <span className="font-mono text-3xl font-bold tracking-[0.3em] tabular-nums">
@@ -123,7 +125,7 @@ export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
               <div className="flex justify-center">
                 <Button variant="outline" onClick={handleOpenAuth}>
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  Open authorization page
+                  {t("auth.openAuth")}
                 </Button>
               </div>
 
@@ -132,12 +134,12 @@ export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
                   <>
                     <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">
-                      Waiting for authorization...
+                      {t("auth.waiting")}
                     </span>
                   </>
                 ) : (
                   <Badge variant="default" className="bg-green-600">
-                    Authorized
+                    {t("auth.authorized")}
                   </Badge>
                 )}
               </div>
@@ -148,10 +150,10 @@ export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
             <div className="space-y-4 text-center py-4">
               <div className="flex items-center justify-center gap-2 text-amber-500">
                 <AlertTriangle className="h-5 w-5" />
-                <p className="text-sm font-medium">Code expired</p>
+                <p className="text-sm font-medium">{t("auth.expired")}</p>
               </div>
               <Button variant="outline" onClick={startAuth}>
-                Try again
+                {t("auth.tryAgain")}
               </Button>
             </div>
           )}
@@ -159,10 +161,10 @@ export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
           {status === "error" && (
             <div className="text-center py-8">
               <p className="text-sm text-destructive">
-                Failed to start authentication. Please try again.
+                {t("auth.failed")}
               </p>
               <Button variant="outline" className="mt-4" onClick={startAuth}>
-                Retry
+                {t("auth.retry")}
               </Button>
             </div>
           )}
@@ -170,7 +172,7 @@ export function DeviceCodeAuth({ onBack }: DeviceCodeAuthProps) {
           <div className="flex justify-center">
             <Button variant="ghost" size="sm" onClick={onBack}>
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Change organization
+              {t("auth.changeOrg")}
             </Button>
           </div>
         </CardContent>

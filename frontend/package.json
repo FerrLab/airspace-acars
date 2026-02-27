@@ -17,10 +17,12 @@
     "@wailsio/runtime": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "i18next": "^25.8.13",
     "lucide-react": "^0.575.0",
     "radix-ui": "^1.4.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-i18next": "^16.5.4",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.0"
   },

@@ -17,6 +17,7 @@ type Settings struct {
 	LocalMode       bool   `json:"localMode"`
 	ChatSound       string `json:"chatSound"`
 	DiscordPresence bool   `json:"discordPresence"`
+	Language        string `json:"language"`
 }
 
 type SettingsService struct {
@@ -39,6 +40,7 @@ func NewSettingsService() *SettingsService {
 			APIBaseURL:      "https://airspace.ferrlab.com",
 			ChatSound:       "default",
 			DiscordPresence: true,
+			Language:        "en",
 		},
 	}
 	s.load()
