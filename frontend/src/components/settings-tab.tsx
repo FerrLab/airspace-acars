@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useTheme } from "@/context/theme-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Volume2 } from "lucide-react";
 import { SettingsService, UpdateService, DiscordService } from "../../bindings/airspace-acars";
 import { useDevMode } from "@/hooks/use-dev-mode";
-import { CHAT_SOUNDS, CHAT_SOUND_LABELS, playNotificationPreview, type ChatSoundType } from "@/lib/notification-sounds";
+import { CHAT_SOUNDS, playNotificationPreview, type ChatSoundType } from "@/lib/notification-sounds";
+import { LANGUAGES } from "@/lib/i18n";
 
 interface SettingsTabProps {
   localMode?: boolean;
@@ -18,12 +20,14 @@ interface SettingsTabProps {
 }
 
 export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTabProps) {
+  const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
   const devMode = useDevMode();
   const [simType, setSimType] = useState("auto");
   const [chatSound, setChatSound] = useState<ChatSoundType>("default");
   const [discordPresence, setDiscordPresence] = useState(true);
   const [apiBaseURL, setApiBaseURL] = useState("");
+  const [language, setLanguage] = useState(i18n.language);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -34,6 +38,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         setChatSound((settings.chatSound as ChatSoundType) || "default");
         setDiscordPresence(settings.discordPresence !== false);
         setApiBaseURL(settings.apiBaseURL);
+        if (settings.language) setLanguage(settings.language);
         if (settings.theme === "light" || settings.theme === "dark") {
           setTheme(settings.theme);
         }
@@ -96,14 +101,23 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
     } catch { /* ignore */ }
   };
 
+  const handleLanguageChange = async (value: string) => {
+    setLanguage(value);
+    await i18n.changeLanguage(value);
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, language: value });
+    } catch { /* ignore */ }
+  };
+
   if (!loaded) return null;
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight">Settings</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.title")}</h2>
         <p className="text-sm text-muted-foreground">
-          Configure your application preferences
+          {t("settings.subtitle")}
         </p>
       </div>
 
@@ -112,14 +126,14 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
       {devMode && (
         <Card className="border-border/50">
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Connection</CardTitle>
+            <CardTitle className="text-sm font-medium">{t("settings.connection")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-4">
               <div className="shrink-0">
-                <p className="text-sm font-medium">API Base URL</p>
+                <p className="text-sm font-medium">{t("settings.apiBaseUrl")}</p>
                 <p className="text-xs text-muted-foreground">
-                  Airspace platform endpoint
+                  {t("settings.apiBaseUrlDesc")}
                 </p>
               </div>
               <Input
@@ -132,9 +146,9 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">Local mode</p>
+                <p className="text-sm font-medium">{t("settings.localMode")}</p>
                 <p className="text-xs text-muted-foreground">
-                  Only use authentication, disable flights, chat, and cabin audio
+                  {t("settings.localModeDesc")}
                 </p>
               </div>
               <Switch checked={localMode} onCheckedChange={handleLocalModeToggle} />
@@ -145,13 +159,39 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 
       <Card className="border-border/50">
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Appearance</CardTitle>
+          <CardTitle className="text-sm font-medium">{t("settings.language")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Dark mode</p>
-              <p className="text-xs text-muted-foreground">Toggle dark theme</p>
+              <p className="text-sm font-medium">{t("settings.languageLabel")}</p>
+              <p className="text-xs text-muted-foreground">{t("settings.languageDesc")}</p>
+            </div>
+            <Select value={language} onValueChange={handleLanguageChange}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((lang) => (
+                  <SelectItem key={lang.code} value={lang.code}>
+                    {lang.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">{t("settings.appearance")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{t("settings.darkMode")}</p>
+              <p className="text-xs text-muted-foreground">{t("settings.darkModeDesc")}</p>
             </div>
             <Switch checked={theme === "dark"} onCheckedChange={handleThemeToggle} />
           </div>
@@ -160,14 +200,14 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 
       <Card className="border-border/50">
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Notifications</CardTitle>
+          <CardTitle className="text-sm font-medium">{t("settings.notifications")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Chat notification sound</p>
+              <p className="text-sm font-medium">{t("settings.chatSound")}</p>
               <p className="text-xs text-muted-foreground">
-                Sound played when a new message arrives
+                {t("settings.chatSoundDesc")}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -178,7 +218,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
                 <SelectContent>
                   {CHAT_SOUNDS.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {CHAT_SOUND_LABELS[s]}
+                      {t(`sounds.${s}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -199,14 +239,14 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 
       <Card className="border-border/50">
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Discord</CardTitle>
+          <CardTitle className="text-sm font-medium">{t("settings.discord")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Rich Presence</p>
+              <p className="text-sm font-medium">{t("settings.richPresence")}</p>
               <p className="text-xs text-muted-foreground">
-                Show your airline and flight status in Discord
+                {t("settings.richPresenceDesc")}
               </p>
             </div>
             <Switch checked={discordPresence} onCheckedChange={handleDiscordToggle} />
@@ -216,14 +256,14 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 
       <Card className="border-border/50">
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Simulator</CardTitle>
+          <CardTitle className="text-sm font-medium">{t("settings.simulator")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Simulator type</p>
+              <p className="text-sm font-medium">{t("settings.simType")}</p>
               <p className="text-xs text-muted-foreground">
-                Choose which simulator to connect to
+                {t("settings.simTypeDesc")}
               </p>
             </div>
             <Select value={simType} onValueChange={handleSimTypeChange}>
@@ -231,9 +271,9 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto-detect</SelectItem>
-                <SelectItem value="simconnect">SimConnect (MSFS)</SelectItem>
-                <SelectItem value="xplane">X-Plane (UDP)</SelectItem>
+                <SelectItem value="auto">{t("settings.simAuto")}</SelectItem>
+                <SelectItem value="simconnect">{t("settings.simSimconnect")}</SelectItem>
+                <SelectItem value="xplane">{t("settings.simXplane")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -248,6 +288,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 type UpdateStatus = "idle" | "checking" | "up-to-date" | "update-available" | "downloading" | "done";
 
 function AboutSection() {
+  const { t } = useTranslation();
   const [version, setVersion] = useState("...");
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [latestVersion, setLatestVersion] = useState("");
@@ -289,20 +330,20 @@ function AboutSection() {
   return (
     <Card className="border-border/50">
       <CardHeader>
-        <CardTitle className="text-sm font-medium">About</CardTitle>
+        <CardTitle className="text-sm font-medium">{t("settings.about")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1.5 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Application</span>
-            <span>Airspace ACARS</span>
+            <span className="text-muted-foreground">{t("settings.application")}</span>
+            <span>{t("settings.appName")}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Version</span>
+            <span className="text-muted-foreground">{t("settings.version")}</span>
             <span className="tabular-nums">{version}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Runtime</span>
+            <span className="text-muted-foreground">{t("settings.runtime")}</span>
             <span>Wails v3</span>
           </div>
         </div>
@@ -311,19 +352,19 @@ function AboutSection() {
 
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <p className="text-sm font-medium">Updates</p>
+            <p className="text-sm font-medium">{t("settings.updates")}</p>
             <p className="text-xs text-muted-foreground">
-              {status === "checking" && "Checking for updates..."}
-              {status === "up-to-date" && "You're on the latest version."}
+              {status === "checking" && t("settings.checkingUpdates")}
+              {status === "up-to-date" && t("settings.upToDate")}
               {status === "update-available" && (
                 <>
-                  New version available:{" "}
+                  {t("settings.updateAvailable")}{" "}
                   <Badge variant="secondary" className="ml-1">{latestVersion}</Badge>
                 </>
               )}
-              {status === "downloading" && "Downloading update..."}
-              {status === "done" && "Update installed — restart to apply."}
-              {status === "idle" && "Check for new releases from GitHub."}
+              {status === "downloading" && t("settings.downloading")}
+              {status === "done" && t("settings.updateDone")}
+              {status === "idle" && t("settings.checkIdle")}
             </p>
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
@@ -331,22 +372,22 @@ function AboutSection() {
           <div className="flex gap-2 shrink-0">
             {(status === "idle" || status === "up-to-date") && (
               <Button variant="outline" size="sm" onClick={handleCheck}>
-                Check for updates
+                {t("settings.checkForUpdates")}
               </Button>
             )}
             {status === "checking" && (
               <Button variant="outline" size="sm" disabled>
-                Checking...
+                {t("settings.checking")}
               </Button>
             )}
             {status === "update-available" && (
               <Button size="sm" onClick={handleUpdate}>
-                Update now
+                {t("settings.updateNow")}
               </Button>
             )}
             {status === "downloading" && (
               <Button size="sm" disabled>
-                Downloading...
+                {t("settings.downloadingBtn")}
               </Button>
             )}
           </div>

@@ -9,8 +9,9 @@ export function useDevMode(): boolean {
   useEffect(() => {
     if (cached !== null) return;
     UpdateService.GetCurrentVersion().then((v) => {
-      cached = v === "dev" || v.includes("-beta");
-      setDevMode(cached);
+      const isDev = v === "dev" || v.includes("-beta");
+      cached = isDev;
+      setDevMode(isDev);
     }).catch(() => {});
   }, []);
 

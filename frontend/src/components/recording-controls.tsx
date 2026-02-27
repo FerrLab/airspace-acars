@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Circle, Square, Download } from "lucide-react";
@@ -10,6 +11,7 @@ interface RecordingControlsProps {
 }
 
 export function RecordingControls({ isRecording, isConnected }: RecordingControlsProps) {
+  const { t } = useTranslation();
   const [duration, setDuration] = useState(0);
   const [dataCount, setDataCount] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -55,13 +57,13 @@ export function RecordingControls({ isRecording, isConnected }: RecordingControl
 
   const handleExport = async () => {
     try {
-      const filePath = prompt("Enter file path for CSV export:", "flight_data.csv");
+      const filePath = prompt(t("recording.exportPrompt"), "flight_data.csv");
       if (!filePath) return;
       await FlightDataService.ExportCSV(filePath);
-      alert("CSV exported successfully! Database purged.");
+      alert(t("recording.exportSuccess"));
     } catch (e: any) {
       console.error("Failed to export CSV:", e);
-      alert("Export failed: " + e);
+      alert(t("recording.exportFailed", { error: String(e) }));
     }
   };
 
@@ -81,7 +83,7 @@ export function RecordingControls({ isRecording, isConnected }: RecordingControl
           className="gap-2"
         >
           <Circle className="h-3 w-3 fill-current" />
-          Start Recording
+          {t("recording.startRecording")}
         </Button>
       ) : (
         <Button
@@ -91,7 +93,7 @@ export function RecordingControls({ isRecording, isConnected }: RecordingControl
           className="gap-2"
         >
           <Square className="h-3 w-3 fill-current" />
-          Stop
+          {t("recording.stop")}
         </Button>
       )}
 
@@ -102,7 +104,7 @@ export function RecordingControls({ isRecording, isConnected }: RecordingControl
             {formatDuration(duration)}
           </Badge>
           <span className="text-xs text-muted-foreground tabular-nums">
-            {dataCount} points
+            {t("recording.points", { count: dataCount })}
           </span>
         </>
       )}
@@ -115,7 +117,7 @@ export function RecordingControls({ isRecording, isConnected }: RecordingControl
         className="gap-2 ml-auto"
       >
         <Download className="h-3 w-3" />
-        Export CSV
+        {t("recording.exportCsv")}
       </Button>
     </div>
   );

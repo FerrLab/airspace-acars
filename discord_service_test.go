@@ -15,6 +15,7 @@ func newTestDiscordService() *DiscordService {
 		settings: Settings{
 			APIBaseURL:      "http://localhost",
 			DiscordPresence: true,
+			Language:        "en",
 		},
 	}
 	auth := &AuthService{
@@ -120,7 +121,7 @@ func TestIdlePhrase(t *testing.T) {
 		d.phraseIdx = 0
 		d.phraseTime = time.Now()
 		got := d.idlePhrase("London")
-		assert.Equal(t, fmt.Sprintf(idlePhrases[0], "London"), got)
+		assert.Equal(t, fmt.Sprintf(idlePhrasesI18n["en"][0], "London"), got)
 	})
 
 	t.Run("rotates after 2 minutes", func(t *testing.T) {
@@ -131,7 +132,7 @@ func TestIdlePhrase(t *testing.T) {
 	})
 
 	t.Run("wraps phrase index", func(t *testing.T) {
-		d.phraseIdx = len(idlePhrases) - 1
+		d.phraseIdx = len(idlePhrasesI18n["en"]) - 1
 		d.phraseTime = time.Now().Add(-3 * time.Minute)
 		_ = d.idlePhrase("London")
 		assert.Equal(t, 0, d.phraseIdx)
@@ -173,7 +174,7 @@ func TestBuildActivity(t *testing.T) {
 		activity := d.buildActivity("Airline Co", "")
 
 		assert.Equal(t, "Airline Co", activity["details"])
-		assert.Equal(t, fmt.Sprintf(idlePhrases[0], "London"), activity["state"])
+		assert.Equal(t, fmt.Sprintf(idlePhrasesI18n["en"][0], "London"), activity["state"])
 		assert.NotContains(t, activity, "timestamps")
 		assert.NotContains(t, activity, "assets") // no logo
 	})

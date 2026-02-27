@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +77,7 @@ interface ChatTabProps {
 }
 
 export function ChatTab({ localMode = false }: ChatTabProps) {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -276,11 +278,11 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
       <div className="flex h-full flex-col items-center justify-center">
         <div className="text-center space-y-2">
           <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">
-            Local Mode
+            {t("acars.localMode")}
           </Badge>
-          <h2 className="text-lg font-semibold tracking-tight">Chat</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("chat.title")}</h2>
           <p className="text-sm text-muted-foreground">
-            Chat is unavailable in local mode
+            {t("chat.unavailable")}
           </p>
         </div>
       </div>
@@ -291,13 +293,13 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between pb-4">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Chat</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("chat.title")}</h2>
           <p className="text-sm text-muted-foreground">
-            Dispatch communication
+            {t("chat.subtitle")}
           </p>
         </div>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {messages.length} messages
+          {t("chat.messageCount", { count: messages.length })}
         </span>
       </div>
 
@@ -311,12 +313,12 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
           <div ref={sentinelRef} className="h-1" />
           {loadingMore && (
             <p className="text-center text-xs text-muted-foreground py-2">
-              Loading older messages...
+              {t("chat.loadingOlder")}
             </p>
           )}
           {sorted.length === 0 && (
             <p className="text-center text-sm text-muted-foreground py-8">
-              No messages yet
+              {t("chat.noMessages")}
             </p>
           )}
           {sorted.map((msg) => {
@@ -337,14 +339,14 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
             className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow-lg"
           >
             <ChevronDown className="h-3 w-3" />
-            New messages
+            {t("chat.newMessages")}
           </button>
         )}
       </div>
 
       <div className="flex items-center gap-2 pt-4">
         <Input
-          placeholder="Type a message..."
+          placeholder={t("chat.placeholder")}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -379,13 +381,15 @@ function ChatBubble({
   message: Message;
   sender: Sender;
 }) {
+  const { t } = useTranslation();
+
   if (sender === "acars") {
     return (
       <div className="flex justify-start">
         <div className="max-w-[75%] rounded-lg border border-border bg-primary/5 px-3 py-2">
           <div className="flex items-center gap-1.5 mb-1">
             <Plane className="h-3 w-3 text-primary" />
-            <span className="text-[10px] font-medium text-primary">ACARS</span>
+            <span className="text-[10px] font-medium text-primary">{t("chat.acarsLabel")}</span>
           </div>
           <p className="text-sm font-mono whitespace-pre-wrap">{message.text}</p>
           <span className="block text-[10px] text-muted-foreground mt-1">

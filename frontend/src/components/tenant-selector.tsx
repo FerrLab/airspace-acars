@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth, type TenantInfo } from "@/context/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ interface TenantSelectorProps {
 }
 
 export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
+  const { t } = useTranslation();
   const { setTenant, storedTokens, loginWithStoredToken } = useAuth();
   const [tenants, setTenants] = useState<TenantInfo[]>([]);
   const [search, setSearch] = useState("");
@@ -47,9 +49,9 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
   const unauthenticatedTenants = tenants.filter((t) => !storedTokens[t.id]);
 
   const filteredUnauthenticated = unauthenticatedTenants.filter(
-    (t) =>
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.domain.toLowerCase().includes(search.toLowerCase())
+    (tenant) =>
+      tenant.name.toLowerCase().includes(search.toLowerCase()) ||
+      tenant.domain.toLowerCase().includes(search.toLowerCase())
   );
 
   async function handleSelectAuthenticated(tenant: TenantInfo) {
@@ -71,9 +73,9 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center">
             <AppLogo className="h-12 w-12" />
           </div>
-          <CardTitle className="text-2xl tracking-tight">Airspace ACARS</CardTitle>
+          <CardTitle className="text-2xl tracking-tight">{t("tenant.title")}</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Select your organization to continue
+            {t("tenant.subtitle")}
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -86,7 +88,7 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
           {status === "error" && (
             <div className="text-center py-8">
               <p className="text-sm text-destructive">
-                Failed to load organizations. Please restart the app.
+                {t("tenant.loadError")}
               </p>
             </div>
           )}
@@ -96,7 +98,7 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
               {authenticatedTenants.length > 0 && (
                 <>
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Logged in
+                    {t("tenant.loggedIn")}
                   </p>
                   <div className="space-y-1">
                     {authenticatedTenants.map((tenant) => (
@@ -129,12 +131,12 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
               )}
 
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                {authenticatedTenants.length > 0 ? "Other organizations" : "Organizations"}
+                {authenticatedTenants.length > 0 ? t("tenant.otherOrgs") : t("tenant.organizations")}
               </p>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search organizations..."
+                  placeholder={t("tenant.search")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9"
@@ -166,7 +168,7 @@ export function TenantSelector({ onTenantSelected }: TenantSelectorProps) {
                 ))}
                 {filteredUnauthenticated.length === 0 && (
                   <p className="py-4 text-center text-sm text-muted-foreground">
-                    No organizations found
+                    {t("tenant.noResults")}
                   </p>
                 )}
               </div>

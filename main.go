@@ -102,13 +102,24 @@ func main() {
 	})
 
 	// System tray
+	trayLabels := map[string][2]string{
+		"en": {"Show", "Quit"},
+		"es": {"Mostrar", "Salir"},
+		"pt": {"Mostrar", "Sair"},
+		"fr": {"Afficher", "Quitter"},
+	}
+	lang := settingsService.GetSettings().Language
+	labels := trayLabels[lang]
+	if labels == [2]string{} {
+		labels = trayLabels["en"]
+	}
 	trayMenu := app.NewMenu()
-	trayMenu.Add("Show").OnClick(func(ctx *application.Context) {
+	trayMenu.Add(labels[0]).OnClick(func(ctx *application.Context) {
 		window.Show()
 		window.Focus()
 	})
 	trayMenu.AddSeparator()
-	trayMenu.Add("Quit").OnClick(func(ctx *application.Context) {
+	trayMenu.Add(labels[1]).OnClick(func(ctx *application.Context) {
 		app.Quit()
 	})
 
