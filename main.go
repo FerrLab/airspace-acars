@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -21,11 +22,18 @@ var appIcon []byte
 func init() {
 	application.RegisterEvent[*FlightData]("flight-data")
 	application.RegisterEvent[bool]("recording-state")
-	application.RegisterEvent[bool]("connection-state")
+	application.RegisterEvent[string]("connection-state")
 	application.RegisterEvent[string]("flight-state")
 }
 
 func main() {
+	si, err := NewSingleInstance()
+	if err != nil {
+		slog.Info("another instance is running, bringing to foreground")
+		os.Exit(0)
+	}
+	defer si.Close()
+
 	db, err := initDB()
 	if err != nil {
 		log.Fatal("failed to init database:", err)
@@ -39,6 +47,7 @@ func main() {
 	chatService := NewChatService(authService)
 	audioService := NewAudioService(authService)
 	updateService := &UpdateService{}
+	discordService := NewDiscordService(settingsService, authService, flightService)
 
 	app := application.New(application.Options{
 		Name:        "Airspace ACARS",
@@ -51,6 +60,7 @@ func main() {
 			application.NewService(chatService),
 			application.NewService(audioService),
 			application.NewService(updateService),
+			application.NewService(discordService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -80,6 +90,11 @@ func main() {
 		URL:              "/",
 	})
 
+	si.SetOnShow(func() {
+		window.Show()
+		window.Focus()
+	})
+
 	// Hide to tray instead of closing
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
@@ -106,6 +121,8 @@ func main() {
 		window.Focus()
 	})
 
+	discordService.Start()
+
 	go func() {
 		time.Sleep(time.Second)
 
@@ -114,8 +131,10 @@ func main() {
 
 		// Auto-connect to sim
 		settings := settingsService.GetSettings()
-		if err := flightDataService.ConnectSim(settings.SimType); err != nil {
+		if adapter, err := flightDataService.ConnectSim(settings.SimType); err != nil {
 			slog.Warn("auto-connect failed", "error", err)
+		} else {
+			slog.Info("auto-connected", "adapter", adapter)
 		}
 	}()
 

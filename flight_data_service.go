@@ -24,6 +24,7 @@ type FlightDataService struct {
 	dataCount    int
 	streaming    bool
 	streamStopCh chan struct{}
+	simActive    bool
 }
 
 func NewFlightDataService(db *sql.DB) *FlightDataService {
@@ -36,9 +37,8 @@ func (f *FlightDataService) setApp(app *application.App) {
 	f.app = app
 }
 
-func (f *FlightDataService) ConnectSim(simType string) error {
+func (f *FlightDataService) ConnectSim(simType string) (string, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	if f.connector != nil {
 		f.stopDataStreamLocked()
@@ -54,7 +54,8 @@ func (f *FlightDataService) ConnectSim(simType string) error {
 	case "simconnect":
 		connector = NewSimConnectAdapter()
 		if connector == nil {
-			return fmt.Errorf("SimConnect not available on this platform")
+			f.mu.Unlock()
+			return "", fmt.Errorf("SimConnect not available on this platform")
 		}
 	default: // "auto"
 		sc := NewSimConnectAdapter()
@@ -73,19 +74,38 @@ func (f *FlightDataService) ConnectSim(simType string) error {
 
 	if !connected {
 		if err := connector.Connect(); err != nil {
-			return fmt.Errorf("connect to %s: %w", connector.Name(), err)
+			f.mu.Unlock()
+			return "", fmt.Errorf("connect to %s: %w", connector.Name(), err)
 		}
 	}
 
 	f.connector = connector
-	slog.Info("connected to simulator", "adapter", connector.Name())
-
-	if f.app != nil {
-		f.app.Event.Emit("connection-state", true)
-	}
+	f.simActive = false
+	slog.Info("adapter opened, waiting for data", "adapter", connector.Name())
 
 	f.startDataStreamLocked()
-	return nil
+	f.mu.Unlock()
+
+	// Wait up to 3 seconds for actual simulator data
+	deadline := time.After(3 * time.Second)
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			f.DisconnectSim()
+			return "", fmt.Errorf("no data received from %s — is the simulator running?", connector.Name())
+		case <-tick.C:
+			f.mu.Lock()
+			active := f.simActive
+			f.mu.Unlock()
+			if active {
+				slog.Info("connected to simulator", "adapter", connector.Name())
+				return connector.Name(), nil
+			}
+		}
+	}
 }
 
 func (f *FlightDataService) DisconnectSim() {
@@ -99,15 +119,25 @@ func (f *FlightDataService) DisconnectSim() {
 		f.connector = nil
 	}
 
+	f.simActive = false
 	if f.app != nil {
-		f.app.Event.Emit("connection-state", false)
+		f.app.Event.Emit("connection-state", "")
 	}
 }
 
 func (f *FlightDataService) IsConnected() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.connector != nil
+	return f.simActive
+}
+
+func (f *FlightDataService) ConnectedAdapter() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.simActive && f.connector != nil {
+		return f.connector.Name()
+	}
+	return ""
 }
 
 func (f *FlightDataService) StartRecording() error {
@@ -282,6 +312,7 @@ func (f *FlightDataService) dataStreamLoop() {
 			f.mu.Lock()
 			connector := f.connector
 			recording := f.recording
+			wasActive := f.simActive
 			f.mu.Unlock()
 
 			if connector == nil {
@@ -290,8 +321,26 @@ func (f *FlightDataService) dataStreamLoop() {
 
 			data, err := connector.GetFlightData()
 			if err != nil {
-				slog.Error("data stream: failed to get flight data", "error", err)
+				if wasActive {
+					f.mu.Lock()
+					f.simActive = false
+					f.mu.Unlock()
+					if f.app != nil {
+						f.app.Event.Emit("connection-state", "")
+					}
+					slog.Warn("simulator data lost", "error", err)
+				}
 				continue
+			}
+
+			if !wasActive {
+				f.mu.Lock()
+				f.simActive = true
+				f.mu.Unlock()
+				if f.app != nil {
+					f.app.Event.Emit("connection-state", connector.Name())
+				}
+				slog.Info("simulator data received", "adapter", connector.Name())
 			}
 
 			if f.app != nil {

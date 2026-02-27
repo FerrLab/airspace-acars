@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Send, Plane, ChevronDown } from "lucide-react";
-import { ChatService } from "../../bindings/airspace-acars";
+import { ChatService, SettingsService } from "../../bindings/airspace-acars";
+import { generateNotificationSound, type ChatSoundType } from "@/lib/notification-sounds";
 
 interface Message {
   id: number;
@@ -34,51 +35,33 @@ function formatTime(iso: string): string {
   }
 }
 
-function usePingSound() {
+function usePingSound(soundType: ChatSoundType) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Generate a short ping tone as a data URL
-    const ctx = new AudioContext();
-    const duration = 0.15;
-    const sampleRate = ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, sampleRate * duration, sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      const t = i / sampleRate;
-      data[i] = Math.sin(2 * Math.PI * 880 * t) * Math.exp(-t * 20) * 0.3;
+    if (urlRef.current) {
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
     }
-    // Encode to wav data URL
-    const numFrames = buffer.length;
-    const wavBuf = new ArrayBuffer(44 + numFrames * 2);
-    const view = new DataView(wavBuf);
-    const writeStr = (offset: number, s: string) => {
-      for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
-    };
-    writeStr(0, "RIFF");
-    view.setUint32(4, 36 + numFrames * 2, true);
-    writeStr(8, "WAVE");
-    writeStr(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeStr(36, "data");
-    view.setUint32(40, numFrames * 2, true);
-    for (let i = 0; i < numFrames; i++) {
-      const s = Math.max(-1, Math.min(1, data[i]));
-      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    const blob = new Blob([wavBuf], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
-    audioRef.current = new Audio(url);
-    ctx.close();
 
-    return () => URL.revokeObjectURL(url);
-  }, []);
+    const blob = generateNotificationSound(soundType);
+    if (!blob) {
+      audioRef.current = null;
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    urlRef.current = url;
+    audioRef.current = new Audio(url);
+
+    return () => {
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
+    };
+  }, [soundType]);
 
   return useCallback(() => {
     if (audioRef.current) {
@@ -103,13 +86,22 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
   const [lastPage, setLastPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [chatSound, setChatSound] = useState<ChatSoundType>("default");
+
+  useEffect(() => {
+    SettingsService.GetSettings()
+      .then((s) => {
+        if (s.chatSound) setChatSound(s.chatSound as ChatSoundType);
+      })
+      .catch(() => {});
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevScrollHeightRef = useRef(0);
   const initialLoadDone = useRef(false);
-  const playPing = usePingSound();
+  const playPing = usePingSound(chatSound);
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({
@@ -178,15 +170,8 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
   // Auto-scroll when new messages appear
   useEffect(() => {
     if (!initialLoadDone.current) return;
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const nearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    if (nearBottom) {
-      scrollToBottom();
-    } else {
-      setShowScrollBtn(true);
-    }
+    scrollToBottom();
+    setShowScrollBtn(false);
   }, [messages.length, scrollToBottom]);
 
   // Infinite scroll: load older pages when scrolled to top
@@ -197,7 +182,7 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
 
     const observer = new IntersectionObserver(
       async ([entry]) => {
-        if (!entry.isIntersecting || loadingMore) return;
+        if (!entry.isIntersecting || loadingMore || messages.length === 0) return;
 
         // Figure out which page to load next
         const currentPages = Math.ceil(messages.length / 15); // assume ~15 per page

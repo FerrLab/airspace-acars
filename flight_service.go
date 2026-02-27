@@ -56,6 +56,18 @@ func (f *FlightService) GetBooking() (map[string]interface{}, error) {
 }
 
 func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
+	// Validate simulator conditions before locking flight state
+	fd, err := f.flightData.GetFlightDataNow()
+	if err != nil {
+		return fmt.Errorf("simulator not connected")
+	}
+	if !fd.Sensors.OnGround {
+		return fmt.Errorf("aircraft must be on the ground to start a flight")
+	}
+	if fd.Attitude.GS >= 1.0 {
+		return fmt.Errorf("aircraft must be stationary to start a flight")
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -250,6 +262,7 @@ func (f *FlightService) buildPositionReport(fd *FlightData) map[string]interface
 	engines := make([]map[string]interface{}, len(fd.Engines))
 	for i, e := range fd.Engines {
 		engines[i] = map[string]interface{}{
+			"exists":    e.Exists,
 			"running":   e.Running,
 			"n1":        m(e.N1, "%"),
 			"n2":        m(e.N2, "%"),
@@ -266,12 +279,19 @@ func (f *FlightService) buildPositionReport(fd *FlightData) map[string]interface
 		}
 	}
 
+	simulator := ""
+	if f.flightData != nil {
+		simulator = f.flightData.ConnectedAdapter()
+	}
+
 	return map[string]interface{}{
-		"callsign":    callsign,
-		"departure":   departure,
-		"arrival":     arrival,
-		"timestamp":   time.Now().UTC().Format(time.RFC3339),
-		"elapsedTime": m(elapsed, "s"),
+		"acarsVersion": Version,
+		"simulator":    simulator,
+		"callsign":     callsign,
+		"departure":    departure,
+		"arrival":      arrival,
+		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		"elapsedTime":  m(elapsed, "s"),
 		"position": map[string]interface{}{
 			"latitude":    m(fd.Position.Latitude, "deg"),
 			"longitude":   m(fd.Position.Longitude, "deg"),

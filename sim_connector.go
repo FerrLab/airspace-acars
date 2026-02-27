@@ -38,6 +38,7 @@ type AttitudeData struct {
 }
 
 type EngineData struct {
+	Exists      bool    `json:"exists"`
 	Running     bool    `json:"running"`
 	N1          float64 `json:"n1"`
 	N2          float64 `json:"n2"`

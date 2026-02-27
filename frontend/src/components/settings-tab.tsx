@@ -7,8 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { SettingsService, UpdateService } from "../../bindings/airspace-acars";
+import { Volume2 } from "lucide-react";
+import { SettingsService, UpdateService, DiscordService } from "../../bindings/airspace-acars";
 import { useDevMode } from "@/hooks/use-dev-mode";
+import { CHAT_SOUNDS, CHAT_SOUND_LABELS, playNotificationPreview, type ChatSoundType } from "@/lib/notification-sounds";
 
 interface SettingsTabProps {
   localMode?: boolean;
@@ -19,6 +21,8 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const { theme, setTheme } = useTheme();
   const devMode = useDevMode();
   const [simType, setSimType] = useState("auto");
+  const [chatSound, setChatSound] = useState<ChatSoundType>("default");
+  const [discordPresence, setDiscordPresence] = useState(true);
   const [apiBaseURL, setApiBaseURL] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -27,6 +31,8 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
       try {
         const settings = await SettingsService.GetSettings();
         setSimType(settings.simType);
+        setChatSound((settings.chatSound as ChatSoundType) || "default");
+        setDiscordPresence(settings.discordPresence !== false);
         setApiBaseURL(settings.apiBaseURL);
         if (settings.theme === "light" || settings.theme === "dark") {
           setTheme(settings.theme);
@@ -45,6 +51,25 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
     try {
       const settings = await SettingsService.GetSettings();
       await SettingsService.UpdateSettings({ ...settings, theme: newTheme });
+    } catch { /* ignore */ }
+  };
+
+  const handleChatSoundChange = async (value: string) => {
+    const sound = value as ChatSoundType;
+    setChatSound(sound);
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, chatSound: sound });
+    } catch { /* ignore */ }
+    playNotificationPreview(sound);
+  };
+
+  const handleDiscordToggle = async (checked: boolean) => {
+    setDiscordPresence(checked);
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, discordPresence: checked });
+      await DiscordService.SetEnabled(checked);
     } catch { /* ignore */ }
   };
 
@@ -129,6 +154,62 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
               <p className="text-xs text-muted-foreground">Toggle dark theme</p>
             </div>
             <Switch checked={theme === "dark"} onCheckedChange={handleThemeToggle} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Notifications</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Chat notification sound</p>
+              <p className="text-xs text-muted-foreground">
+                Sound played when a new message arrives
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={chatSound} onValueChange={handleChatSoundChange}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHAT_SOUNDS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {CHAT_SOUND_LABELS[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => playNotificationPreview(chatSound)}
+                disabled={chatSound === "none"}
+              >
+                <Volume2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Discord</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Rich Presence</p>
+              <p className="text-xs text-muted-foreground">
+                Show your airline and flight status in Discord
+              </p>
+            </div>
+            <Switch checked={discordPresence} onCheckedChange={handleDiscordToggle} />
           </div>
         </CardContent>
       </Card>

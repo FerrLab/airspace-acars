@@ -9,12 +9,14 @@ import (
 )
 
 type Settings struct {
-	Theme      string `json:"theme"`
-	SimType    string `json:"simType"`
-	XPlaneHost string `json:"xplaneHost"`
-	XPlanePort int    `json:"xplanePort"`
-	APIBaseURL string `json:"apiBaseURL"`
-	LocalMode  bool   `json:"localMode"`
+	Theme           string `json:"theme"`
+	SimType         string `json:"simType"`
+	XPlaneHost      string `json:"xplaneHost"`
+	XPlanePort      int    `json:"xplanePort"`
+	APIBaseURL      string `json:"apiBaseURL"`
+	LocalMode       bool   `json:"localMode"`
+	ChatSound       string `json:"chatSound"`
+	DiscordPresence bool   `json:"discordPresence"`
 }
 
 type SettingsService struct {
@@ -30,11 +32,13 @@ func NewSettingsService() *SettingsService {
 	s := &SettingsService{
 		filePath: fp,
 		settings: Settings{
-			Theme:      "dark",
-			SimType:    "auto",
-			XPlaneHost: "127.0.0.1",
-			XPlanePort: 49000,
-			APIBaseURL: "https://airspace.ferrlab.com",
+			Theme:           "dark",
+			SimType:         "auto",
+			XPlaneHost:      "127.0.0.1",
+			XPlanePort:      49000,
+			APIBaseURL:      "https://airspace.ferrlab.com",
+			ChatSound:       "default",
+			DiscordPresence: true,
 		},
 	}
 	s.load()

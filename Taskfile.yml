@@ -58,3 +58,20 @@ tasks:
     summary: Builds and runs the Docker image
     cmds:
       - task: common:run:docker
+
+  test:
+    summary: Runs all tests
+    cmds:
+      - task: test:go
+      - task: test:frontend
+
+  test:go:
+    summary: Runs Go backend tests
+    cmds:
+      - go test -v ./...
+
+  test:frontend:
+    summary: Runs frontend tests
+    dir: frontend
+    cmds:
+      - npm test

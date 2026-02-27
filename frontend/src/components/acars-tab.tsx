@@ -6,46 +6,51 @@ import { Slider } from "@/components/ui/slider";
 import { Plug, Unplug, Plane, Square, CheckCircle2 } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
-import { useSoundPlayer } from "@/hooks/use-sound-player";
+import { useDevMode } from "@/hooks/use-dev-mode";
 import { FlightDataService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
 
 interface AcarsTabProps {
   localMode?: boolean;
+  volume: number;
+  onVolumeChange: (v: number) => void;
 }
 
-export function AcarsTab({ localMode = false }: AcarsTabProps) {
+export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTabProps) {
   const { isRecording } = useFlightData();
-  const [isConnected, setIsConnected] = useState(false);
+  const devMode = useDevMode();
+  const [connectedAdapter, setConnectedAdapter] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const isConnected = connectedAdapter !== "";
   const [flightState, setFlightState] = useState<"idle" | "active">("idle");
   const [booking, setBooking] = useState<any>(null);
   const [startingFlight, setStartingFlight] = useState(false);
   const [endingFlight, setEndingFlight] = useState(false);
-  const [volume, setVolume] = useState(() => {
-    const stored = localStorage.getItem("acars_volume");
-    return stored ? parseInt(stored, 10) : 50;
-  });
-
-  // Sound player: active when flight is active and not in local mode
-  useSoundPlayer(volume, flightState === "active" && !localMode);
+  const [onGround, setOnGround] = useState(false);
+  const [groundSpeed, setGroundSpeed] = useState(0);
 
   useEffect(() => {
-    FlightDataService.IsConnected().then(setIsConnected).catch(() => {});
+    FlightDataService.ConnectedAdapter().then(setConnectedAdapter).catch(() => {});
     if (!localMode) {
       FlightService.GetFlightState().then((s) => setFlightState(s as any)).catch(() => {});
     }
 
     const cancelConn = Events.On("connection-state", (event: any) => {
-      setIsConnected(event.data);
+      setConnectedAdapter(event.data ?? "");
     });
     const cancelFlight = localMode ? () => {} : Events.On("flight-state", (event: any) => {
       setFlightState(event.data);
+    });
+    const cancelData = Events.On("flight-data", (event: any) => {
+      const d = event.data;
+      if (d?.sensors) setOnGround(d.sensors.onGround ?? false);
+      if (d?.attitude) setGroundSpeed(d.attitude.gs ?? 0);
     });
 
     return () => {
       cancelConn();
       cancelFlight();
+      cancelData();
     };
   }, [localMode]);
 
@@ -69,8 +74,8 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const handleConnect = async () => {
     setConnecting(true);
     try {
-      await FlightDataService.ConnectSim("auto");
-      setIsConnected(true);
+      const adapter = await FlightDataService.ConnectSim("auto");
+      setConnectedAdapter(adapter);
     } catch (e: any) {
       console.error("Failed to connect:", e);
       alert("Failed to connect: " + e);
@@ -82,7 +87,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const handleDisconnect = async () => {
     try {
       FlightDataService.DisconnectSim();
-      setIsConnected(false);
+      setConnectedAdapter("");
     } catch (e: any) {
       console.error("Failed to disconnect:", e);
     }
@@ -126,8 +131,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   };
 
   const handleVolumeChange = (v: number) => {
-    setVolume(v);
-    localStorage.setItem("acars_volume", String(v));
+    onVolumeChange(v);
   };
 
   return (
@@ -141,7 +145,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={isConnected ? "default" : "secondary"}>
-            {isConnected ? "Connected" : "Disconnected"}
+            {isConnected ? `Connected to ${connectedAdapter}` : "Disconnected"}
           </Badge>
           {!isConnected ? (
             <Button size="sm" onClick={handleConnect} disabled={connecting} className="gap-2">
@@ -203,12 +207,17 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
               <Button
                 size="sm"
                 onClick={handleStartFlight}
-                disabled={startingFlight}
+                disabled={startingFlight || !onGround || groundSpeed >= 1}
                 className="gap-2"
               >
                 <Plane className="h-3 w-3" />
                 {startingFlight ? "Starting..." : "Start Flight"}
               </Button>
+              {(!onGround || groundSpeed >= 1) && (
+                <p className="text-xs text-muted-foreground">
+                  Aircraft must be on the ground and stationary
+                </p>
+              )}
             </div>
           )}
 
@@ -278,7 +287,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
 
       <Separator />
 
-      <RecordingControls isRecording={isRecording} isConnected={isConnected} />
+      {devMode && <RecordingControls isRecording={isRecording} isConnected={isConnected} />}
     </div>
   );
 }

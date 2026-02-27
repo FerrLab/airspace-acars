@@ -91,16 +91,94 @@ jobs:
           name: build-output
           path: bin/airspace-acars-windows-amd64.exe
 
-  release:
-    runs-on: windows-latest
-    needs: build
+  build-linux:
+    runs-on: ubicloud-standard-2
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.ref_name }}" = "production" ]; then
+            VERSION="1.$(date +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            VERSION="0.$(date +%Y%m%d).${GITHUB_RUN_NUMBER}-beta.${SHORT_SHA}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate bindings
+        run: wails3 generate bindings -f '-tags production -trimpath -buildvcs=false' -clean=true -ts
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+
+      - name: Build Linux binary
+        run: |
+          mkdir -p bin
+          go build -tags production -trimpath -buildvcs=false \
+            -ldflags="-w -s -X main.Version=${{ steps.version.outputs.version }}" \
+            -o bin/airspace-acars-linux-amd64
+        env:
+          CGO_ENABLED: "1"
+
+      - name: Generate desktop file
+        run: wails3 generate .desktop
+
+      - name: Package deb and rpm
+        run: |
+          VERSION=${{ steps.version.outputs.version }} nfpm package -p deb -f build/linux/nfpm/nfpm.yaml -t bin/
+          VERSION=${{ steps.version.outputs.version }} nfpm package -p rpm -f build/linux/nfpm/nfpm.yaml -t bin/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-linux-output
+          path: |
+            bin/airspace-acars-linux-amd64
+            bin/*.deb
+            bin/*.rpm
+
+  release:
+    runs-on: windows-latest
+    needs: [build, build-linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows build artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-output
+          path: bin
+
+      - name: Download Linux build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux-output
           path: bin
 
       - name: Prepare installer
@@ -126,3 +204,6 @@ jobs:
           files: |
             bin/airspace-acars-windows-amd64.exe
             bin/airspace-acars-windows-amd64-setup.exe
+            bin/airspace-acars-linux-amd64
+            bin/airspace-acars*.deb
+            bin/airspace-acars*.rpm
