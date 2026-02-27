@@ -29,7 +29,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const [groundSpeed, setGroundSpeed] = useState(0);
   const [volume, setVolume] = useState(() => {
     const stored = localStorage.getItem("acars_volume");
-    return stored ? parseInt(stored, 10) : 50;
+    return stored ? parseInt(stored, 10) : 25;
   });
 
   // Sound player: active when flight is active and not in local mode
