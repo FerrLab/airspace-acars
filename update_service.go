@@ -173,7 +173,7 @@ func (s *UpdateService) findLatestBetaVersion(ctx context.Context) (string, erro
 		}
 		if bestVersion == nil || sv.GreaterThan(bestVersion) {
 			bestVersion = sv
-			bestTag = v
+			bestTag = tag
 		}
 	}
 
