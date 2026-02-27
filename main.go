@@ -22,7 +22,7 @@ var appIcon []byte
 func init() {
 	application.RegisterEvent[*FlightData]("flight-data")
 	application.RegisterEvent[bool]("recording-state")
-	application.RegisterEvent[bool]("connection-state")
+	application.RegisterEvent[string]("connection-state")
 	application.RegisterEvent[string]("flight-state")
 }
 
@@ -127,8 +127,10 @@ func main() {
 
 		// Auto-connect to sim
 		settings := settingsService.GetSettings()
-		if err := flightDataService.ConnectSim(settings.SimType); err != nil {
+		if adapter, err := flightDataService.ConnectSim(settings.SimType); err != nil {
 			slog.Warn("auto-connect failed", "error", err)
+		} else {
+			slog.Info("auto-connected", "adapter", adapter)
 		}
 	}()
 

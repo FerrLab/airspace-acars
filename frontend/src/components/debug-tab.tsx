@@ -45,7 +45,7 @@ export function DebugTab() {
     FlightDataService.IsConnected().then(setIsConnected).catch(() => {});
 
     const cancel = Events.On("connection-state", (event: any) => {
-      setIsConnected(event.data);
+      setIsConnected(!!event.data);
     });
 
     return () => { cancel(); };

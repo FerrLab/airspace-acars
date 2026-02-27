@@ -18,8 +18,9 @@ interface AcarsTabProps {
 export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const { isRecording } = useFlightData();
   const devMode = useDevMode();
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectedAdapter, setConnectedAdapter] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const isConnected = connectedAdapter !== "";
   const [flightState, setFlightState] = useState<"idle" | "active">("idle");
   const [booking, setBooking] = useState<any>(null);
   const [startingFlight, setStartingFlight] = useState(false);
@@ -35,13 +36,13 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   useSoundPlayer(volume, flightState === "active" && !localMode);
 
   useEffect(() => {
-    FlightDataService.IsConnected().then(setIsConnected).catch(() => {});
+    FlightDataService.ConnectedAdapter().then(setConnectedAdapter).catch(() => {});
     if (!localMode) {
       FlightService.GetFlightState().then((s) => setFlightState(s as any)).catch(() => {});
     }
 
     const cancelConn = Events.On("connection-state", (event: any) => {
-      setIsConnected(event.data);
+      setConnectedAdapter(event.data ?? "");
     });
     const cancelFlight = localMode ? () => {} : Events.On("flight-state", (event: any) => {
       setFlightState(event.data);
@@ -79,8 +80,8 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const handleConnect = async () => {
     setConnecting(true);
     try {
-      await FlightDataService.ConnectSim("auto");
-      setIsConnected(true);
+      const adapter = await FlightDataService.ConnectSim("auto");
+      setConnectedAdapter(adapter);
     } catch (e: any) {
       console.error("Failed to connect:", e);
       alert("Failed to connect: " + e);
@@ -92,7 +93,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const handleDisconnect = async () => {
     try {
       FlightDataService.DisconnectSim();
-      setIsConnected(false);
+      setConnectedAdapter("");
     } catch (e: any) {
       console.error("Failed to disconnect:", e);
     }
@@ -151,7 +152,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={isConnected ? "default" : "secondary"}>
-            {isConnected ? "Connected" : "Disconnected"}
+            {isConnected ? `Connected to ${connectedAdapter}` : "Disconnected"}
           </Badge>
           {!isConnected ? (
             <Button size="sm" onClick={handleConnect} disabled={connecting} className="gap-2">
