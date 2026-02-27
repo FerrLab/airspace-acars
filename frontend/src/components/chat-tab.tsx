@@ -170,15 +170,8 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
   // Auto-scroll when new messages appear
   useEffect(() => {
     if (!initialLoadDone.current) return;
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const nearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    if (nearBottom) {
-      scrollToBottom();
-    } else {
-      setShowScrollBtn(true);
-    }
+    scrollToBottom();
+    setShowScrollBtn(false);
   }, [messages.length, scrollToBottom]);
 
   // Infinite scroll: load older pages when scrolled to top

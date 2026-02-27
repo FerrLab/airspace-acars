@@ -26,7 +26,7 @@ type simReport struct {
 	// Position
 	Latitude    float64 `name:"PLANE LATITUDE" unit:"degrees"`
 	Longitude   float64 `name:"PLANE LONGITUDE" unit:"degrees"`
-	Altitude    float64 `name:"PLANE ALTITUDE" unit:"feet"`
+	Altitude    float64 `name:"INDICATED ALTITUDE" unit:"feet"`
 	AltitudeAGL float64 `name:"PLANE ALT ABOVE GROUND" unit:"feet"`
 
 	// Attitude

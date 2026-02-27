@@ -7,15 +7,16 @@ import { Plug, Unplug, Plane, Square, CheckCircle2 } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
-import { useSoundPlayer } from "@/hooks/use-sound-player";
 import { FlightDataService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
 
 interface AcarsTabProps {
   localMode?: boolean;
+  volume: number;
+  onVolumeChange: (v: number) => void;
 }
 
-export function AcarsTab({ localMode = false }: AcarsTabProps) {
+export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTabProps) {
   const { isRecording } = useFlightData();
   const devMode = useDevMode();
   const [connectedAdapter, setConnectedAdapter] = useState("");
@@ -27,13 +28,6 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   const [endingFlight, setEndingFlight] = useState(false);
   const [onGround, setOnGround] = useState(false);
   const [groundSpeed, setGroundSpeed] = useState(0);
-  const [volume, setVolume] = useState(() => {
-    const stored = localStorage.getItem("acars_volume");
-    return stored ? parseInt(stored, 10) : 25;
-  });
-
-  // Sound player: active when flight is active and not in local mode
-  useSoundPlayer(volume, flightState === "active" && !localMode);
 
   useEffect(() => {
     FlightDataService.ConnectedAdapter().then(setConnectedAdapter).catch(() => {});
@@ -137,8 +131,7 @@ export function AcarsTab({ localMode = false }: AcarsTabProps) {
   };
 
   const handleVolumeChange = (v: number) => {
-    setVolume(v);
-    localStorage.setItem("acars_volume", String(v));
+    onVolumeChange(v);
   };
 
   return (
