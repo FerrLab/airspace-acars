@@ -15,6 +15,7 @@ type Settings struct {
 	XPlanePort int    `json:"xplanePort"`
 	APIBaseURL string `json:"apiBaseURL"`
 	LocalMode  bool   `json:"localMode"`
+	ChatSound  string `json:"chatSound"`
 }
 
 type SettingsService struct {
@@ -35,6 +36,7 @@ func NewSettingsService() *SettingsService {
 			XPlaneHost: "127.0.0.1",
 			XPlanePort: 49000,
 			APIBaseURL: "https://airspace.ferrlab.com",
+			ChatSound:  "default",
 		},
 	}
 	s.load()
