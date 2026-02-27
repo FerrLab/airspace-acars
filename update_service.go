@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -50,6 +51,18 @@ func (s *UpdateService) comparableVersion() string {
 	return Version
 }
 
+func assetName() string {
+	name := fmt.Sprintf("airspace-acars-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return name
+}
+
+func assetFilter() string {
+	return assetName() + "$"
+}
+
 func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
 	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
 	if err != nil {
@@ -58,7 +71,7 @@ func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
 
 	cfg := selfupdate.Config{
 		Source:  source,
-		Filters: []string{"airspace-acars-windows-amd64.exe$"},
+		Filters: []string{assetFilter()},
 	}
 	// Only stable releases skip pre-releases; dev and beta builds see everything
 	if !s.isStableRelease() {
@@ -157,8 +170,9 @@ func (s *UpdateService) findLatestBetaVersion(ctx context.Context) (string, erro
 
 		// Check that the release has a matching asset
 		hasAsset := false
+		expected := assetName()
 		for _, asset := range rel.GetAssets() {
-			if strings.HasSuffix(asset.GetName(), "airspace-acars-windows-amd64.exe") {
+			if asset.GetName() == expected {
 				hasAsset = true
 				break
 			}
