@@ -47,6 +47,7 @@ func main() {
 	chatService := NewChatService(authService)
 	audioService := NewAudioService(authService)
 	updateService := &UpdateService{}
+	discordService := NewDiscordService(settingsService, authService, flightService)
 
 	app := application.New(application.Options{
 		Name:        "Airspace ACARS",
@@ -59,6 +60,7 @@ func main() {
 			application.NewService(chatService),
 			application.NewService(audioService),
 			application.NewService(updateService),
+			application.NewService(discordService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -118,6 +120,8 @@ func main() {
 		window.Show()
 		window.Focus()
 	})
+
+	discordService.Start()
 
 	go func() {
 		time.Sleep(time.Second)

@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Volume2 } from "lucide-react";
-import { SettingsService, UpdateService } from "../../bindings/airspace-acars";
+import { SettingsService, UpdateService, DiscordService } from "../../bindings/airspace-acars";
 import { useDevMode } from "@/hooks/use-dev-mode";
 import { CHAT_SOUNDS, CHAT_SOUND_LABELS, playNotificationPreview, type ChatSoundType } from "@/lib/notification-sounds";
 
@@ -22,6 +22,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const devMode = useDevMode();
   const [simType, setSimType] = useState("auto");
   const [chatSound, setChatSound] = useState<ChatSoundType>("default");
+  const [discordPresence, setDiscordPresence] = useState(true);
   const [apiBaseURL, setApiBaseURL] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -31,6 +32,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         const settings = await SettingsService.GetSettings();
         setSimType(settings.simType);
         setChatSound((settings.chatSound as ChatSoundType) || "default");
+        setDiscordPresence(settings.discordPresence !== false);
         setApiBaseURL(settings.apiBaseURL);
         if (settings.theme === "light" || settings.theme === "dark") {
           setTheme(settings.theme);
@@ -60,6 +62,15 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
       await SettingsService.UpdateSettings({ ...settings, chatSound: sound });
     } catch { /* ignore */ }
     playNotificationPreview(sound);
+  };
+
+  const handleDiscordToggle = async (checked: boolean) => {
+    setDiscordPresence(checked);
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, discordPresence: checked });
+      await DiscordService.SetEnabled(checked);
+    } catch { /* ignore */ }
   };
 
   const handleSimTypeChange = async (value: string) => {
@@ -182,6 +193,23 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
                 <Volume2 className="h-4 w-4" />
               </Button>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Discord</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Rich Presence</p>
+              <p className="text-xs text-muted-foreground">
+                Show your airline and flight status in Discord
+              </p>
+            </div>
+            <Switch checked={discordPresence} onCheckedChange={handleDiscordToggle} />
           </div>
         </CardContent>
       </Card>
