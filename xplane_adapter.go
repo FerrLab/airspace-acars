@@ -125,6 +125,9 @@ var xplaneDatarefs = []string{
 	// Weight (71-72)
 	"sim/flightmodel/weight/m_total",                      // 71: total weight (kg → lbs)
 	"sim/flightmodel/weight/m_fuel_total",                 // 72: fuel weight (kg → lbs)
+
+	// Engine count (73)
+	"sim/aircraft/engine/acf_num_engines",                 // 73: number of engines
 }
 
 func NewXPlaneAdapter(host string, port int) SimConnector {
@@ -433,6 +436,14 @@ func (x *XPlaneAdapter) listenLoop() {
 				x.data.Weight.TotalWeight = float64(val) * 2.20462 // kg to lbs
 			case 72:
 				x.data.Weight.FuelWeight = float64(val) * 2.20462
+
+			// Engine count
+			case 73:
+				n := int(val)
+				x.data.Engines[0].Exists = n >= 1
+				x.data.Engines[1].Exists = n >= 2
+				x.data.Engines[2].Exists = n >= 3
+				x.data.Engines[3].Exists = n >= 4
 			}
 			x.mu.Unlock()
 		}

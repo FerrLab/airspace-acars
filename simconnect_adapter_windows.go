@@ -139,6 +139,9 @@ type simReport struct {
 	TotalWeight float64 `name:"TOTAL WEIGHT" unit:"pounds"`
 	FuelWeight  float64 `name:"FUEL TOTAL QUANTITY WEIGHT" unit:"pounds"`
 
+	// Engine count
+	NumberOfEngines float64 `name:"NUMBER OF ENGINES" unit:"number"`
+
 	// Aircraft Title — must be last (256-byte array misaligns subsequent float64s)
 	AircraftTitle [256]byte `name:"TITLE" unit:""`
 }
@@ -254,6 +257,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 					},
 					Engines: [4]EngineData{
 						{
+							Exists:      int(r.NumberOfEngines) >= 1,
 							Running:     r.Eng1Running != 0,
 							N1:          r.Eng1N1,
 							N2:          r.Eng1N2,
@@ -262,6 +266,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 							PropPos:     r.Eng1Prop,
 						},
 						{
+							Exists:      int(r.NumberOfEngines) >= 2,
 							Running:     r.Eng2Running != 0,
 							N1:          r.Eng2N1,
 							N2:          r.Eng2N2,
@@ -270,6 +275,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 							PropPos:     r.Eng2Prop,
 						},
 						{
+							Exists:      int(r.NumberOfEngines) >= 3,
 							Running:     r.Eng3Running != 0,
 							N1:          r.Eng3N1,
 							N2:          r.Eng3N2,
@@ -278,6 +284,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 							PropPos:     r.Eng3Prop,
 						},
 						{
+							Exists:      int(r.NumberOfEngines) >= 4,
 							Running:     r.Eng4Running != 0,
 							N1:          r.Eng4N1,
 							N2:          r.Eng4N2,
