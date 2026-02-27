@@ -147,7 +147,7 @@ jobs:
           CGO_ENABLED: "1"
 
       - name: Generate desktop file
-        run: wails3 generate .desktop
+        run: wails3 generate .desktop -name "airspace-acars" -exec "airspace-acars" -icon "airspace-acars" -outputfile "build/linux/airspace-acars.desktop" -categories "Development;"
 
       - name: Package deb and rpm
         run: |
