@@ -14,6 +14,12 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+const (
+	stalenessThreshold  = 10 * time.Second
+	reconnectBaseDelay  = 5 * time.Second
+	reconnectMaxBackoff = 60 * time.Second
+)
+
 type FlightDataService struct {
 	db                *sql.DB
 	app               *application.App
@@ -135,15 +141,23 @@ func (f *FlightDataService) DisconnectSim() {
 }
 
 // reconnectSim tears down the current adapter and creates a fresh connection.
-// Must be called with f.mu held.
+// Performs blocking I/O (Disconnect/Connect) outside f.mu to avoid freezing
+// other callers if the simulator is unresponsive.
 func (f *FlightDataService) reconnectSim() error {
-	if f.connector != nil {
-		f.connector.Disconnect()
-		f.connector = nil
+	f.mu.Lock()
+	old := f.connector
+	f.connector = nil
+	f.simActive = false
+	name := f.adapterName
+	f.mu.Unlock()
+
+	// Blocking I/O outside lock
+	if old != nil {
+		old.Disconnect()
 	}
 
 	var connector SimConnector
-	switch f.adapterName {
+	switch name {
 	case "SimConnect":
 		connector = NewSimConnectAdapter()
 		if connector == nil {
@@ -152,15 +166,16 @@ func (f *FlightDataService) reconnectSim() error {
 	case "X-Plane":
 		connector = NewXPlaneAdapter("127.0.0.1", 49000)
 	default:
-		return fmt.Errorf("unknown adapter: %s", f.adapterName)
+		return fmt.Errorf("unknown adapter: %s", name)
 	}
 
 	if err := connector.Connect(); err != nil {
-		return fmt.Errorf("reconnect %s: %w", f.adapterName, err)
+		return fmt.Errorf("reconnect %s: %w", name, err)
 	}
 
+	f.mu.Lock()
 	f.connector = connector
-	f.simActive = false
+	f.mu.Unlock()
 	return nil
 }
 
@@ -412,14 +427,14 @@ func (f *FlightDataService) dataStreamLoop() {
 			}
 
 			// Staleness check: if data was active but adapter hasn't received
-			// fresh data in 10 seconds, attempt a reconnect.
+			// fresh data recently, attempt a reconnect.
 			if wasActive && !connector.LastReceived().IsZero() &&
-				time.Since(connector.LastReceived()) > 10*time.Second {
+				time.Since(connector.LastReceived()) > stalenessThreshold {
 
 				f.mu.Lock()
-				backoff := time.Duration(1<<uint(f.reconnectAttempts)) * 5 * time.Second
-				if backoff > 60*time.Second {
-					backoff = 60 * time.Second
+				backoff := time.Duration(1<<uint(f.reconnectAttempts)) * reconnectBaseDelay
+				if backoff > reconnectMaxBackoff {
+					backoff = reconnectMaxBackoff
 				}
 				if time.Since(f.lastReconnectAt) < backoff {
 					f.mu.Unlock()
@@ -428,6 +443,7 @@ func (f *FlightDataService) dataStreamLoop() {
 
 				f.lastReconnectAt = time.Now()
 				f.simActive = false
+				attempt := f.reconnectAttempts + 1
 				f.mu.Unlock()
 
 				if f.app != nil {
@@ -436,19 +452,20 @@ func (f *FlightDataService) dataStreamLoop() {
 				slog.Warn("simulator connection stale, reconnecting",
 					"adapter", adapterName,
 					"lastData", connector.LastReceived(),
-					"attempt", f.reconnectAttempts+1)
+					"attempt", attempt)
 
-				f.mu.Lock()
+				// reconnectSim handles its own locking and does I/O outside f.mu
 				err := f.reconnectSim()
 				if err != nil {
+					f.mu.Lock()
 					f.reconnectAttempts++
+					attempts := f.reconnectAttempts
 					f.mu.Unlock()
 					slog.Error("reconnect failed",
 						"adapter", adapterName,
-						"attempt", f.reconnectAttempts,
+						"attempt", attempts,
 						"error", err)
 				} else {
-					f.mu.Unlock()
 					slog.Info("reconnected successfully", "adapter", adapterName)
 				}
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -119,11 +120,11 @@ func TestBackoffCalculation(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run("attempts_"+time.Duration(tc.attempts).String(), func(t *testing.T) {
+		t.Run(fmt.Sprintf("attempts_%d", tc.attempts), func(t *testing.T) {
 			// This is the exact formula from dataStreamLoop
-			backoff := time.Duration(1<<uint(tc.attempts)) * 5 * time.Second
-			if backoff > 60*time.Second {
-				backoff = 60 * time.Second
+			backoff := time.Duration(1<<uint(tc.attempts)) * reconnectBaseDelay
+			if backoff > reconnectMaxBackoff {
+				backoff = reconnectMaxBackoff
 			}
 
 			assert.Equal(t, tc.expected, backoff,
@@ -195,9 +196,7 @@ func TestReconnectSimUnknownAdapter(t *testing.T) {
 			adapterName: "",
 		}
 
-		fds.mu.Lock()
 		err := fds.reconnectSim()
-		fds.mu.Unlock()
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unknown adapter")
@@ -208,9 +207,7 @@ func TestReconnectSimUnknownAdapter(t *testing.T) {
 			adapterName: "BogusAdapter",
 		}
 
-		fds.mu.Lock()
 		err := fds.reconnectSim()
-		fds.mu.Unlock()
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unknown adapter")
@@ -221,9 +218,7 @@ func TestReconnectSimUnknownAdapter(t *testing.T) {
 			adapterName: "FakeSimulator",
 		}
 
-		fds.mu.Lock()
 		err := fds.reconnectSim()
-		fds.mu.Unlock()
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unknown adapter")

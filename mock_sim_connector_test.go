@@ -56,7 +56,11 @@ func (r *ReconnectableMockConnector) Disconnect() error {
 }
 
 func (r *ReconnectableMockConnector) Name() string             { return r.name }
-func (r *ReconnectableMockConnector) LastReceived() time.Time   { return r.lastReceived }
+func (r *ReconnectableMockConnector) LastReceived() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastReceived
+}
 
 func (r *ReconnectableMockConnector) GetFlightData() (*FlightData, error) {
 	r.mu.Lock()
