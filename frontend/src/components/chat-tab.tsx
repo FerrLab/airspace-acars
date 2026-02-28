@@ -76,6 +76,9 @@ interface ChatTabProps {
   localMode?: boolean;
 }
 
+// Persists across remounts so tab-switching doesn't replay the notification
+const seenMessageIds = new Set<number>();
+
 export function ChatTab({ localMode = false }: ChatTabProps) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -136,10 +139,16 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
           const newMsgs = incoming.filter((m) => !existingIds.has(m.id));
           if (newMsgs.length === 0) return prev;
 
-          // Ping if new messages from others arrived (not initial load)
-          if (initialLoadDone.current && newMsgs.some((m) => myUserId === null || m.senderId !== myUserId)) {
+          // Only ping for messages we've truly never seen (survives remounts)
+          const unseenFromOthers = newMsgs.filter(
+            (m) => !seenMessageIds.has(m.id) && (myUserId === null || m.senderId !== myUserId)
+          );
+          if (unseenFromOthers.length > 0) {
             playPing();
           }
+
+          // Mark all incoming as seen
+          for (const m of incoming) seenMessageIds.add(m.id);
 
           return [...prev, ...newMsgs];
         });

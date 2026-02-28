@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // MockSimConnector implements SimConnector for use in tests.
 type MockSimConnector struct {
@@ -20,6 +23,71 @@ func (m *MockSimConnector) GetFlightData() (*FlightData, error) {
 		return nil, fmt.Errorf("no data")
 	}
 	return m.data, nil
+}
+
+// ReconnectableMockConnector tracks Connect/Disconnect calls and supports
+// dynamic error toggling for testing reconnection behaviour.
+type ReconnectableMockConnector struct {
+	mu             sync.Mutex
+	data           *FlightData
+	getDataErr     error
+	connectErr     error
+	name           string
+	connectCalls   int
+	disconnectCalls int
+}
+
+func (r *ReconnectableMockConnector) Connect() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.connectCalls++
+	return r.connectErr
+}
+
+func (r *ReconnectableMockConnector) Disconnect() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.disconnectCalls++
+	return nil
+}
+
+func (r *ReconnectableMockConnector) Name() string { return r.name }
+
+func (r *ReconnectableMockConnector) GetFlightData() (*FlightData, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.getDataErr != nil {
+		return nil, r.getDataErr
+	}
+	if r.data == nil {
+		return nil, fmt.Errorf("no data")
+	}
+	d := *r.data
+	return &d, nil
+}
+
+func (r *ReconnectableMockConnector) SetError(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.getDataErr = err
+}
+
+func (r *ReconnectableMockConnector) SetConnectError(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.connectErr = err
+}
+
+func (r *ReconnectableMockConnector) ConnectCalls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.connectCalls
+}
+
+func (r *ReconnectableMockConnector) DisconnectCalls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.disconnectCalls
 }
 
 // sampleFlightData returns a FlightData with realistic default values.
