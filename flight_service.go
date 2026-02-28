@@ -120,9 +120,9 @@ func (f *FlightService) StopFlight() error {
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 
-	_, _, err := f.auth.doRequest("POST", "/api/acars/stop", payload)
+	_, _, err := f.doRequestWithRetry("POST", "/api/acars/stop", payload)
 	if err != nil {
-		slog.Warn("stop flight request failed", "error", err)
+		slog.Warn("stop flight request failed after retries", "error", err)
 	}
 
 	f.endFlight()
@@ -145,7 +145,7 @@ func (f *FlightService) FinishFlight() error {
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 
-	body, status, err := f.auth.doRequest("POST", "/api/acars/finish", payload)
+	body, status, err := f.doRequestWithRetry("POST", "/api/acars/finish", payload)
 	if err != nil {
 		return fmt.Errorf("finish flight: %w", err)
 	}
@@ -186,7 +186,28 @@ const (
 	posIntervalStatic    = 60 * time.Second       // position unchanged
 	criticalAltThreshold = 50.0
 	highAltThreshold     = 10_000.0
+	maxPendingReports    = 500 // max queued position reports
+	retryAttempts        = 4
 )
+
+// doRequestWithRetry wraps doRequest with exponential backoff retries for connection failures.
+func (f *FlightService) doRequestWithRetry(method, path string, body interface{}) ([]byte, int, error) {
+	var lastErr error
+	backoff := 2 * time.Second
+	for attempt := range retryAttempts {
+		respBody, status, err := f.auth.doRequest(method, path, body)
+		if err == nil {
+			return respBody, status, nil
+		}
+		lastErr = err
+		if attempt < retryAttempts-1 {
+			slog.Warn("request failed, retrying", "method", method, "path", path, "attempt", attempt+1, "error", err, "backoff", backoff)
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+	}
+	return nil, 0, fmt.Errorf("all %d attempts failed: %w", retryAttempts, lastErr)
+}
 
 func (f *FlightService) positionLoop(stopCh chan struct{}) {
 	ticker := time.NewTicker(posIntervalLow)
@@ -196,9 +217,14 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 	var lastLat, lastLng float64
 	lastChanged := time.Now()
 
+	var pendingReports []map[string]interface{}
+	var consecutiveFailures int
+
 	for {
 		select {
 		case <-stopCh:
+			// Flight ending — flush remaining queued reports
+			f.flushPendingReports(pendingReports)
 			return
 		case <-ticker.C:
 			fd, err := f.flightData.GetFlightDataNow()
@@ -230,12 +256,54 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				ticker.Reset(currentInterval)
 			}
 
+			// Drain pending reports first (stop at first failure)
+			if len(pendingReports) > 0 {
+				sent := 0
+				for _, queued := range pendingReports {
+					if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", queued); err != nil {
+						break
+					}
+					sent++
+				}
+				if sent > 0 {
+					pendingReports = pendingReports[sent:]
+					slog.Info("sent queued position reports", "sent", sent, "remaining", len(pendingReports))
+				}
+			}
+
+			// Send current report
 			report := f.buildPositionReport(fd)
 			_, _, err = f.auth.doRequest("POST", "/api/v2/acars/position", report)
 			if err != nil {
-				slog.Debug("position report failed", "error", err)
+				consecutiveFailures++
+				if len(pendingReports) < maxPendingReports {
+					pendingReports = append(pendingReports, report)
+				}
+				if consecutiveFailures == 1 {
+					slog.Warn("server connection lost, queuing position reports", "error", err)
+				} else if consecutiveFailures%30 == 0 {
+					slog.Warn("server still unreachable", "failures", consecutiveFailures, "queued", len(pendingReports))
+				}
+			} else {
+				if consecutiveFailures > 0 {
+					slog.Info("server connection restored", "had_failures", consecutiveFailures, "queued_remaining", len(pendingReports))
+				}
+				consecutiveFailures = 0
 			}
 		}
+	}
+}
+
+// flushPendingReports attempts a best-effort drain of queued reports when the flight ends.
+func (f *FlightService) flushPendingReports(pending []map[string]interface{}) {
+	for _, report := range pending {
+		if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", report); err != nil {
+			slog.Warn("failed to flush queued report on flight end", "remaining", len(pending), "error", err)
+			return
+		}
+	}
+	if len(pending) > 0 {
+		slog.Info("flushed all queued position reports", "count", len(pending))
 	}
 }
 
