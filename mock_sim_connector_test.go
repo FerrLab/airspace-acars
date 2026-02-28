@@ -3,18 +3,21 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // MockSimConnector implements SimConnector for use in tests.
 type MockSimConnector struct {
-	data *FlightData
-	err  error
-	name string
+	data         *FlightData
+	err          error
+	name         string
+	lastReceived time.Time
 }
 
-func (m *MockSimConnector) Connect() error        { return nil }
-func (m *MockSimConnector) Disconnect() error      { return nil }
-func (m *MockSimConnector) Name() string           { return m.name }
+func (m *MockSimConnector) Connect() error           { return nil }
+func (m *MockSimConnector) Disconnect() error        { return nil }
+func (m *MockSimConnector) Name() string             { return m.name }
+func (m *MockSimConnector) LastReceived() time.Time  { return m.lastReceived }
 func (m *MockSimConnector) GetFlightData() (*FlightData, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -28,12 +31,13 @@ func (m *MockSimConnector) GetFlightData() (*FlightData, error) {
 // ReconnectableMockConnector tracks Connect/Disconnect calls and supports
 // dynamic error toggling for testing reconnection behaviour.
 type ReconnectableMockConnector struct {
-	mu             sync.Mutex
-	data           *FlightData
-	getDataErr     error
-	connectErr     error
-	name           string
-	connectCalls   int
+	mu              sync.Mutex
+	data            *FlightData
+	getDataErr      error
+	connectErr      error
+	name            string
+	lastReceived    time.Time
+	connectCalls    int
 	disconnectCalls int
 }
 
@@ -51,7 +55,8 @@ func (r *ReconnectableMockConnector) Disconnect() error {
 	return nil
 }
 
-func (r *ReconnectableMockConnector) Name() string { return r.name }
+func (r *ReconnectableMockConnector) Name() string             { return r.name }
+func (r *ReconnectableMockConnector) LastReceived() time.Time   { return r.lastReceived }
 
 func (r *ReconnectableMockConnector) GetFlightData() (*FlightData, error) {
 	r.mu.Lock()
