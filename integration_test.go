@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,6 +135,103 @@ func TestFlightDataServiceConnectedAdapter(t *testing.T) {
 		fds := &FlightDataService{simActive: true}
 		assert.Equal(t, "", fds.ConnectedAdapter())
 	})
+}
+
+func TestAttemptReconnect(t *testing.T) {
+	t.Run("disconnects and reconnects", func(t *testing.T) {
+		mock := &ReconnectableMockConnector{
+			data: sampleFlightData(),
+			name: "TestSim",
+		}
+		fds := &FlightDataService{connector: mock}
+
+		err := fds.attemptReconnect()
+		require.NoError(t, err)
+		assert.Equal(t, 1, mock.DisconnectCalls())
+		assert.Equal(t, 1, mock.ConnectCalls())
+	})
+
+	t.Run("returns error when connect fails", func(t *testing.T) {
+		mock := &ReconnectableMockConnector{
+			data:       sampleFlightData(),
+			name:       "TestSim",
+			connectErr: fmt.Errorf("connection refused"),
+		}
+		fds := &FlightDataService{connector: mock}
+
+		err := fds.attemptReconnect()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "connection refused")
+		assert.Equal(t, 1, mock.DisconnectCalls())
+		assert.Equal(t, 1, mock.ConnectCalls())
+	})
+
+	t.Run("returns error when no connector", func(t *testing.T) {
+		fds := &FlightDataService{}
+		err := fds.attemptReconnect()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no connector")
+	})
+}
+
+func TestDataStreamLoopReconnectsOnFailure(t *testing.T) {
+	mock := &ReconnectableMockConnector{
+		data: sampleFlightData(),
+		name: "TestSim",
+	}
+	fds := &FlightDataService{
+		connector: mock,
+		simActive: true,
+		streaming: true,
+	}
+	fds.streamStopCh = make(chan struct{})
+	go fds.dataStreamLoop()
+
+	// Let it run successfully for a bit
+	time.Sleep(200 * time.Millisecond)
+	assert.True(t, fds.IsConnected())
+
+	// Simulate sim disconnection
+	mock.SetError(fmt.Errorf("sim crashed"))
+
+	// Wait for reconnect attempt (initial backoff is 2s, but loop ticks every 1s)
+	time.Sleep(4 * time.Second)
+
+	// Should have attempted at least one reconnect
+	assert.GreaterOrEqual(t, mock.ConnectCalls(), 1, "should have attempted reconnection")
+	assert.GreaterOrEqual(t, mock.DisconnectCalls(), 1, "should have disconnected before reconnecting")
+
+	// Now restore the sim
+	mock.SetError(nil)
+
+	// Wait for data to be received again
+	time.Sleep(3 * time.Second)
+	assert.True(t, fds.IsConnected(), "should be reconnected after sim restored")
+
+	close(fds.streamStopCh)
+}
+
+func TestDataStreamLoopDoesNotReconnectWhenNeverActive(t *testing.T) {
+	mock := &ReconnectableMockConnector{
+		name:       "TestSim",
+		getDataErr: fmt.Errorf("no data"),
+	}
+	fds := &FlightDataService{
+		connector: mock,
+		simActive: false,
+		streaming: true,
+	}
+	fds.streamStopCh = make(chan struct{})
+	go fds.dataStreamLoop()
+
+	// Wait a few seconds
+	time.Sleep(3 * time.Second)
+
+	// Should NOT attempt reconnect because it was never active
+	assert.Equal(t, 0, mock.ConnectCalls(), "should not attempt reconnection when never previously active")
+	assert.Equal(t, 0, mock.DisconnectCalls())
+
+	close(fds.streamStopCh)
 }
 
 func TestFlightServiceGetBookingServerError(t *testing.T) {
