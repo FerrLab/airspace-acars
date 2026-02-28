@@ -15,17 +15,19 @@ import (
 )
 
 type FlightDataService struct {
-	db           *sql.DB
-	app          *application.App
-	connector    SimConnector
-	mu           sync.Mutex
-	recording    bool
-	startTime    time.Time
-	dataCount    int
-	streaming    bool
-	streamStopCh chan struct{}
-	simActive    bool
-	lastSimType  string // remembered sim type for auto-reconnect
+	db                *sql.DB
+	app               *application.App
+	connector         SimConnector
+	mu                sync.Mutex
+	recording         bool
+	startTime         time.Time
+	dataCount         int
+	streaming         bool
+	streamStopCh      chan struct{}
+	simActive         bool
+	adapterName       string
+	reconnectAttempts int
+	lastReconnectAt   time.Time
 }
 
 func NewFlightDataService(db *sql.DB) *FlightDataService {
@@ -82,7 +84,9 @@ func (f *FlightDataService) ConnectSim(simType string) (string, error) {
 
 	f.connector = connector
 	f.simActive = false
-	f.lastSimType = simType
+	f.adapterName = connector.Name()
+	f.reconnectAttempts = 0
+	f.lastReconnectAt = time.Time{}
 	slog.Info("adapter opened, waiting for data", "adapter", connector.Name())
 
 	f.startDataStreamLocked()
@@ -122,9 +126,42 @@ func (f *FlightDataService) DisconnectSim() {
 	}
 
 	f.simActive = false
+	f.adapterName = ""
+	f.reconnectAttempts = 0
+	f.lastReconnectAt = time.Time{}
 	if f.app != nil {
 		f.app.Event.Emit("connection-state", "")
 	}
+}
+
+// reconnectSim tears down the current adapter and creates a fresh connection.
+// Must be called with f.mu held.
+func (f *FlightDataService) reconnectSim() error {
+	if f.connector != nil {
+		f.connector.Disconnect()
+		f.connector = nil
+	}
+
+	var connector SimConnector
+	switch f.adapterName {
+	case "SimConnect":
+		connector = NewSimConnectAdapter()
+		if connector == nil {
+			return fmt.Errorf("SimConnect not available")
+		}
+	case "X-Plane":
+		connector = NewXPlaneAdapter("127.0.0.1", 49000)
+	default:
+		return fmt.Errorf("unknown adapter: %s", f.adapterName)
+	}
+
+	if err := connector.Connect(); err != nil {
+		return fmt.Errorf("reconnect %s: %w", f.adapterName, err)
+	}
+
+	f.connector = connector
+	f.simActive = false
+	return nil
 }
 
 func (f *FlightDataService) IsConnected() bool {
