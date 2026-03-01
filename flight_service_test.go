@@ -236,7 +236,10 @@ func TestFlushPendingReports_StopsOnError(t *testing.T) {
 
 func TestPositionLoop_QueuesOnFailure(t *testing.T) {
 	var reportCount atomic.Int32
-	failUntil := time.Now().Add(300 * time.Millisecond)
+	// positionLoop ticks at posIntervalLow (1s). Set failUntil so the
+	// first tick at ~t=1s hits the failure window (tests queuing), and the
+	// second tick at ~t=2s succeeds (tests drain/recovery).
+	failUntil := time.Now().Add(1500 * time.Millisecond)
 
 	auth, server := newTestAuthService(func(w http.ResponseWriter, r *http.Request) {
 		if time.Now().Before(failUntil) {
@@ -269,12 +272,12 @@ func TestPositionLoop_QueuesOnFailure(t *testing.T) {
 	stopCh := make(chan struct{})
 	go f.positionLoop(stopCh)
 
-	// Let it run for enough time to accumulate some reports and drain them
-	time.Sleep(800 * time.Millisecond)
+	// Let it run long enough for ticks at t=1s (fail+queue) and t=2s (drain+send).
+	time.Sleep(3 * time.Second)
 	close(stopCh)
 
 	// Wait for flush
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// Some reports should have gotten through (after the failure window)
 	assert.Greater(t, int(reportCount.Load()), 0, "at least some reports should have been sent")
