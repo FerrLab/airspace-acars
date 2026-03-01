@@ -137,44 +137,7 @@ func TestFlightDataServiceConnectedAdapter(t *testing.T) {
 	})
 }
 
-func TestAttemptReconnect(t *testing.T) {
-	t.Run("disconnects and reconnects", func(t *testing.T) {
-		mock := &ReconnectableMockConnector{
-			data: sampleFlightData(),
-			name: "TestSim",
-		}
-		fds := &FlightDataService{connector: mock}
-
-		err := fds.attemptReconnect()
-		require.NoError(t, err)
-		assert.Equal(t, 1, mock.DisconnectCalls())
-		assert.Equal(t, 1, mock.ConnectCalls())
-	})
-
-	t.Run("returns error when connect fails", func(t *testing.T) {
-		mock := &ReconnectableMockConnector{
-			data:       sampleFlightData(),
-			name:       "TestSim",
-			connectErr: fmt.Errorf("connection refused"),
-		}
-		fds := &FlightDataService{connector: mock}
-
-		err := fds.attemptReconnect()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "connection refused")
-		assert.Equal(t, 1, mock.DisconnectCalls())
-		assert.Equal(t, 1, mock.ConnectCalls())
-	})
-
-	t.Run("returns error when no connector", func(t *testing.T) {
-		fds := &FlightDataService{}
-		err := fds.attemptReconnect()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no connector")
-	})
-}
-
-func TestDataStreamLoopReconnectsOnFailure(t *testing.T) {
+func TestDataStreamLoopGoesInactiveOnError(t *testing.T) {
 	mock := &ReconnectableMockConnector{
 		data: sampleFlightData(),
 		name: "TestSim",
@@ -191,22 +154,19 @@ func TestDataStreamLoopReconnectsOnFailure(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	assert.True(t, fds.IsConnected())
 
-	// Simulate sim disconnection
+	// Simulate sim disconnection via error
 	mock.SetError(fmt.Errorf("sim crashed"))
 
-	// Wait for reconnect attempt (initial backoff is 2s, but loop ticks every 1s)
-	time.Sleep(4 * time.Second)
-
-	// Should have attempted at least one reconnect
-	assert.GreaterOrEqual(t, mock.ConnectCalls(), 1, "should have attempted reconnection")
-	assert.GreaterOrEqual(t, mock.DisconnectCalls(), 1, "should have disconnected before reconnecting")
+	// Wait for the loop to pick up the error
+	time.Sleep(2 * time.Second)
+	assert.False(t, fds.IsConnected(), "should go inactive on GetFlightData error")
 
 	// Now restore the sim
 	mock.SetError(nil)
 
 	// Wait for data to be received again
-	time.Sleep(3 * time.Second)
-	assert.True(t, fds.IsConnected(), "should be reconnected after sim restored")
+	time.Sleep(2 * time.Second)
+	assert.True(t, fds.IsConnected(), "should become active again after data returns")
 
 	close(fds.streamStopCh)
 }

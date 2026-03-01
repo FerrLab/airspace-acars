@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 // FlightData holds real-time telemetry from the flight simulator.
 type FlightData struct {
 	Position  PositionData      `json:"position"`
@@ -134,4 +136,5 @@ type SimConnector interface {
 	Disconnect() error
 	GetFlightData() (*FlightData, error)
 	Name() string
+	LastReceived() time.Time
 }

@@ -208,6 +208,12 @@ func (x *XPlaneAdapter) GetFlightData() (*FlightData, error) {
 	return &data, nil
 }
 
+func (x *XPlaneAdapter) LastReceived() time.Time {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.lastReceived
+}
+
 func (x *XPlaneAdapter) subscribeRREF(index, freq int, dataref string) error {
 	// RREF packet: "RREF\0" + freq(4 bytes) + index(4 bytes) + dataref(400 bytes null-padded)
 	buf := make([]byte, 413)

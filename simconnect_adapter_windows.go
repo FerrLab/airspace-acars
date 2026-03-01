@@ -12,12 +12,13 @@ import (
 )
 
 type SimConnectAdapter struct {
-	mu         sync.RWMutex
-	sc         *sim.SimConnect
-	report     *simReport
-	latestData *FlightData
-	stopCh     chan struct{}
-	stopped    chan struct{}
+	mu           sync.RWMutex
+	sc           *sim.SimConnect
+	report       *simReport
+	latestData   *FlightData
+	lastReceived time.Time
+	stopCh       chan struct{}
+	stopped      chan struct{}
 }
 
 type simReport struct {
@@ -360,6 +361,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 				}
 				s.mu.Lock()
 				s.latestData = fd
+				s.lastReceived = time.Now()
 				s.mu.Unlock()
 			case sim.RECV_ID_EXCEPTION:
 				slog.Warn("SimConnect exception received")
@@ -390,4 +392,11 @@ func (s *SimConnectAdapter) GetFlightData() (*FlightData, error) {
 	data := *s.latestData
 	_ = unsafe.Pointer(nil)
 	return &data, nil
+}
+
+// LastReceived returns the time the most recent data dispatch was received.
+func (s *SimConnectAdapter) LastReceived() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastReceived
 }

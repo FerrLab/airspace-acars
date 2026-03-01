@@ -14,18 +14,26 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+const (
+	stalenessThreshold  = 10 * time.Second
+	reconnectBaseDelay  = 5 * time.Second
+	reconnectMaxBackoff = 60 * time.Second
+)
+
 type FlightDataService struct {
-	db           *sql.DB
-	app          *application.App
-	connector    SimConnector
-	mu           sync.Mutex
-	recording    bool
-	startTime    time.Time
-	dataCount    int
-	streaming    bool
-	streamStopCh chan struct{}
-	simActive    bool
-	lastSimType  string // remembered sim type for auto-reconnect
+	db                *sql.DB
+	app               *application.App
+	connector         SimConnector
+	mu                sync.Mutex
+	recording         bool
+	startTime         time.Time
+	dataCount         int
+	streaming         bool
+	streamStopCh      chan struct{}
+	simActive         bool
+	adapterName       string
+	reconnectAttempts int
+	lastReconnectAt   time.Time
 }
 
 func NewFlightDataService(db *sql.DB) *FlightDataService {
@@ -82,7 +90,9 @@ func (f *FlightDataService) ConnectSim(simType string) (string, error) {
 
 	f.connector = connector
 	f.simActive = false
-	f.lastSimType = simType
+	f.adapterName = connector.Name()
+	f.reconnectAttempts = 0
+	f.lastReconnectAt = time.Time{}
 	slog.Info("adapter opened, waiting for data", "adapter", connector.Name())
 
 	f.startDataStreamLocked()
@@ -122,9 +132,51 @@ func (f *FlightDataService) DisconnectSim() {
 	}
 
 	f.simActive = false
+	f.adapterName = ""
+	f.reconnectAttempts = 0
+	f.lastReconnectAt = time.Time{}
 	if f.app != nil {
 		f.app.Event.Emit("connection-state", "")
 	}
+}
+
+// reconnectSim tears down the current adapter and creates a fresh connection.
+// Performs blocking I/O (Disconnect/Connect) outside f.mu to avoid freezing
+// other callers if the simulator is unresponsive.
+func (f *FlightDataService) reconnectSim() error {
+	f.mu.Lock()
+	old := f.connector
+	f.connector = nil
+	f.simActive = false
+	name := f.adapterName
+	f.mu.Unlock()
+
+	// Blocking I/O outside lock
+	if old != nil {
+		old.Disconnect()
+	}
+
+	var connector SimConnector
+	switch name {
+	case "SimConnect":
+		connector = NewSimConnectAdapter()
+		if connector == nil {
+			return fmt.Errorf("SimConnect not available")
+		}
+	case "X-Plane":
+		connector = NewXPlaneAdapter("127.0.0.1", 49000)
+	default:
+		return fmt.Errorf("unknown adapter: %s", name)
+	}
+
+	if err := connector.Connect(); err != nil {
+		return fmt.Errorf("reconnect %s: %w", name, err)
+	}
+
+	f.mu.Lock()
+	f.connector = connector
+	f.mu.Unlock()
+	return nil
 }
 
 func (f *FlightDataService) IsConnected() bool {
@@ -300,15 +352,12 @@ func (f *FlightDataService) stopDataStreamLocked() {
 	close(f.streamStopCh)
 }
 
-// dataStreamLoop is the single goroutine that polls SimConnect.
+// dataStreamLoop is the single goroutine that polls the simulator.
 // It always emits flight-data events, and writes to DB when recording.
-// On connection loss it automatically attempts to reconnect with exponential backoff.
+// On stale connections it automatically reconnects with exponential backoff.
 func (f *FlightDataService) dataStreamLoop() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-
-	var reconnectBackoff time.Duration
-	var lastReconnectAttempt time.Time
 
 	for {
 		select {
@@ -319,6 +368,7 @@ func (f *FlightDataService) dataStreamLoop() {
 			connector := f.connector
 			recording := f.recording
 			wasActive := f.simActive
+			adapterName := f.adapterName
 			f.mu.Unlock()
 
 			if connector == nil {
@@ -334,35 +384,16 @@ func (f *FlightDataService) dataStreamLoop() {
 					if f.app != nil {
 						f.app.Event.Emit("connection-state", "")
 					}
-					slog.Warn("simulator data lost, will attempt reconnection", "error", err)
-					reconnectBackoff = 2 * time.Second
-					lastReconnectAttempt = time.Time{}
-				}
-
-				// Attempt reconnection with exponential backoff
-				if reconnectBackoff > 0 && time.Since(lastReconnectAttempt) >= reconnectBackoff {
-					lastReconnectAttempt = time.Now()
-					slog.Info("attempting simulator reconnection", "backoff", reconnectBackoff)
-
-					if err := f.attemptReconnect(); err != nil {
-						slog.Debug("reconnection attempt failed", "error", err, "next_in", reconnectBackoff*2)
-						if reconnectBackoff < 30*time.Second {
-							reconnectBackoff *= 2
-						}
-					} else {
-						slog.Info("simulator reconnected", "adapter", connector.Name())
-						reconnectBackoff = 0
-					}
+					slog.Warn("simulator data lost", "error", err)
 				}
 				continue
 			}
 
-			// Data received successfully — reset reconnect state
-			reconnectBackoff = 0
-
 			if !wasActive {
 				f.mu.Lock()
 				f.simActive = true
+				f.reconnectAttempts = 0
+				f.lastReconnectAt = time.Time{}
 				f.mu.Unlock()
 				if f.app != nil {
 					f.app.Event.Emit("connection-state", connector.Name())
@@ -394,22 +425,52 @@ func (f *FlightDataService) dataStreamLoop() {
 				f.dataCount++
 				f.mu.Unlock()
 			}
+
+			// Staleness check: if data was active but adapter hasn't received
+			// fresh data recently, attempt a reconnect.
+			if wasActive && !connector.LastReceived().IsZero() &&
+				time.Since(connector.LastReceived()) > stalenessThreshold {
+
+				f.mu.Lock()
+				backoff := time.Duration(1<<uint(f.reconnectAttempts)) * reconnectBaseDelay
+				if backoff > reconnectMaxBackoff {
+					backoff = reconnectMaxBackoff
+				}
+				if time.Since(f.lastReconnectAt) < backoff {
+					f.mu.Unlock()
+					continue
+				}
+
+				f.lastReconnectAt = time.Now()
+				f.simActive = false
+				attempt := f.reconnectAttempts + 1
+				f.mu.Unlock()
+
+				if f.app != nil {
+					f.app.Event.Emit("connection-state", "")
+				}
+				slog.Warn("simulator connection stale, reconnecting",
+					"adapter", adapterName,
+					"lastData", connector.LastReceived(),
+					"attempt", attempt)
+
+				// reconnectSim handles its own locking and does I/O outside f.mu
+				err := f.reconnectSim()
+				if err != nil {
+					f.mu.Lock()
+					f.reconnectAttempts++
+					attempts := f.reconnectAttempts
+					f.mu.Unlock()
+					slog.Error("reconnect failed",
+						"adapter", adapterName,
+						"attempt", attempts,
+						"error", err)
+				} else {
+					slog.Info("reconnected successfully", "adapter", adapterName)
+				}
+			}
 		}
 	}
-}
-
-// attemptReconnect disconnects and reconnects the current simulator adapter.
-func (f *FlightDataService) attemptReconnect() error {
-	f.mu.Lock()
-	connector := f.connector
-	f.mu.Unlock()
-
-	if connector == nil {
-		return fmt.Errorf("no connector")
-	}
-
-	connector.Disconnect()
-	return connector.Connect()
 }
 
 // GetFlightDataNow returns a one-shot read of the current flight data.
