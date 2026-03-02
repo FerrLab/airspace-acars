@@ -9,10 +9,17 @@ import (
 	"runtime"
 	"strings"
 
+	"airspace-acars/observability"
+
 	"github.com/Masterminds/semver/v3"
 	"github.com/creativeprojects/go-selfupdate"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var updateTracer = observability.Tracer("update")
 
 var Version = "dev"
 
@@ -86,8 +93,14 @@ func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
 }
 
 func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
+	_, span := updateTracer.Start(context.Background(), "update.check",
+		trace.WithAttributes(attribute.String("update.current_version", Version)))
+	defer span.End()
+
 	updater, err := s.newUpdater()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
@@ -104,15 +117,24 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 		// which we'd skip. Instead, find the latest beta version explicitly.
 		betaVersion, err := s.findLatestBetaVersion(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to find latest beta: %w", err)
+			err = fmt.Errorf("failed to find latest beta: %w", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
 		}
 		if betaVersion == "" {
 			slog.Info("no beta releases found")
+			span.SetAttributes(attribute.Bool("update.available", info.UpdateAvailable))
 			return info, nil
 		}
 
 		latest, found, err := updater.DetectVersion(ctx, slug, betaVersion)
 		if err != nil || !found {
+			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+			}
+			span.SetAttributes(attribute.Bool("update.available", info.UpdateAvailable))
 			return info, err
 		}
 
@@ -126,7 +148,10 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 		// Stable builds: use DetectLatest normally (pre-releases excluded)
 		latest, found, err := updater.DetectLatest(ctx, slug)
 		if err != nil {
-			return nil, fmt.Errorf("failed to detect latest version: %w", err)
+			err = fmt.Errorf("failed to detect latest version: %w", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
 		}
 		if found {
 			info.LatestVersion = latest.Version()
@@ -139,6 +164,7 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 	}
 
 	slog.Info("update check complete", "current", Version, "latest", info.LatestVersion, "available", info.UpdateAvailable)
+	span.SetAttributes(attribute.Bool("update.available", info.UpdateAvailable))
 	return info, nil
 }
 
