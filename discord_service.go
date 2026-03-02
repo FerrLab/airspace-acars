@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,13 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"airspace-acars/observability"
+
+	"go.opentelemetry.io/otel/codes"
 )
+
+var discordTracer = observability.Tracer("discord")
 
 const discordClientID = "1471884432234381494"
 
@@ -189,6 +196,9 @@ func (d *DiscordService) tick() {
 // --- IPC protocol ---
 
 func (d *DiscordService) connect() error {
+	_, span := discordTracer.Start(context.Background(), "discord.connect")
+	defer span.End()
+
 	for i := 0; i < 10; i++ {
 		path := fmt.Sprintf(`\\.\pipe\discord-ipc-%d`, i)
 		f, err := os.OpenFile(path, os.O_RDWR, 0)
@@ -216,7 +226,10 @@ func (d *DiscordService) connect() error {
 		slog.Info("discord: connected", "pipe", i)
 		return nil
 	}
-	return fmt.Errorf("no discord pipe found")
+	err := fmt.Errorf("no discord pipe found")
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	return err
 }
 
 func (d *DiscordService) disconnect() {
@@ -252,6 +265,9 @@ func (d *DiscordService) readFrame() (json.RawMessage, error) {
 }
 
 func (d *DiscordService) setActivity(activity map[string]interface{}) error {
+	_, span := discordTracer.Start(context.Background(), "discord.set_activity")
+	defer span.End()
+
 	payload, _ := json.Marshal(map[string]interface{}{
 		"cmd":   "SET_ACTIVITY",
 		"nonce": fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -261,9 +277,15 @@ func (d *DiscordService) setActivity(activity map[string]interface{}) error {
 		},
 	})
 	if err := d.writeFrame(1, payload); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	_, err := d.readFrame()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
 	return err
 }
 
