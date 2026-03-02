@@ -2,13 +2,30 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/pkg/browser"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
+	"airspace-acars/observability"
+)
+
+var (
+	authTracer            = observability.Tracer("auth")
+	authMeter             = observability.Meter("auth")
+	apiRequestsTotal, _   = authMeter.Int64Counter("api.requests_total",
+		metric.WithDescription("Total outgoing API requests"))
+	apiRequestDuration, _ = authMeter.Float64Histogram("api.request_duration_ms",
+		metric.WithDescription("API request duration in milliseconds"))
 )
 
 type AuthService struct {
@@ -72,7 +89,7 @@ func (a *AuthService) FetchTenants() ([]Tenant, error) {
 func (a *AuthService) SelectTenant(domain string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.tenantBaseURL = "https://" + domain
+	a.tenantBaseURL = fmt.Sprintf("https://%s", domain)
 }
 
 func (a *AuthService) RequestDeviceCode() (*DeviceCodeResponse, error) {
@@ -164,27 +181,45 @@ func (a *AuthService) OpenAuthorizationURL(userCode string) error {
 // doRequest makes an authenticated HTTP request to the tenant API.
 // Used internally by other services in the same package.
 func (a *AuthService) doRequest(method, path string, body interface{}) ([]byte, int, error) {
+	ctx, span := authTracer.Start(context.Background(), "auth.do_request",
+		trace.WithAttributes(
+			attribute.String("http.method", method),
+			attribute.String("http.path", path),
+		))
+	defer span.End()
+
+	start := time.Now()
+
 	a.mu.RLock()
 	baseURL := a.tenantBaseURL
 	token := a.token
 	a.mu.RUnlock()
 
 	if baseURL == "" {
-		return nil, 0, fmt.Errorf("no tenant selected")
+		err := fmt.Errorf("no tenant selected")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, 0, err
 	}
 
 	var bodyReader io.Reader
 	if body != nil {
 		jsonBytes, err := json.Marshal(body)
 		if err != nil {
-			return nil, 0, fmt.Errorf("marshal body: %w", err)
+			err = fmt.Errorf("marshal body: %w", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, 0, err
 		}
 		bodyReader = bytes.NewReader(jsonBytes)
 	}
 
-	req, err := http.NewRequest(method, baseURL+path, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, bodyReader)
 	if err != nil {
-		return nil, 0, fmt.Errorf("create request: %w", err)
+		err = fmt.Errorf("create request: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -193,14 +228,62 @@ func (a *AuthService) doRequest(method, path string, body interface{}) ([]byte, 
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("do request: %w", err)
+		err = fmt.Errorf("do request: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		durationMs := float64(time.Since(start).Milliseconds())
+		apiRequestDuration.Record(ctx, durationMs,
+			metric.WithAttributes(
+				attribute.String("http.method", method),
+				attribute.String("http.path", path),
+				attribute.String("status", "error"),
+			))
+		apiRequestsTotal.Add(ctx, 1,
+			metric.WithAttributes(
+				attribute.String("http.method", method),
+				attribute.String("http.path", path),
+				attribute.String("status", "error"),
+			))
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
+		err = fmt.Errorf("read response: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		durationMs := float64(time.Since(start).Milliseconds())
+		apiRequestDuration.Record(ctx, durationMs,
+			metric.WithAttributes(
+				attribute.String("http.method", method),
+				attribute.String("http.path", path),
+				attribute.String("status", "error"),
+			))
+		apiRequestsTotal.Add(ctx, 1,
+			metric.WithAttributes(
+				attribute.String("http.method", method),
+				attribute.String("http.path", path),
+				attribute.String("status", "error"),
+			))
+		return nil, resp.StatusCode, err
 	}
+
+	statusStr := fmt.Sprintf("%d", resp.StatusCode)
+	span.SetAttributes(attribute.String("http.status_code", statusStr))
+	durationMs := float64(time.Since(start).Milliseconds())
+	apiRequestDuration.Record(ctx, durationMs,
+		metric.WithAttributes(
+			attribute.String("http.method", method),
+			attribute.String("http.path", path),
+			attribute.String("status", statusStr),
+		))
+	apiRequestsTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("http.method", method),
+			attribute.String("http.path", path),
+			attribute.String("status", statusStr),
+		))
 
 	return respBody, resp.StatusCode, nil
 }
