@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -11,7 +12,22 @@ import (
 	"sync"
 	"time"
 
+	"airspace-acars/observability"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+var (
+	simTracer               = observability.Tracer("sim")
+	simMeter                = observability.Meter("sim")
+	simReconnectAttempts, _ = simMeter.Int64Counter("sim.reconnect_attempts",
+		metric.WithDescription("Simulator reconnection attempts"))
+	simStalenessDetected, _ = simMeter.Int64Counter("sim.staleness_detected",
+		metric.WithDescription("Stale simulator connection events"))
 )
 
 const (
@@ -47,6 +63,10 @@ func (f *FlightDataService) setApp(app *application.App) {
 }
 
 func (f *FlightDataService) ConnectSim(simType string) (string, error) {
+	_, span := simTracer.Start(context.Background(), "sim.connect",
+		trace.WithAttributes(attribute.String("sim.type", simType)))
+	defer span.End()
+
 	f.mu.Lock()
 
 	if f.connector != nil {
@@ -64,7 +84,10 @@ func (f *FlightDataService) ConnectSim(simType string) (string, error) {
 		connector = NewSimConnectAdapter()
 		if connector == nil {
 			f.mu.Unlock()
-			return "", fmt.Errorf("SimConnect not available on this platform")
+			err := fmt.Errorf("SimConnect not available on this platform")
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return "", err
 		}
 	default: // "auto"
 		sc := NewSimConnectAdapter()
@@ -81,10 +104,15 @@ func (f *FlightDataService) ConnectSim(simType string) (string, error) {
 		}
 	}
 
+	span.SetAttributes(attribute.String("sim.adapter", connector.Name()))
+
 	if !connected {
 		if err := connector.Connect(); err != nil {
 			f.mu.Unlock()
-			return "", fmt.Errorf("connect to %s: %w", connector.Name(), err)
+			err = fmt.Errorf("connect to %s: %w", connector.Name(), err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return "", err
 		}
 	}
 
@@ -107,7 +135,10 @@ func (f *FlightDataService) ConnectSim(simType string) (string, error) {
 		select {
 		case <-deadline:
 			f.DisconnectSim()
-			return "", fmt.Errorf("no data received from %s — is the simulator running?", connector.Name())
+			err := fmt.Errorf("no data received from %s — is the simulator running?", connector.Name())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return "", err
 		case <-tick.C:
 			f.mu.Lock()
 			active := f.simActive
@@ -121,8 +152,13 @@ func (f *FlightDataService) ConnectSim(simType string) (string, error) {
 }
 
 func (f *FlightDataService) DisconnectSim() {
+	_, span := simTracer.Start(context.Background(), "sim.disconnect")
+	defer span.End()
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	span.SetAttributes(attribute.String("sim.adapter", f.adapterName))
 
 	f.stopDataStreamLocked()
 
@@ -151,6 +187,10 @@ func (f *FlightDataService) reconnectSim() error {
 	name := f.adapterName
 	f.mu.Unlock()
 
+	_, span := simTracer.Start(context.Background(), "sim.reconnect",
+		trace.WithAttributes(attribute.String("sim.adapter", name)))
+	defer span.End()
+
 	// Blocking I/O outside lock
 	if old != nil {
 		old.Disconnect()
@@ -161,16 +201,25 @@ func (f *FlightDataService) reconnectSim() error {
 	case "SimConnect":
 		connector = NewSimConnectAdapter()
 		if connector == nil {
-			return fmt.Errorf("SimConnect not available")
+			err := fmt.Errorf("SimConnect not available")
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
 		}
 	case "X-Plane":
 		connector = NewXPlaneAdapter("127.0.0.1", 49000)
 	default:
-		return fmt.Errorf("unknown adapter: %s", name)
+		err := fmt.Errorf("unknown adapter: %s", name)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	if err := connector.Connect(); err != nil {
-		return fmt.Errorf("reconnect %s: %w", name, err)
+		err = fmt.Errorf("reconnect %s: %w", name, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	f.mu.Lock()
@@ -449,6 +498,8 @@ func (f *FlightDataService) dataStreamLoop() {
 				if f.app != nil {
 					f.app.Event.Emit("connection-state", "")
 				}
+				simStalenessDetected.Add(context.Background(), 1,
+					metric.WithAttributes(attribute.String("adapter", adapterName)))
 				slog.Warn("simulator connection stale, reconnecting",
 					"adapter", adapterName,
 					"lastData", connector.LastReceived(),
@@ -456,6 +507,10 @@ func (f *FlightDataService) dataStreamLoop() {
 
 				// reconnectSim handles its own locking and does I/O outside f.mu
 				err := f.reconnectSim()
+				simReconnectAttempts.Add(context.Background(), 1,
+					metric.WithAttributes(
+						attribute.String("adapter", adapterName),
+						attribute.Bool("success", err == nil)))
 				if err != nil {
 					f.mu.Lock()
 					f.reconnectAttempts++

@@ -1,13 +1,38 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"airspace-acars/observability"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+var (
+	flightTracer = observability.Tracer("flight")
+	flightMeter  = observability.Meter("flight")
+)
+
+var (
+	posReportsSent, _   = flightMeter.Int64Counter("position.reports_sent",
+		metric.WithDescription("Successfully sent position reports"))
+	posReportsQueued, _ = flightMeter.Int64Counter("position.reports_queued",
+		metric.WithDescription("Position reports queued due to failure"))
+	posReportsFailed, _ = flightMeter.Int64Counter("position.reports_failed",
+		metric.WithDescription("Position reports that failed to send"))
+	posQueueDepth, _    = flightMeter.Int64Histogram("position.queue_depth",
+		metric.WithDescription("Position report queue depth at each tick"))
+	posFlushTotal, _    = flightMeter.Int64Counter("position.flush_total",
+		metric.WithDescription("Flush attempts on flight end"))
 )
 
 type FlightService struct {
@@ -56,23 +81,43 @@ func (f *FlightService) GetBooking() (map[string]interface{}, error) {
 }
 
 func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
+	_, span := flightTracer.Start(context.Background(), "flight.start",
+		trace.WithAttributes(
+			attribute.String("flight.callsign", callsign),
+			attribute.String("flight.departure", departure),
+			attribute.String("flight.arrival", arrival),
+		))
+	defer span.End()
+
 	// Validate simulator conditions before locking flight state
 	fd, err := f.flightData.GetFlightDataNow()
 	if err != nil {
-		return fmt.Errorf("simulator not connected")
+		err = fmt.Errorf("simulator not connected")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if !fd.Sensors.OnGround {
-		return fmt.Errorf("aircraft must be on the ground to start a flight")
+		err = fmt.Errorf("aircraft must be on the ground to start a flight")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if fd.Attitude.GS >= 1.0 {
-		return fmt.Errorf("aircraft must be stationary to start a flight")
+		err = fmt.Errorf("aircraft must be stationary to start a flight")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	if f.state == "active" {
-		return fmt.Errorf("flight already active")
+		err = fmt.Errorf("flight already active")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	payload := map[string]string{
@@ -84,10 +129,16 @@ func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
 
 	_, status, err := f.auth.doRequest("POST", "/api/acars/start", payload)
 	if err != nil {
-		return fmt.Errorf("start flight: %w", err)
+		err = fmt.Errorf("start flight: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if status >= 400 {
-		return fmt.Errorf("start flight: server returned %d", status)
+		err = fmt.Errorf("start flight: server returned %d", status)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	f.state = "active"
@@ -108,8 +159,13 @@ func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
 }
 
 func (f *FlightService) StopFlight() error {
+	_, span := flightTracer.Start(context.Background(), "flight.stop")
+	defer span.End()
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	span.SetAttributes(attribute.String("flight.callsign", f.callsign))
 
 	if f.state != "active" {
 		return fmt.Errorf("no active flight")
@@ -131,11 +187,22 @@ func (f *FlightService) StopFlight() error {
 }
 
 func (f *FlightService) FinishFlight() error {
+	_, span := flightTracer.Start(context.Background(), "flight.finish")
+	defer span.End()
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	span.SetAttributes(
+		attribute.String("flight.callsign", f.callsign),
+		attribute.Float64("flight.duration_sec", time.Since(f.startTime).Seconds()),
+	)
+
 	if f.state != "active" {
-		return fmt.Errorf("no active flight")
+		err := fmt.Errorf("no active flight")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	payload := map[string]string{
@@ -147,15 +214,24 @@ func (f *FlightService) FinishFlight() error {
 
 	body, status, err := f.doRequestWithRetry("POST", "/api/acars/finish", payload)
 	if err != nil {
-		return fmt.Errorf("finish flight: %w", err)
+		err = fmt.Errorf("finish flight: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if status >= 400 {
 		var errResp map[string]interface{}
 		json.Unmarshal(body, &errResp)
 		if msg, ok := errResp["error"].(string); ok {
-			return fmt.Errorf("finish flight: %s", msg)
+			err = fmt.Errorf("finish flight: %s", msg)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
 		}
-		return fmt.Errorf("finish flight: server returned %d", status)
+		err = fmt.Errorf("finish flight: server returned %d", status)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	f.endFlight()
@@ -192,11 +268,22 @@ const (
 
 // doRequestWithRetry wraps doRequest with exponential backoff retries for connection failures.
 func (f *FlightService) doRequestWithRetry(method, path string, body interface{}) ([]byte, int, error) {
+	_, span := flightTracer.Start(context.Background(), "flight.request_with_retry",
+		trace.WithAttributes(
+			attribute.String("http.method", method),
+			attribute.String("http.path", path),
+		))
+	defer span.End()
+
 	var lastErr error
 	backoff := 2 * time.Second
 	for attempt := range retryAttempts {
 		respBody, status, err := f.auth.doRequest(method, path, body)
 		if err == nil {
+			span.SetAttributes(
+				attribute.Int("retry.attempt", attempt+1),
+				attribute.String("retry.final_status", "success"),
+			)
 			return respBody, status, nil
 		}
 		lastErr = err
@@ -206,6 +293,12 @@ func (f *FlightService) doRequestWithRetry(method, path string, body interface{}
 			backoff *= 2
 		}
 	}
+	span.SetAttributes(
+		attribute.Int("retry.attempt", retryAttempts),
+		attribute.String("retry.final_status", "failed"),
+	)
+	span.RecordError(lastErr)
+	span.SetStatus(codes.Error, lastErr.Error())
 	return nil, 0, fmt.Errorf("all %d attempts failed: %w", retryAttempts, lastErr)
 }
 
@@ -231,6 +324,8 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 			if err != nil {
 				continue
 			}
+
+			posQueueDepth.Record(context.Background(), int64(len(pendingReports)))
 
 			// Detect position change
 			posChanged := fd.Position.Latitude != lastLat || fd.Position.Longitude != lastLng
@@ -267,6 +362,7 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				}
 				if sent > 0 {
 					pendingReports = pendingReports[sent:]
+					posReportsSent.Add(context.Background(), int64(sent))
 					slog.Info("sent queued position reports", "sent", sent, "remaining", len(pendingReports))
 				}
 			}
@@ -278,6 +374,7 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				consecutiveFailures++
 				if len(pendingReports) < maxPendingReports {
 					pendingReports = append(pendingReports, report)
+					posReportsQueued.Add(context.Background(), 1)
 				}
 				if consecutiveFailures == 1 {
 					slog.Warn("server connection lost, queuing position reports", "error", err)
@@ -285,6 +382,7 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 					slog.Warn("server still unreachable", "failures", consecutiveFailures, "queued", len(pendingReports))
 				}
 			} else {
+				posReportsSent.Add(context.Background(), 1)
 				if consecutiveFailures > 0 {
 					slog.Info("server connection restored", "had_failures", consecutiveFailures, "queued_remaining", len(pendingReports))
 				}
@@ -299,11 +397,14 @@ func (f *FlightService) flushPendingReports(pending []map[string]interface{}) {
 	for _, report := range pending {
 		if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", report); err != nil {
 			slog.Warn("failed to flush queued report on flight end", "remaining", len(pending), "error", err)
+			posFlushTotal.Add(context.Background(), 1, metric.WithAttributes(attribute.Bool("success", false)))
 			return
 		}
 	}
 	if len(pending) > 0 {
 		slog.Info("flushed all queued position reports", "count", len(pending))
+		posFlushTotal.Add(context.Background(), 1, metric.WithAttributes(attribute.Bool("success", true)))
+		posReportsSent.Add(context.Background(), int64(len(pending)))
 	}
 }
 
