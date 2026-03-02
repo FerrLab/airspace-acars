@@ -251,11 +251,22 @@ const (
 
 // doRequestWithRetry wraps doRequest with exponential backoff retries for connection failures.
 func (f *FlightService) doRequestWithRetry(method, path string, body interface{}) ([]byte, int, error) {
+	_, span := flightTracer.Start(context.Background(), "flight.request_with_retry",
+		trace.WithAttributes(
+			attribute.String("http.method", method),
+			attribute.String("http.path", path),
+		))
+	defer span.End()
+
 	var lastErr error
 	backoff := 2 * time.Second
 	for attempt := range retryAttempts {
 		respBody, status, err := f.auth.doRequest(method, path, body)
 		if err == nil {
+			span.SetAttributes(
+				attribute.Int("retry.attempt", attempt+1),
+				attribute.String("retry.final_status", "success"),
+			)
 			return respBody, status, nil
 		}
 		lastErr = err
@@ -265,6 +276,12 @@ func (f *FlightService) doRequestWithRetry(method, path string, body interface{}
 			backoff *= 2
 		}
 	}
+	span.SetAttributes(
+		attribute.Int("retry.attempt", retryAttempts),
+		attribute.String("retry.final_status", "failed"),
+	)
+	span.RecordError(lastErr)
+	span.SetStatus(codes.Error, lastErr.Error())
 	return nil, 0, fmt.Errorf("all %d attempts failed: %w", retryAttempts, lastErr)
 }
 
