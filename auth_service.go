@@ -125,19 +125,28 @@ func (a *AuthService) RequestDeviceCode() (*DeviceCodeResponse, error) {
 }
 
 func (a *AuthService) PollForToken(authorizationToken string) (*TokenResponse, error) {
+	_, span := authTracer.Start(context.Background(), "auth.poll_for_token")
+	defer span.End()
+
 	a.mu.RLock()
 	baseURL := a.tenantBaseURL
 	a.mu.RUnlock()
 
 	if baseURL == "" {
-		return nil, fmt.Errorf("no tenant selected")
+		err := fmt.Errorf("no tenant selected")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	payload, err := json.Marshal(map[string]string{
 		"authorization_token": authorizationToken,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal payload: %w", err)
+		err = fmt.Errorf("marshal payload: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	resp, err := a.httpClient.Post(
@@ -146,23 +155,33 @@ func (a *AuthService) PollForToken(authorizationToken string) (*TokenResponse, e
 		bytes.NewReader(payload),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("poll token: %w", err)
+		err = fmt.Errorf("poll token: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		err = fmt.Errorf("read response: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	var tr TokenResponse
 	if resp.StatusCode == http.StatusOK {
 		if err := json.Unmarshal(body, &tr); err != nil {
-			return nil, fmt.Errorf("parse response: %w", err)
+			err = fmt.Errorf("parse response: %w", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
 		}
 	}
 	tr.Status = resp.StatusCode
 
+	span.SetAttributes(attribute.String("oauth.status", fmt.Sprintf("%d", resp.StatusCode)))
 	return &tr, nil
 }
 
