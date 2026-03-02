@@ -13,10 +13,27 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
-var flightTracer = observability.Tracer("flight")
+var (
+	flightTracer = observability.Tracer("flight")
+	flightMeter  = observability.Meter("flight")
+)
+
+var (
+	posReportsSent, _   = flightMeter.Int64Counter("position.reports_sent",
+		metric.WithDescription("Successfully sent position reports"))
+	posReportsQueued, _ = flightMeter.Int64Counter("position.reports_queued",
+		metric.WithDescription("Position reports queued due to failure"))
+	posReportsFailed, _ = flightMeter.Int64Counter("position.reports_failed",
+		metric.WithDescription("Position reports that failed to send"))
+	posQueueDepth, _    = flightMeter.Int64Histogram("position.queue_depth",
+		metric.WithDescription("Position report queue depth at each tick"))
+	posFlushTotal, _    = flightMeter.Int64Counter("position.flush_total",
+		metric.WithDescription("Flush attempts on flight end"))
+)
 
 type FlightService struct {
 	auth       *AuthService
@@ -308,6 +325,8 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				continue
 			}
 
+			posQueueDepth.Record(context.Background(), int64(len(pendingReports)))
+
 			// Detect position change
 			posChanged := fd.Position.Latitude != lastLat || fd.Position.Longitude != lastLng
 			if posChanged {
@@ -343,6 +362,7 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				}
 				if sent > 0 {
 					pendingReports = pendingReports[sent:]
+					posReportsSent.Add(context.Background(), int64(sent))
 					slog.Info("sent queued position reports", "sent", sent, "remaining", len(pendingReports))
 				}
 			}
@@ -354,6 +374,7 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				consecutiveFailures++
 				if len(pendingReports) < maxPendingReports {
 					pendingReports = append(pendingReports, report)
+					posReportsQueued.Add(context.Background(), 1)
 				}
 				if consecutiveFailures == 1 {
 					slog.Warn("server connection lost, queuing position reports", "error", err)
@@ -361,6 +382,7 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 					slog.Warn("server still unreachable", "failures", consecutiveFailures, "queued", len(pendingReports))
 				}
 			} else {
+				posReportsSent.Add(context.Background(), 1)
 				if consecutiveFailures > 0 {
 					slog.Info("server connection restored", "had_failures", consecutiveFailures, "queued_remaining", len(pendingReports))
 				}
@@ -375,11 +397,14 @@ func (f *FlightService) flushPendingReports(pending []map[string]interface{}) {
 	for _, report := range pending {
 		if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", report); err != nil {
 			slog.Warn("failed to flush queued report on flight end", "remaining", len(pending), "error", err)
+			posFlushTotal.Add(context.Background(), 1, metric.WithAttributes(attribute.Bool("success", false)))
 			return
 		}
 	}
 	if len(pending) > 0 {
 		slog.Info("flushed all queued position reports", "count", len(pending))
+		posFlushTotal.Add(context.Background(), 1, metric.WithAttributes(attribute.Bool("success", true)))
+		posReportsSent.Add(context.Background(), int64(len(pending)))
 	}
 }
 
