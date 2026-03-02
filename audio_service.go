@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -12,7 +13,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"airspace-acars/observability"
+
+	"go.opentelemetry.io/otel/codes"
 )
+
+var audioTracer = observability.Tracer("audio")
 
 type AudioService struct {
 	auth       *AuthService
@@ -49,13 +56,20 @@ func NewAudioService(auth *AuthService) *AudioService {
 }
 
 func (a *AudioService) FetchSoundInstructions() ([]SoundInstruction, error) {
+	_, span := audioTracer.Start(context.Background(), "audio.fetch_instructions")
+	defer span.End()
+
 	body, _, err := a.auth.doRequest("GET", "/api/acars/sound", nil)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
 	var resp soundResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("parse sound instructions: %w", err)
 	}
 
