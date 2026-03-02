@@ -41,10 +41,9 @@ func Init(serviceName, version string) (shutdown func(context.Context) error, er
 		return nil, err
 	}
 
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+	res, err := resource.New(context.Background(),
+		resource.WithTelemetrySDK(),
+		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(version),
 		),
