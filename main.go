@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	_ "embed"
 	"log"
@@ -8,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"airspace-acars/observability"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -33,6 +36,12 @@ func main() {
 		os.Exit(0)
 	}
 	defer si.Close()
+
+	shutdown, err := observability.Init("airspace-acars", Version)
+	if err != nil {
+		log.Fatal("failed to init observability:", err)
+	}
+	defer shutdown(context.Background())
 
 	db, err := initDB()
 	if err != nil {
