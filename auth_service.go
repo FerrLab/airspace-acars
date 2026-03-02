@@ -20,9 +20,9 @@ import (
 )
 
 var (
-	authTracer            = observability.Tracer("auth")
-	authMeter             = observability.Meter("auth")
-	apiRequestsTotal, _   = authMeter.Int64Counter("api.requests_total",
+	authTracer          = observability.Tracer("auth")
+	authMeter           = observability.Meter("auth")
+	apiRequestsTotal, _ = authMeter.Int64Counter("api.requests_total",
 		metric.WithDescription("Total outgoing API requests"))
 	apiRequestDuration, _ = authMeter.Float64Histogram("api.request_duration_ms",
 		metric.WithDescription("API request duration in milliseconds"))
