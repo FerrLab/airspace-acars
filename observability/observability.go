@@ -5,9 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
-	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
@@ -19,10 +19,28 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Init sets up OpenTelemetry tracing, metrics, and the slog bridge.
+// exeDir returns the directory containing the running executable.
+// All observability files are written relative to this directory so
+// the app works correctly regardless of the current working directory
+// (e.g. when launched from a shortcut or Start Menu on Windows).
+func exeDir() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(exe), nil
+}
+
+// Init sets up OpenTelemetry tracing, metrics, and structured log output.
 // It returns a shutdown function that must be called on app exit (typically via defer).
-// To swap to OTLP, replace the stdout exporters in this function.
+// All output files (traces.jsonl, metrics.jsonl, stdout.log) are written
+// next to the executable.
 func Init(serviceName, version string) (shutdown func(context.Context) error, err error) {
+	dir, err := exeDir()
+	if err != nil {
+		return nil, err
+	}
+
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
@@ -35,14 +53,22 @@ func Init(serviceName, version string) (shutdown func(context.Context) error, er
 		return nil, err
 	}
 
-	// --- Tracing ---
-	traceFile, err := os.OpenFile("traces.jsonl", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// --- Log file ---
+	logFile, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
+		return nil, err
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logFile, nil)))
+
+	// --- Tracing ---
+	traceFile, err := os.OpenFile(filepath.Join(dir, "traces.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		logFile.Close()
 		return nil, err
 	}
 	traceExp, err := stdouttrace.New(stdouttrace.WithWriter(traceFile))
 	if err != nil {
-		traceFile.Close()
+		closeAll(logFile, traceFile)
 		return nil, err
 	}
 	tp := sdktrace.NewTracerProvider(
@@ -52,15 +78,14 @@ func Init(serviceName, version string) (shutdown func(context.Context) error, er
 	otel.SetTracerProvider(tp)
 
 	// --- Metrics ---
-	metricFile, err := os.OpenFile("metrics.jsonl", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	metricFile, err := os.OpenFile(filepath.Join(dir, "metrics.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		traceFile.Close()
+		closeAll(logFile, traceFile)
 		return nil, err
 	}
 	metricExp, err := stdoutmetric.New(stdoutmetric.WithWriter(metricFile))
 	if err != nil {
-		traceFile.Close()
-		metricFile.Close()
+		closeAll(logFile, traceFile, metricFile)
 		return nil, err
 	}
 	mp := sdkmetric.NewMeterProvider(
@@ -68,12 +93,6 @@ func Init(serviceName, version string) (shutdown func(context.Context) error, er
 		sdkmetric.WithResource(res),
 	)
 	otel.SetMeterProvider(mp)
-
-	// --- slog bridge ---
-	// Replace the default slog handler so that log lines emitted inside an
-	// active span automatically include trace_id / span_id fields.
-	handler := otelslog.NewHandler(serviceName)
-	slog.SetDefault(slog.New(handler))
 
 	shutdown = func(ctx context.Context) error {
 		var firstErr error
@@ -83,7 +102,7 @@ func Init(serviceName, version string) (shutdown func(context.Context) error, er
 		if e := mp.Shutdown(ctx); e != nil && firstErr == nil {
 			firstErr = e
 		}
-		closeAll(traceFile, metricFile)
+		closeAll(traceFile, metricFile, logFile)
 		return firstErr
 	}
 	return shutdown, nil
