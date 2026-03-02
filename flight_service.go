@@ -1,14 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"airspace-acars/observability"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var flightTracer = observability.Tracer("flight")
 
 type FlightService struct {
 	auth       *AuthService
@@ -56,23 +64,43 @@ func (f *FlightService) GetBooking() (map[string]interface{}, error) {
 }
 
 func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
+	_, span := flightTracer.Start(context.Background(), "flight.start",
+		trace.WithAttributes(
+			attribute.String("flight.callsign", callsign),
+			attribute.String("flight.departure", departure),
+			attribute.String("flight.arrival", arrival),
+		))
+	defer span.End()
+
 	// Validate simulator conditions before locking flight state
 	fd, err := f.flightData.GetFlightDataNow()
 	if err != nil {
-		return fmt.Errorf("simulator not connected")
+		err = fmt.Errorf("simulator not connected")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if !fd.Sensors.OnGround {
-		return fmt.Errorf("aircraft must be on the ground to start a flight")
+		err = fmt.Errorf("aircraft must be on the ground to start a flight")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if fd.Attitude.GS >= 1.0 {
-		return fmt.Errorf("aircraft must be stationary to start a flight")
+		err = fmt.Errorf("aircraft must be stationary to start a flight")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	if f.state == "active" {
-		return fmt.Errorf("flight already active")
+		err = fmt.Errorf("flight already active")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	payload := map[string]string{
@@ -84,10 +112,16 @@ func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
 
 	_, status, err := f.auth.doRequest("POST", "/api/acars/start", payload)
 	if err != nil {
-		return fmt.Errorf("start flight: %w", err)
+		err = fmt.Errorf("start flight: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if status >= 400 {
-		return fmt.Errorf("start flight: server returned %d", status)
+		err = fmt.Errorf("start flight: server returned %d", status)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	f.state = "active"
@@ -108,8 +142,13 @@ func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
 }
 
 func (f *FlightService) StopFlight() error {
+	_, span := flightTracer.Start(context.Background(), "flight.stop")
+	defer span.End()
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	span.SetAttributes(attribute.String("flight.callsign", f.callsign))
 
 	if f.state != "active" {
 		return fmt.Errorf("no active flight")
@@ -131,11 +170,22 @@ func (f *FlightService) StopFlight() error {
 }
 
 func (f *FlightService) FinishFlight() error {
+	_, span := flightTracer.Start(context.Background(), "flight.finish")
+	defer span.End()
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	span.SetAttributes(
+		attribute.String("flight.callsign", f.callsign),
+		attribute.Float64("flight.duration_sec", time.Since(f.startTime).Seconds()),
+	)
+
 	if f.state != "active" {
-		return fmt.Errorf("no active flight")
+		err := fmt.Errorf("no active flight")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	payload := map[string]string{
@@ -147,15 +197,24 @@ func (f *FlightService) FinishFlight() error {
 
 	body, status, err := f.doRequestWithRetry("POST", "/api/acars/finish", payload)
 	if err != nil {
-		return fmt.Errorf("finish flight: %w", err)
+		err = fmt.Errorf("finish flight: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if status >= 400 {
 		var errResp map[string]interface{}
 		json.Unmarshal(body, &errResp)
 		if msg, ok := errResp["error"].(string); ok {
-			return fmt.Errorf("finish flight: %s", msg)
+			err = fmt.Errorf("finish flight: %s", msg)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
 		}
-		return fmt.Errorf("finish flight: server returned %d", status)
+		err = fmt.Errorf("finish flight: server returned %d", status)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	f.endFlight()
