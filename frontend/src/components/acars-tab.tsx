@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Plug, Unplug, Plane, Square, CheckCircle2, ArrowRight } from "lucide-react";
+import { Plug, Unplug, Plane, Square, CheckCircle2 } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
