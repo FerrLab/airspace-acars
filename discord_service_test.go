@@ -144,16 +144,18 @@ func TestBuildActivity(t *testing.T) {
 		d := newTestDiscordService()
 		d.flight.state = "active"
 		d.flight.callsign = "BAW123"
+		d.flight.departure = "EGLL"
 		d.flight.arrival = "KJFK"
 		d.flight.startTime = time.Now().Add(-30 * time.Minute)
 		d.bookingCache = map[string]interface{}{
-			"arrival_city": "New York",
+			"departure_city": "London",
+			"arrival_city":   "New York",
 		}
 
 		activity := d.buildActivity("Airline Co", "https://logo.png")
 
 		assert.Equal(t, "Airline Co — BAW123", activity["details"])
-		assert.Equal(t, "Flying to New York", activity["state"])
+		assert.Equal(t, "Flying London → New York", activity["state"])
 		require.Contains(t, activity, "timestamps")
 		require.Contains(t, activity, "assets")
 		assets := activity["assets"].(map[string]interface{})
