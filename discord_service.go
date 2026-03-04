@@ -65,10 +65,10 @@ var idlePhrasesI18n = map[string][]string{
 }
 
 var flyingToI18n = map[string]string{
-	"en": "Flying to %s",
-	"es": "Volando a %s",
-	"pt": "Voando para %s",
-	"fr": "En vol vers %s",
+	"en": "Flying %s",
+	"es": "Volando %s",
+	"pt": "Voando %s",
+	"fr": "En vol %s",
 }
 
 var standbyI18n = map[string]string{
@@ -334,6 +334,7 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 	d.flight.mu.Lock()
 	state := d.flight.state
 	callsign := d.flight.callsign
+	departure := d.flight.departure
 	arrival := d.flight.arrival
 	startTime := d.flight.startTime
 	d.flight.mu.Unlock()
@@ -353,13 +354,14 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 		if callsign != "" {
 			details = fmt.Sprintf("%s — %s", tenantName, callsign)
 		}
+		depCity := d.cityFromBooking("departure", departure)
 		arrCity := d.cityFromBooking("arrival", arrival)
 		flyFmt := flyingToI18n[lang]
 		if flyFmt == "" {
 			flyFmt = flyingToI18n["en"]
 		}
 		activity["details"] = details
-		activity["state"] = fmt.Sprintf(flyFmt, arrCity)
+		activity["state"] = fmt.Sprintf(flyFmt, depCity+" → "+arrCity)
 		activity["timestamps"] = map[string]interface{}{
 			"start": startTime.Unix(),
 		}

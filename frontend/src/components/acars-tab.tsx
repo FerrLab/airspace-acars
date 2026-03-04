@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Plug, Unplug, Plane, Square, CheckCircle2 } from "lucide-react";
+import { Plug, Unplug, Plane, Square, CheckCircle2, ArrowRight } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
@@ -31,6 +31,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   const [endingFlight, setEndingFlight] = useState(false);
   const [onGround, setOnGround] = useState(false);
   const [groundSpeed, setGroundSpeed] = useState(0);
+  const [activeFlightInfo, setActiveFlightInfo] = useState<{ callsign?: string; departure?: string; arrival?: string } | null>(null);
 
   useEffect(() => {
     FlightDataService.ConnectedAdapter().then(setConnectedAdapter).catch(() => {});
@@ -73,6 +74,17 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     const interval = setInterval(fetchBooking, 10_000);
     return () => clearInterval(interval);
   }, [localMode, isConnected, flightState, fetchBooking]);
+
+  // Fetch active flight info when flight becomes active
+  useEffect(() => {
+    if (localMode || flightState !== "active") {
+      setActiveFlightInfo(null);
+      return;
+    }
+    FlightService.GetActiveFlightInfo()
+      .then((info) => setActiveFlightInfo(info as any))
+      .catch(() => {});
+  }, [localMode, flightState]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -241,6 +253,28 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                   {t("acars.positionReporting")}
                 </Badge>
               </div>
+              {activeFlightInfo && (
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-xs text-muted-foreground block">{t("acars.callsign")}</span>
+                    <span className="font-mono font-medium">
+                      {activeFlightInfo.callsign || "---"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block">{t("acars.departure")}</span>
+                    <span className="font-mono font-medium">
+                      {activeFlightInfo.departure || "---"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block">{t("acars.arrival")}</span>
+                    <span className="font-mono font-medium">
+                      {activeFlightInfo.arrival || "---"}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
