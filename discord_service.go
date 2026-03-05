@@ -372,7 +372,7 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 	} else {
 		activity["details"] = tenantName
 		booking := d.getCachedBooking()
-		if booking != nil {
+		if booking != nil && len(booking) > 0 {
 			dep := d.cityFromBooking("departure", d.bookingField(booking, "departure", "dep"))
 			activity["state"] = d.idlePhrase(dep)
 		} else {
@@ -386,12 +386,12 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 }
 
 func (d *DiscordService) getCachedBooking() map[string]interface{} {
-	if time.Since(d.bookingCacheTime) < 60*time.Second && d.bookingCache != nil {
+	if time.Since(d.bookingCacheTime) < 60*time.Second {
 		return d.bookingCache
 	}
 	booking, err := d.flight.GetBooking()
 	d.bookingCacheTime = time.Now()
-	if err != nil {
+	if err != nil || len(booking) == 0 {
 		d.bookingCache = nil
 		return nil
 	}
