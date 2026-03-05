@@ -65,10 +65,10 @@ var idlePhrasesI18n = map[string][]string{
 }
 
 var flyingToI18n = map[string]string{
-	"en": "Flying to %s",
-	"es": "Volando a %s",
-	"pt": "Voando para %s",
-	"fr": "En vol vers %s",
+	"en": "Flying %s",
+	"es": "Volando %s",
+	"pt": "Voando %s",
+	"fr": "En vol %s",
 }
 
 var standbyI18n = map[string]string{
@@ -96,6 +96,10 @@ type DiscordService struct {
 	// cached booking
 	bookingCache     map[string]interface{}
 	bookingCacheTime time.Time
+
+	// cached pilot info
+	pilotCache     map[string]interface{}
+	pilotCacheTime time.Time
 
 	// idle phrase rotation
 	phraseIdx  int
@@ -334,6 +338,7 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 	d.flight.mu.Lock()
 	state := d.flight.state
 	callsign := d.flight.callsign
+	departure := d.flight.departure
 	arrival := d.flight.arrival
 	startTime := d.flight.startTime
 	d.flight.mu.Unlock()
@@ -353,28 +358,29 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 		if callsign != "" {
 			details = fmt.Sprintf("%s — %s", tenantName, callsign)
 		}
+		depCity := d.cityFromBooking("departure", departure)
 		arrCity := d.cityFromBooking("arrival", arrival)
 		flyFmt := flyingToI18n[lang]
 		if flyFmt == "" {
 			flyFmt = flyingToI18n["en"]
 		}
 		activity["details"] = details
-		activity["state"] = fmt.Sprintf(flyFmt, arrCity)
+		activity["state"] = fmt.Sprintf(flyFmt, depCity+" → "+arrCity)
 		activity["timestamps"] = map[string]interface{}{
 			"start": startTime.Unix(),
 		}
 	} else {
 		activity["details"] = tenantName
 		booking := d.getCachedBooking()
-		if booking != nil {
-			dep := d.cityFromBooking("departure", d.bookingField(booking, "departure", "dep"))
+		depCode := d.bookingField(booking, "departure", "dep")
+		if booking != nil && depCode != "" {
+			dep := d.cityFromBooking("departure", depCode)
 			activity["state"] = d.idlePhrase(dep)
 		} else {
-			standby := standbyI18n[lang]
-			if standby == "" {
-				standby = standbyI18n["en"]
-			}
-			activity["state"] = standby
+			// No booking (or no departure info) — use pilot's current airport
+			city := d.pilotCity()
+			slog.Debug("discord: pilot city for idle presence", "city", city, "hasPilotCache", d.pilotCache != nil)
+			activity["state"] = d.idlePhrase(city)
 		}
 	}
 
@@ -382,17 +388,57 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 }
 
 func (d *DiscordService) getCachedBooking() map[string]interface{} {
-	if time.Since(d.bookingCacheTime) < 60*time.Second && d.bookingCache != nil {
+	if time.Since(d.bookingCacheTime) < 60*time.Second {
 		return d.bookingCache
 	}
 	booking, err := d.flight.GetBooking()
 	d.bookingCacheTime = time.Now()
-	if err != nil {
+	if err != nil || len(booking) == 0 {
 		d.bookingCache = nil
 		return nil
 	}
 	d.bookingCache = booking
 	return booking
+}
+
+func (d *DiscordService) getCachedPilot() map[string]interface{} {
+	if time.Since(d.pilotCacheTime) < 60*time.Second && d.pilotCache != nil {
+		return d.pilotCache
+	}
+	pilot, err := d.flight.GetPilot()
+	d.pilotCacheTime = time.Now()
+	if err != nil {
+		slog.Debug("discord: failed to fetch pilot", "error", err)
+		d.pilotCache = nil
+		return nil
+	}
+	d.pilotCache = pilot
+	return pilot
+}
+
+// pilotCity returns the pilot's current airport city (or ICAO as fallback).
+func (d *DiscordService) pilotCity() string {
+	pilot := d.getCachedPilot()
+	if pilot == nil {
+		return ""
+	}
+	profile, _ := pilot["profile"].(map[string]interface{})
+	if profile == nil {
+		slog.Debug("discord: pilot response has no profile field")
+		return ""
+	}
+	airport, _ := profile["current_airport"].(map[string]interface{})
+	if airport == nil {
+		slog.Debug("discord: pilot profile has no current_airport")
+		return ""
+	}
+	if city, ok := airport["city"].(string); ok && city != "" {
+		return city
+	}
+	if icao, ok := airport["icao"].(string); ok && icao != "" {
+		return icao
+	}
+	return ""
 }
 
 func (d *DiscordService) bookingField(booking map[string]interface{}, keys ...string) string {

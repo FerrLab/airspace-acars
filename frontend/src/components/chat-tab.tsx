@@ -36,6 +36,29 @@ function formatTime(iso: string): string {
   }
 }
 
+function formatDateLabel(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+function getDateKey(iso: string): string {
+  try {
+    return new Date(iso).toDateString();
+  } catch {
+    return iso;
+  }
+}
+
 function usePingSound(soundType: ChatSoundType) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
@@ -330,10 +353,23 @@ export function ChatTab({ localMode = false }: ChatTabProps) {
               {t("chat.noMessages")}
             </p>
           )}
-          {sorted.map((msg) => {
+          {sorted.map((msg, i) => {
             const sender = classifySender(msg, myUserId);
+            const prevMsg = sorted[i - 1];
+            const showDate = !prevMsg || getDateKey(msg.timestamp) !== getDateKey(prevMsg.timestamp);
             return (
-              <ChatBubble key={msg.id} message={msg} sender={sender} />
+              <div key={msg.id}>
+                {showDate && (
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="flex-1 border-t border-border" />
+                    <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+                      {formatDateLabel(msg.timestamp)}
+                    </span>
+                    <div className="flex-1 border-t border-border" />
+                  </div>
+                )}
+                <ChatBubble message={msg} sender={sender} />
+              </div>
             );
           })}
           <div ref={messagesEndRef} />
