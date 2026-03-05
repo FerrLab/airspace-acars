@@ -372,12 +372,14 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 	} else {
 		activity["details"] = tenantName
 		booking := d.getCachedBooking()
-		if booking != nil && len(booking) > 0 {
-			dep := d.cityFromBooking("departure", d.bookingField(booking, "departure", "dep"))
+		depCode := d.bookingField(booking, "departure", "dep")
+		if booking != nil && depCode != "" {
+			dep := d.cityFromBooking("departure", depCode)
 			activity["state"] = d.idlePhrase(dep)
 		} else {
-			// No booking — use pilot's current airport from the API
+			// No booking (or no departure info) — use pilot's current airport
 			city := d.pilotCity()
+			slog.Debug("discord: pilot city for idle presence", "city", city, "hasPilotCache", d.pilotCache != nil)
 			activity["state"] = d.idlePhrase(city)
 		}
 	}
@@ -406,6 +408,7 @@ func (d *DiscordService) getCachedPilot() map[string]interface{} {
 	pilot, err := d.flight.GetPilot()
 	d.pilotCacheTime = time.Now()
 	if err != nil {
+		slog.Debug("discord: failed to fetch pilot", "error", err)
 		d.pilotCache = nil
 		return nil
 	}
@@ -421,10 +424,12 @@ func (d *DiscordService) pilotCity() string {
 	}
 	profile, _ := pilot["profile"].(map[string]interface{})
 	if profile == nil {
+		slog.Debug("discord: pilot response has no profile field")
 		return ""
 	}
 	airport, _ := profile["current_airport"].(map[string]interface{})
 	if airport == nil {
+		slog.Debug("discord: pilot profile has no current_airport")
 		return ""
 	}
 	if city, ok := airport["city"].(string); ok && city != "" {
