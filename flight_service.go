@@ -95,6 +95,19 @@ func (f *FlightService) GetBooking() (map[string]interface{}, error) {
 	return result, nil
 }
 
+func (f *FlightService) GetPilot() (map[string]interface{}, error) {
+	body, _, err := f.auth.doRequest("GET", "/api/v2/acars/pilot", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse pilot: %w", err)
+	}
+	return result, nil
+}
+
 func (f *FlightService) StartFlight(callsign, departure, arrival string) error {
 	_, span := flightTracer.Start(context.Background(), "flight.start",
 		trace.WithAttributes(

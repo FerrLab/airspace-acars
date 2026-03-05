@@ -97,6 +97,10 @@ type DiscordService struct {
 	bookingCache     map[string]interface{}
 	bookingCacheTime time.Time
 
+	// cached pilot info
+	pilotCache     map[string]interface{}
+	pilotCacheTime time.Time
+
 	// idle phrase rotation
 	phraseIdx  int
 	phraseTime time.Time
@@ -372,11 +376,9 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 			dep := d.cityFromBooking("departure", d.bookingField(booking, "departure", "dep"))
 			activity["state"] = d.idlePhrase(dep)
 		} else {
-			standby := standbyI18n[lang]
-			if standby == "" {
-				standby = standbyI18n["en"]
-			}
-			activity["state"] = standby
+			// No booking — use pilot's current airport from the API
+			city := d.pilotCity()
+			activity["state"] = d.idlePhrase(city)
 		}
 	}
 
@@ -395,6 +397,43 @@ func (d *DiscordService) getCachedBooking() map[string]interface{} {
 	}
 	d.bookingCache = booking
 	return booking
+}
+
+func (d *DiscordService) getCachedPilot() map[string]interface{} {
+	if time.Since(d.pilotCacheTime) < 60*time.Second && d.pilotCache != nil {
+		return d.pilotCache
+	}
+	pilot, err := d.flight.GetPilot()
+	d.pilotCacheTime = time.Now()
+	if err != nil {
+		d.pilotCache = nil
+		return nil
+	}
+	d.pilotCache = pilot
+	return pilot
+}
+
+// pilotCity returns the pilot's current airport city (or ICAO as fallback).
+func (d *DiscordService) pilotCity() string {
+	pilot := d.getCachedPilot()
+	if pilot == nil {
+		return ""
+	}
+	profile, _ := pilot["profile"].(map[string]interface{})
+	if profile == nil {
+		return ""
+	}
+	airport, _ := profile["current_airport"].(map[string]interface{})
+	if airport == nil {
+		return ""
+	}
+	if city, ok := airport["city"].(string); ok && city != "" {
+		return city
+	}
+	if icao, ok := airport["icao"].(string); ok && icao != "" {
+		return icao
+	}
+	return ""
 }
 
 func (d *DiscordService) bookingField(booking map[string]interface{}, keys ...string) string {
