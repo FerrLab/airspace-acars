@@ -35,78 +35,92 @@ func newTestDiscordService() *DiscordService {
 	}
 }
 
-func TestBookingField(t *testing.T) {
+func TestAirportField(t *testing.T) {
 	d := newTestDiscordService()
 
 	tests := []struct {
-		name    string
-		booking map[string]interface{}
-		keys    []string
-		want    string
+		name       string
+		booking    map[string]interface{}
+		airportKey string
+		field      string
+		want       string
 	}{
 		{
-			name:    "first key found",
-			booking: map[string]interface{}{"departure": "EGLL", "dep": "LHR"},
-			keys:    []string{"departure", "dep"},
-			want:    "EGLL",
+			name: "extracts icao from nested airport",
+			booking: map[string]interface{}{
+				"departure_airport": map[string]interface{}{"icao": "EGLL", "city": "London"},
+			},
+			airportKey: "departure_airport",
+			field:      "icao",
+			want:       "EGLL",
 		},
 		{
-			name:    "falls back to second key",
-			booking: map[string]interface{}{"dep": "LHR"},
-			keys:    []string{"departure", "dep"},
-			want:    "LHR",
+			name: "extracts city from nested airport",
+			booking: map[string]interface{}{
+				"departure_airport": map[string]interface{}{"icao": "EGLL", "city": "London"},
+			},
+			airportKey: "departure_airport",
+			field:      "city",
+			want:       "London",
 		},
 		{
-			name:    "empty when no keys match",
-			booking: map[string]interface{}{"other": "value"},
-			keys:    []string{"departure", "dep"},
-			want:    "",
+			name:       "empty when airport key missing",
+			booking:    map[string]interface{}{"other": "value"},
+			airportKey: "departure_airport",
+			field:      "icao",
+			want:       "",
 		},
 		{
-			name:    "skips empty string values",
-			booking: map[string]interface{}{"departure": "", "dep": "LHR"},
-			keys:    []string{"departure", "dep"},
-			want:    "LHR",
+			name:       "empty when booking is nil",
+			booking:    nil,
+			airportKey: "departure_airport",
+			field:      "icao",
+			want:       "",
 		},
 		{
-			name:    "skips non-string values",
-			booking: map[string]interface{}{"departure": 42, "dep": "LHR"},
-			keys:    []string{"departure", "dep"},
-			want:    "LHR",
+			name: "empty when airport is not an object",
+			booking: map[string]interface{}{
+				"departure_airport": "EGLL",
+			},
+			airportKey: "departure_airport",
+			field:      "icao",
+			want:       "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := d.bookingField(tt.booking, tt.keys...)
+			got := d.airportField(tt.booking, tt.airportKey, tt.field)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestCityFromBooking(t *testing.T) {
+func TestCityForFlight(t *testing.T) {
 	d := newTestDiscordService()
 
 	t.Run("returns city from booking cache", func(t *testing.T) {
 		d.bookingCache = map[string]interface{}{
-			"departure_city": "London",
+			"departure_airport": map[string]interface{}{"icao": "EGLL", "city": "London"},
 		}
-		assert.Equal(t, "London", d.cityFromBooking("departure", "EGLL"))
+		assert.Equal(t, "London", d.cityForFlight("departure_airport", "EGLL"))
 	})
 
 	t.Run("falls back to code when city not in cache", func(t *testing.T) {
-		d.bookingCache = map[string]interface{}{}
-		assert.Equal(t, "EGLL", d.cityFromBooking("departure", "EGLL"))
+		d.bookingCache = map[string]interface{}{
+			"departure_airport": map[string]interface{}{"icao": "EGLL"},
+		}
+		assert.Equal(t, "EGLL", d.cityForFlight("departure_airport", "EGLL"))
 	})
 
 	t.Run("returns unknown when no cache and no code", func(t *testing.T) {
 		d.bookingCache = nil
-		assert.Equal(t, "unknown", d.cityFromBooking("departure", ""))
+		assert.Equal(t, "unknown", d.cityForFlight("departure_airport", ""))
 	})
 
 	t.Run("returns code when cache is nil", func(t *testing.T) {
 		d.bookingCache = nil
-		assert.Equal(t, "KJFK", d.cityFromBooking("arrival", "KJFK"))
+		assert.Equal(t, "KJFK", d.cityForFlight("arrival_airport", "KJFK"))
 	})
 }
 
@@ -148,8 +162,8 @@ func TestBuildActivity(t *testing.T) {
 		d.flight.arrival = "KJFK"
 		d.flight.startTime = time.Now().Add(-30 * time.Minute)
 		d.bookingCache = map[string]interface{}{
-			"departure_city": "London",
-			"arrival_city":   "New York",
+			"departure_airport": map[string]interface{}{"icao": "EGLL", "city": "London"},
+			"arrival_airport":   map[string]interface{}{"icao": "KJFK", "city": "New York"},
 		}
 
 		activity := d.buildActivity("Airline Co", "https://logo.png")
@@ -166,8 +180,7 @@ func TestBuildActivity(t *testing.T) {
 		d := newTestDiscordService()
 		d.flight.state = "idle"
 		d.bookingCache = map[string]interface{}{
-			"departure":      "EGLL",
-			"departure_city": "London",
+			"departure_airport": map[string]interface{}{"icao": "EGLL", "city": "London"},
 		}
 		d.bookingCacheTime = time.Now()
 		d.phraseIdx = 0

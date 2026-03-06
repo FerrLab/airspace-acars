@@ -141,6 +141,8 @@
   "settings.languageLabel": "Language",
   "settings.languageDesc": "Choose your preferred language",
 
+  "splash.checkingForUpdates": "Checking for updates...",
+
   "sounds.default": "Default",
   "sounds.chime": "Chime",
   "sounds.ding": "Ding",

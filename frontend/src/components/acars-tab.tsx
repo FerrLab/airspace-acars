@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Plug, Unplug, Plane, Square, CheckCircle2 } from "lucide-react";
+import { Plug, Unplug, Plane, Square, CheckCircle2, TriangleAlert } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
@@ -113,8 +113,8 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     setStartingFlight(true);
     try {
       const callsign = booking.callsign ?? booking.flight_number ?? "";
-      const departure = booking.departure ?? booking.dep ?? "";
-      const arrival = booking.arrival ?? booking.arr ?? "";
+      const departure = booking.departure_airport?.icao ?? "";
+      const arrival = booking.alternate_airport?.icao ?? booking.arrival_airport?.icao ?? "";
       await FlightService.StartFlight(callsign, departure, arrival);
     } catch (e: any) {
       alert(translateError(t, "Failed to start flight: " + e));
@@ -209,14 +209,26 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                 <div>
                   <span className="text-xs text-muted-foreground block">{t("acars.departure")}</span>
                   <span className="font-mono font-medium">
-                    {booking.departure ?? booking.dep ?? "---"}
+                    {booking.departure_airport?.icao ?? "---"}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-muted-foreground block">{t("acars.arrival")}</span>
-                  <span className="font-mono font-medium">
-                    {booking.arrival ?? booking.arr ?? "---"}
-                  </span>
+                  {booking.alternate_airport ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-medium line-through text-muted-foreground">
+                        {booking.arrival_airport?.icao ?? "---"}
+                      </span>
+                      <TriangleAlert className="h-3 w-3 text-yellow-500" />
+                      <span className="font-mono font-medium text-yellow-500 animate-pulse">
+                        {booking.alternate_airport?.icao ?? "---"}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-mono font-medium">
+                      {booking.arrival_airport?.icao ?? "---"}
+                    </span>
+                  )}
                 </div>
               </div>
               <Button

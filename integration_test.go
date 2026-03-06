@@ -13,9 +13,15 @@ import (
 
 func TestFlightServiceGetBooking(t *testing.T) {
 	booking := map[string]interface{}{
-		"callsign":  "BAW123",
-		"departure": "EGLL",
-		"arrival":   "KJFK",
+		"callsign": "BAW123",
+		"departure_airport": map[string]interface{}{
+			"icao": "EGLL",
+			"city": "London",
+		},
+		"arrival_airport": map[string]interface{}{
+			"icao": "KJFK",
+			"city": "New York",
+		},
 	}
 
 	auth, server := newTestAuthService(func(w http.ResponseWriter, r *http.Request) {
@@ -30,8 +36,10 @@ func TestFlightServiceGetBooking(t *testing.T) {
 	result, err := flight.GetBooking()
 	require.NoError(t, err)
 	assert.Equal(t, "BAW123", result["callsign"])
-	assert.Equal(t, "EGLL", result["departure"])
-	assert.Equal(t, "KJFK", result["arrival"])
+	depAirport := result["departure_airport"].(map[string]interface{})
+	assert.Equal(t, "EGLL", depAirport["icao"])
+	arrAirport := result["arrival_airport"].(map[string]interface{})
+	assert.Equal(t, "KJFK", arrAirport["icao"])
 }
 
 func TestChatServiceGetMessages(t *testing.T) {
