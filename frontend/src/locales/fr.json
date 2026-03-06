@@ -141,6 +141,8 @@
   "settings.languageLabel": "Langue",
   "settings.languageDesc": "Choisissez votre langue préférée",
 
+  "splash.checkingForUpdates": "Recherche de mises à jour...",
+
   "sounds.default": "Par défaut",
   "sounds.chime": "Carillon",
   "sounds.ding": "Sonnerie",

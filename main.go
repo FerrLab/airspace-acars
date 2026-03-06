@@ -27,6 +27,7 @@ func init() {
 	application.RegisterEvent[bool]("recording-state")
 	application.RegisterEvent[string]("connection-state")
 	application.RegisterEvent[string]("flight-state")
+	application.RegisterEvent[bool]("update-check-done")
 }
 
 func main() {
@@ -148,6 +149,7 @@ func main() {
 
 		// Auto-update on startup
 		updateService.AutoUpdate()
+		app.Event.Emit("update-check-done", true)
 
 		// Auto-connect to sim
 		settings := settingsService.GetSettings()

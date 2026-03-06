@@ -141,6 +141,8 @@
   "settings.languageLabel": "Idioma",
   "settings.languageDesc": "Escolha seu idioma preferido",
 
+  "splash.checkingForUpdates": "Verificando atualizações...",
+
   "sounds.default": "Padrão",
   "sounds.chime": "Sino",
   "sounds.ding": "Campainha",

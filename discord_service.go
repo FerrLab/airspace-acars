@@ -358,8 +358,8 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 		if callsign != "" {
 			details = fmt.Sprintf("%s — %s", tenantName, callsign)
 		}
-		depCity := d.cityFromBooking("departure", departure)
-		arrCity := d.cityFromBooking("arrival", arrival)
+		depCity := d.cityForFlight("departure_airport", departure)
+		arrCity := d.cityForFlight("arrival_airport", arrival)
 		flyFmt := flyingToI18n[lang]
 		if flyFmt == "" {
 			flyFmt = flyingToI18n["en"]
@@ -372,9 +372,12 @@ func (d *DiscordService) buildActivity(tenantName, tenantLogo string) map[string
 	} else {
 		activity["details"] = tenantName
 		booking := d.getCachedBooking()
-		depCode := d.bookingField(booking, "departure", "dep")
+		depCode := d.airportField(booking, "departure_airport", "icao")
 		if booking != nil && depCode != "" {
-			dep := d.cityFromBooking("departure", depCode)
+			dep := d.airportField(booking, "departure_airport", "city")
+			if dep == "" {
+				dep = depCode
+			}
 			activity["state"] = d.idlePhrase(dep)
 		} else {
 			// No booking (or no departure info) — use pilot's current airport
@@ -441,18 +444,26 @@ func (d *DiscordService) pilotCity() string {
 	return ""
 }
 
-func (d *DiscordService) bookingField(booking map[string]interface{}, keys ...string) string {
-	for _, k := range keys {
-		if v, ok := booking[k].(string); ok && v != "" {
-			return v
-		}
+// airportField extracts a field from a nested airport object in the booking.
+// e.g. airportField(booking, "departure_airport", "icao") reads booking["departure_airport"]["icao"].
+func (d *DiscordService) airportField(booking map[string]interface{}, airportKey, field string) string {
+	if booking == nil {
+		return ""
+	}
+	airport, ok := booking[airportKey].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if v, ok := airport[field].(string); ok {
+		return v
 	}
 	return ""
 }
 
-func (d *DiscordService) cityFromBooking(which, fallbackCode string) string {
+// cityForFlight returns a display city for an active flight, using the booking cache if available.
+func (d *DiscordService) cityForFlight(airportKey, fallbackCode string) string {
 	if d.bookingCache != nil {
-		if city, ok := d.bookingCache[which+"_city"].(string); ok && city != "" {
+		if city := d.airportField(d.bookingCache, airportKey, "city"); city != "" {
 			return city
 		}
 	}
