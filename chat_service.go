@@ -52,6 +52,13 @@ func (c *ChatService) GetMessages(page int) (*MessagesResponse, error) {
 		return nil, err
 	}
 
+	if len(body) > 0 && body[0] == '<' {
+		err := fmt.Errorf("server returned HTML instead of JSON (possible auth redirect or server error)")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
 	var result MessagesResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		span.RecordError(err)
