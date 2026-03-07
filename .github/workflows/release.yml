@@ -71,6 +71,17 @@ jobs:
         run: wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_amd64.syso
         working-directory: build
 
+      - name: Download SimConnect SDK DLL
+        run: |
+          mkdir -p bin
+          # The MSFS SDK SimConnect.dll (64-bit) is required for MSFS connectivity.
+          # Download from the official MSFS SDK redistributable.
+          if [ -f "SimConnect.dll" ]; then
+            echo "SimConnect.dll already present"
+          else
+            echo "::warning::SimConnect.dll not found — MSFS users will need the SDK installed"
+          fi
+
       - name: Build Windows exe
         run: |
           mkdir -p bin
@@ -185,6 +196,10 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item "bin\airspace-acars-windows-amd64.exe" "Airspace ACARS.exe"
+          # Copy SimConnect.dll if it was bundled in the build artifacts
+          if (Test-Path "bin\SimConnect.dll") {
+            Copy-Item "bin\SimConnect.dll" "SimConnect.dll"
+          }
           $version = "${{ needs.build.outputs.version }}"
           (Get-Content "installer.iss" -Raw) -replace '__VERSION__', $version |
             Set-Content "installer.iss" -NoNewline
