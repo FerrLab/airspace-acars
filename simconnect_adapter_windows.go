@@ -1,14 +1,19 @@
 package main
 
 import (
+	"debug/pe"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
 	"unsafe"
 
-	sim "github.com/lian/msfs2020-go/simconnect"
+	sim "airspace-acars/internal/simconnect"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 type SimConnectAdapter struct {
@@ -147,6 +152,130 @@ type simReport struct {
 	AircraftTitle [256]byte `name:"TITLE" unit:""`
 }
 
+// findSimConnectDLL searches for a 64-bit SimConnect.dll.
+// Search order:
+//  1. Next to the executable (bundled by installer)
+//  2. MSFS_SDK environment variable
+//  3. Windows registry (MSFS SDK installer keys)
+//  4. MSFS game installation directories
+//  5. Common SDK installation paths
+func findSimConnectDLL() (string, error) {
+	// Ensure the embedded DLL is extracted next to the executable
+	// if it is missing or does not match the bundled version.
+	ensureSimConnectDLL()
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	exeDir := filepath.Dir(exePath)
+
+	// 1. Check next to executable (embedded extraction or installer).
+	p := filepath.Join(exeDir, "SimConnect.dll")
+	if ok, _ := checkDLL64(p); ok {
+		return p, nil
+	}
+
+	// 2. MSFS_SDK env var.
+	if sdkRoot := os.Getenv("MSFS_SDK"); sdkRoot != "" {
+		p = filepath.Join(sdkRoot, "SimConnect SDK", "lib", "SimConnect.dll")
+		if ok, _ := checkDLL64(p); ok {
+			return p, nil
+		}
+	}
+
+	// 3. Registry keys (MSFS SDK installer and game install path).
+	regPaths := []struct {
+		key     registry.Key
+		subkey  string
+		valName string
+	}{
+		{registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Microsoft Games\Flight Simulator\11.0`, "SdkPath"},
+		{registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Microsoft Games\Flight Simulator`, "SdkPath"},
+		{registry.CURRENT_USER, `SOFTWARE\Microsoft\Microsoft Games\Flight Simulator\11.0`, "SdkPath"},
+		// MSFS 2024 and Steam
+		{registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\FlightSimulator`, "SdkPath"},
+		{registry.CURRENT_USER, `SOFTWARE\Microsoft\FlightSimulator`, "SdkPath"},
+	}
+	for _, rp := range regPaths {
+		k, err := registry.OpenKey(rp.key, rp.subkey, registry.READ)
+		if err != nil {
+			continue
+		}
+		val, _, err := k.GetStringValue(rp.valName)
+		k.Close()
+		if err != nil || val == "" {
+			continue
+		}
+		p = filepath.Join(val, "SimConnect SDK", "lib", "SimConnect.dll")
+		if ok, _ := checkDLL64(p); ok {
+			return p, nil
+		}
+	}
+
+	// 4. Scan common paths (SDK installs, game directories).
+	var candidates []string
+	pf := os.Getenv("ProgramFiles")
+	pfx86 := os.Getenv("ProgramFiles(x86)")
+	localApp := os.Getenv("LOCALAPPDATA")
+
+	if pf != "" {
+		candidates = append(candidates,
+			filepath.Join(pf, "Microsoft Flight Simulator SDK", "SimConnect SDK", "lib", "SimConnect.dll"),
+		)
+	}
+	if pfx86 != "" {
+		candidates = append(candidates,
+			filepath.Join(pfx86, "Steam", "steamapps", "common", "MicrosoftFlightSimulator", "SimConnect.dll"),
+		)
+	}
+	if localApp != "" {
+		// MS Store MSFS 2020
+		candidates = append(candidates,
+			filepath.Join(localApp, "Packages", "Microsoft.FlightSimulator_8wekyb3d8bbwe", "LocalCache", "SimConnect.dll"),
+		)
+	}
+
+	for _, drive := range []string{"C:", "D:", "E:", "F:"} {
+		candidates = append(candidates,
+			filepath.Join(drive, `\MSFS SDK\SimConnect SDK\lib\SimConnect.dll`),
+			filepath.Join(drive, `\MSFS 2024 SDK\SimConnect SDK\lib\SimConnect.dll`),
+			filepath.Join(drive, `\Flight Simulator\SimConnect.dll`),
+			filepath.Join(drive, `\Microsoft Flight Simulator\SimConnect.dll`),
+		)
+	}
+
+	for _, c := range candidates {
+		if ok, _ := checkDLL64(c); ok {
+			return c, nil
+		}
+	}
+
+	return "", fmt.Errorf(
+		"64-bit SimConnect.dll not found — please install the MSFS SDK "+
+			"or copy SimConnect.dll (64-bit) next to the Airspace ACARS executable at: %s", exeDir,
+	)
+}
+
+// isDLL64Bit returns true if the PE file at path is a 64-bit (AMD64) binary.
+func isDLL64Bit(path string) (bool, error) {
+	f, err := pe.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	_, is64 := f.OptionalHeader.(*pe.OptionalHeader64)
+	return is64, nil
+}
+
+// checkDLL64 returns true if path exists and is a 64-bit PE binary.
+func checkDLL64(path string) (bool, error) {
+	if _, err := os.Stat(path); err != nil {
+		return false, err
+	}
+	return isDLL64Bit(path)
+}
+
 func NewSimConnectAdapter() SimConnector {
 	return &SimConnectAdapter{}
 }
@@ -183,7 +312,15 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 	defer runtime.UnlockOSThread()
 	defer close(s.stopped)
 
-	sc, err := sim.New("Airspace ACARS")
+	dllPath, err := findSimConnectDLL()
+	if err != nil {
+		slog.Error("SimConnect DLL not found", "error", err)
+		errCh <- err
+		return
+	}
+	slog.Info("using SimConnect DLL", "path", dllPath)
+
+	sc, err := sim.New("Airspace ACARS", dllPath)
 	if err != nil {
 		errCh <- fmt.Errorf("simconnect open: %w", err)
 		return

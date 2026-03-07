@@ -85,11 +85,16 @@ jobs:
       - name: Clean up syso
         run: rm -f *.syso
 
+      - name: Bundle SimConnect DLL
+        run: cp SimConnect.dll bin/SimConnect.dll
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-output
-          path: bin/airspace-acars-windows-amd64.exe
+          path: |
+            bin/airspace-acars-windows-amd64.exe
+            bin/SimConnect.dll
 
   build-linux:
     runs-on: ubicloud-standard-2
@@ -185,6 +190,7 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item "bin\airspace-acars-windows-amd64.exe" "Airspace ACARS.exe"
+          Copy-Item "bin\SimConnect.dll" "SimConnect.dll"
           $version = "${{ needs.build.outputs.version }}"
           (Get-Content "installer.iss" -Raw) -replace '__VERSION__', $version |
             Set-Content "installer.iss" -NoNewline
