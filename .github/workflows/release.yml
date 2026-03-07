@@ -190,10 +190,7 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item "bin\airspace-acars-windows-amd64.exe" "Airspace ACARS.exe"
-          # Copy SimConnect.dll if it was bundled in the build artifacts
-          if (Test-Path "bin\SimConnect.dll") {
-            Copy-Item "bin\SimConnect.dll" "SimConnect.dll"
-          }
+          Copy-Item "bin\SimConnect.dll" "SimConnect.dll"
           $version = "${{ needs.build.outputs.version }}"
           (Get-Content "installer.iss" -Raw) -replace '__VERSION__', $version |
             Set-Content "installer.iss" -NoNewline
