@@ -1,3 +1,5 @@
+//go:build windows
+
 package simconnect
 
 // DWORD is the SimConnect unsigned 32-bit integer type.
