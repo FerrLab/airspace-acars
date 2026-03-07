@@ -252,8 +252,8 @@ func findSimConnectDLL() (string, error) {
 	}
 
 	return "", fmt.Errorf(
-		"64-bit SimConnect.dll not found — please install the MSFS SDK " +
-			"or copy SimConnect.dll (64-bit) next to the Airspace ACARS executable at: " + exeDir,
+		"64-bit SimConnect.dll not found — please install the MSFS SDK "+
+			"or copy SimConnect.dll (64-bit) next to the Airspace ACARS executable at: %s", exeDir,
 	)
 }
 

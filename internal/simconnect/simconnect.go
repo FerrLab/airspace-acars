@@ -45,9 +45,10 @@ func New(name string, dllPath string) (*SimConnect, error) {
 		LastEventID: 0,
 	}
 
+	namePtr, _ := syscall.BytePtrFromString(name)
 	args := []uintptr{
 		uintptr(unsafe.Pointer(&s.handle)),
-		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(name))),
+		uintptr(unsafe.Pointer(namePtr)),
 		0, 0, 0, 0,
 	}
 	r1, _, err := procOpen.Call(args...)
@@ -69,11 +70,13 @@ func (s *SimConnect) Close() error {
 
 // AddToDataDefinition adds a variable to a data definition.
 func (s *SimConnect) AddToDataDefinition(defineID DWORD, name, unit string, dataType DWORD) error {
+	namePtr, _ := syscall.BytePtrFromString(name)
+	unitPtr, _ := syscall.BytePtrFromString(unit)
 	r1, _, err := procAddToDataDefinition.Call(
 		uintptr(s.handle),
 		uintptr(defineID),
-		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(name))),
-		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(unit))),
+		uintptr(unsafe.Pointer(namePtr)),
+		uintptr(unsafe.Pointer(unitPtr)),
 		uintptr(dataType),
 		0xffffffff, // epsilon — UNUSED
 		0xffffffff, // datum id — UNUSED

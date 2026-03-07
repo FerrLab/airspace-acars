@@ -5,11 +5,11 @@
 	"info": {
 		"0000": {
 			"ProductVersion": "0.1.0",
-			"CompanyName": "My Company",
-			"FileDescription": "A airspace-acars-temp application",
-			"LegalCopyright": "© 2026, My Company",
-			"ProductName": "My Product",
-			"Comments": "This is a comment"
+			"CompanyName": "FerrLab",
+			"FileDescription": "Airspace ACARS",
+			"LegalCopyright": "© 2026, FerrLab",
+			"ProductName": "Airspace ACARS",
+			"Comments": "Flight Simulator ACARS Desktop Application"
 		}
 	}
 }
