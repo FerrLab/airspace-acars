@@ -71,16 +71,14 @@ jobs:
         run: wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_amd64.syso
         working-directory: build
 
-      - name: Download SimConnect SDK DLL
+      - name: Download SimConnect DLL (64-bit)
         run: |
           mkdir -p bin
-          # The MSFS SDK SimConnect.dll (64-bit) is required for MSFS connectivity.
-          # Download from the official MSFS SDK redistributable.
-          if [ -f "SimConnect.dll" ]; then
-            echo "SimConnect.dll already present"
-          else
-            echo "::warning::SimConnect.dll not found — MSFS users will need the SDK installed"
-          fi
+          curl -sL -o /tmp/fsconnect.nupkg \
+            "https://www.nuget.org/api/v2/package/CTrue.FsConnect/1.4.0"
+          unzip -o /tmp/fsconnect.nupkg build/simconnect.dll -d /tmp/nuget
+          cp /tmp/nuget/build/simconnect.dll bin/SimConnect.dll
+          echo "Bundled 64-bit SimConnect.dll from CTrue.FsConnect NuGet package"
 
       - name: Build Windows exe
         run: |
@@ -100,7 +98,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-output
-          path: bin/airspace-acars-windows-amd64.exe
+          path: |
+            bin/airspace-acars-windows-amd64.exe
+            bin/SimConnect.dll
 
   build-linux:
     runs-on: ubicloud-standard-2
