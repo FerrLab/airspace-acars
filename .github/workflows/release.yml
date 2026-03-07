@@ -71,15 +71,6 @@ jobs:
         run: wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_amd64.syso
         working-directory: build
 
-      - name: Download SimConnect DLL (64-bit)
-        run: |
-          mkdir -p bin
-          curl -sL -o /tmp/fsconnect.nupkg \
-            "https://www.nuget.org/api/v2/package/CTrue.FsConnect/1.4.0"
-          unzip -o /tmp/fsconnect.nupkg build/simconnect.dll -d /tmp/nuget
-          cp /tmp/nuget/build/simconnect.dll bin/SimConnect.dll
-          echo "Bundled 64-bit SimConnect.dll from CTrue.FsConnect NuGet package"
-
       - name: Build Windows exe
         run: |
           mkdir -p bin
@@ -93,6 +84,9 @@ jobs:
 
       - name: Clean up syso
         run: rm -f *.syso
+
+      - name: Bundle SimConnect DLL
+        run: cp SimConnect.dll bin/SimConnect.dll
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
