@@ -160,8 +160,7 @@ type simReport struct {
 //  4. MSFS game installation directories
 //  5. Common SDK installation paths
 func findSimConnectDLL() (string, error) {
-	// Ensure the embedded DLL is extracted next to the executable
-	// if it is missing or does not match the bundled version.
+	// Extract embedded DLL next to the executable if not already present.
 	ensureSimConnectDLL()
 
 	exePath, err := os.Executable()
