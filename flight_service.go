@@ -33,6 +33,10 @@ var (
 		metric.WithDescription("Position report queue depth at each tick"))
 	posFlushTotal, _    = flightMeter.Int64Counter("position.flush_total",
 		metric.WithDescription("Flush attempts on flight end"))
+	posHighResQueued, _ = flightMeter.Int64Counter("position.highres_queued",
+		metric.WithDescription("High-resolution reports queued during flare"))
+	posHighResDepth, _  = flightMeter.Int64Histogram("position.highres_depth",
+		metric.WithDescription("High-resolution queue depth at each drain"))
 )
 
 type FlightService struct {
@@ -284,13 +288,16 @@ func (f *FlightService) endFlight() {
 }
 
 const (
+	highResInterval      = 33 * time.Millisecond  // ~30hz collection below 10 ft AGL
 	posIntervalCritical  = 500 * time.Millisecond // airborne below 50 ft AGL (2hz)
 	posIntervalLow       = 1 * time.Second        // below 10,000 ft AGL
 	posIntervalHigh      = 2 * time.Second        // at/above 10,000 ft AGL
 	posIntervalStatic    = 60 * time.Second       // position unchanged
+	flareAltThreshold    = 10.0
 	criticalAltThreshold = 50.0
 	highAltThreshold     = 10_000.0
-	maxPendingReports    = 500 // max queued position reports
+	maxPendingReports    = 500  // max queued position reports
+	maxHighResReports    = 1500 // max queued high-res reports (~50s at 30hz)
 	retryAttempts        = 4
 )
 
@@ -334,19 +341,46 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 	ticker := time.NewTicker(posIntervalLow)
 	defer ticker.Stop()
 
+	// High-res collection ticker — created stopped; activated when entering flare zone
+	collectTicker := time.NewTicker(time.Hour)
+	collectTicker.Stop()
+	defer collectTicker.Stop()
+
 	currentInterval := posIntervalLow
 	var lastLat, lastLng float64
 	lastChanged := time.Now()
 
 	var pendingReports []map[string]interface{}
+	var highResQueue []map[string]interface{}
 	var consecutiveFailures int
+	collecting := false
 
 	for {
 		select {
 		case <-stopCh:
-			// Flight ending — flush remaining queued reports
-			f.flushPendingReports(pendingReports)
+			if collecting {
+				f.flightData.SetSimPollRate(time.Second)
+			}
+			// Flight ending — flush high-res queue then pending reports
+			allPending := make([]map[string]interface{}, 0, len(highResQueue)+len(pendingReports))
+			allPending = append(allPending, highResQueue...)
+			allPending = append(allPending, pendingReports...)
+			f.flushPendingReports(allPending)
 			return
+
+		case <-collectTicker.C:
+			if !collecting {
+				continue // lingering tick after Stop()
+			}
+			fd, err := f.flightData.GetFlightDataNow()
+			if err != nil {
+				continue
+			}
+			if len(highResQueue) < maxHighResReports {
+				highResQueue = append(highResQueue, f.buildPositionReport(fd))
+				posHighResQueued.Add(context.Background(), 1)
+			}
+
 		case <-ticker.C:
 			fd, err := f.flightData.GetFlightDataNow()
 			if err != nil {
@@ -363,9 +397,25 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				lastChanged = time.Now()
 			}
 
-			// Adaptive interval: static → 60s, critical → 500ms, altitude-based otherwise
+			// Enter/leave high-res flare zone (airborne below 10ft AGL)
+			inFlareZone := !fd.Sensors.OnGround && fd.Position.AltitudeAGL < flareAltThreshold
+			if inFlareZone && !collecting {
+				collecting = true
+				collectTicker.Reset(highResInterval)
+				f.flightData.SetSimPollRate(highResInterval)
+				slog.Info("high-res mode active", "agl", fd.Position.AltitudeAGL)
+			} else if !inFlareZone && collecting {
+				collecting = false
+				collectTicker.Stop()
+				f.flightData.SetSimPollRate(time.Second)
+				slog.Info("high-res mode ended", "agl", fd.Position.AltitudeAGL, "queued", len(highResQueue))
+			}
+
+			// Adaptive interval: keep critical while draining high-res queue
 			var newInterval time.Duration
-			if !posChanged && time.Since(lastChanged) > 5*time.Second {
+			if len(highResQueue) > 0 {
+				newInterval = posIntervalCritical
+			} else if !posChanged && time.Since(lastChanged) > 5*time.Second {
 				newInterval = posIntervalStatic
 			} else if !fd.Sensors.OnGround && fd.Position.AltitudeAGL < criticalAltThreshold {
 				newInterval = posIntervalCritical
@@ -395,26 +445,44 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				}
 			}
 
-			// Send current report
-			report := f.buildPositionReport(fd)
-			_, _, err = f.auth.doRequest("POST", "/api/v2/acars/position", report)
-			if err != nil {
-				consecutiveFailures++
-				if len(pendingReports) < maxPendingReports {
-					pendingReports = append(pendingReports, report)
-					posReportsQueued.Add(context.Background(), 1)
+			// Drain one high-res report per tick
+			if len(highResQueue) > 0 {
+				report := highResQueue[0]
+				highResQueue[0] = nil // release reference for GC
+				highResQueue = highResQueue[1:]
+				posHighResDepth.Record(context.Background(), int64(len(highResQueue)))
+				if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", report); err != nil {
+					if len(pendingReports) < maxPendingReports {
+						pendingReports = append(pendingReports, report)
+						posReportsQueued.Add(context.Background(), 1)
+					}
+				} else {
+					posReportsSent.Add(context.Background(), 1)
 				}
-				if consecutiveFailures == 1 {
-					slog.Warn("server connection lost, queuing position reports", "error", err)
-				} else if consecutiveFailures%30 == 0 {
-					slog.Warn("server still unreachable", "failures", consecutiveFailures, "queued", len(pendingReports))
+			}
+
+			// Send current report — skip while collecting or draining high-res queue
+			if !collecting && len(highResQueue) == 0 {
+				report := f.buildPositionReport(fd)
+				_, _, err = f.auth.doRequest("POST", "/api/v2/acars/position", report)
+				if err != nil {
+					consecutiveFailures++
+					if len(pendingReports) < maxPendingReports {
+						pendingReports = append(pendingReports, report)
+						posReportsQueued.Add(context.Background(), 1)
+					}
+					if consecutiveFailures == 1 {
+						slog.Warn("server connection lost, queuing position reports", "error", err)
+					} else if consecutiveFailures%30 == 0 {
+						slog.Warn("server still unreachable", "failures", consecutiveFailures, "queued", len(pendingReports))
+					}
+				} else {
+					posReportsSent.Add(context.Background(), 1)
+					if consecutiveFailures > 0 {
+						slog.Info("server connection restored", "had_failures", consecutiveFailures, "queued_remaining", len(pendingReports))
+					}
+					consecutiveFailures = 0
 				}
-			} else {
-				posReportsSent.Add(context.Background(), 1)
-				if consecutiveFailures > 0 {
-					slog.Info("server connection restored", "had_failures", consecutiveFailures, "queued_remaining", len(pendingReports))
-				}
-				consecutiveFailures = 0
 			}
 		}
 	}
@@ -422,9 +490,9 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 
 // flushPendingReports attempts a best-effort drain of queued reports when the flight ends.
 func (f *FlightService) flushPendingReports(pending []map[string]interface{}) {
-	for _, report := range pending {
+	for i, report := range pending {
 		if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", report); err != nil {
-			slog.Warn("failed to flush queued report on flight end", "remaining", len(pending), "error", err)
+			slog.Warn("failed to flush queued report on flight end", "remaining", len(pending)-i, "error", err)
 			posFlushTotal.Add(context.Background(), 1, metric.WithAttributes(attribute.Bool("success", false)))
 			return
 		}
