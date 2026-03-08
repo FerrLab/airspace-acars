@@ -117,10 +117,10 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 		// which we'd skip. Instead, find the latest beta version explicitly.
 		betaVersion, err := s.findLatestBetaVersion(ctx)
 		if err != nil {
-			err = fmt.Errorf("failed to find latest beta: %w", err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
+			// GitHub may be rate-limiting or unavailable — skip update check.
+			slog.Warn("update check skipped (could not list beta releases)", "error", err)
+			span.SetAttributes(attribute.Bool("update.skipped", true))
+			return info, nil
 		}
 		if betaVersion == "" {
 			slog.Info("no beta releases found")
@@ -131,11 +131,11 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 		latest, found, err := updater.DetectVersion(ctx, slug, betaVersion)
 		if err != nil || !found {
 			if err != nil {
-				span.RecordError(err)
-				span.SetStatus(codes.Error, err.Error())
+				// GitHub may be rate-limiting or unavailable — skip update check.
+				slog.Warn("update check skipped (could not detect beta version)", "error", err)
+				span.SetAttributes(attribute.Bool("update.skipped", true))
 			}
-			span.SetAttributes(attribute.Bool("update.available", info.UpdateAvailable))
-			return info, err
+			return info, nil
 		}
 
 		info.LatestVersion = latest.Version()
@@ -148,10 +148,10 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 		// Stable builds: use DetectLatest normally (pre-releases excluded)
 		latest, found, err := updater.DetectLatest(ctx, slug)
 		if err != nil {
-			err = fmt.Errorf("failed to detect latest version: %w", err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
+			// GitHub may be rate-limiting or unavailable — skip update check.
+			slog.Warn("update check skipped (could not detect latest version)", "error", err)
+			span.SetAttributes(attribute.Bool("update.skipped", true))
+			return info, nil
 		}
 		if found {
 			info.LatestVersion = latest.Version()
