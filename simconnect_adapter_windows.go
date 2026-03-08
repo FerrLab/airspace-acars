@@ -24,6 +24,7 @@ type SimConnectAdapter struct {
 	lastReceived time.Time
 	stopCh       chan struct{}
 	stopped      chan struct{}
+	rateCh       chan time.Duration
 }
 
 type simReport struct {
@@ -287,11 +288,25 @@ func (s *SimConnectAdapter) Name() string {
 func (s *SimConnectAdapter) Connect() error {
 	s.stopCh = make(chan struct{})
 	s.stopped = make(chan struct{})
+	s.rateCh = make(chan time.Duration, 1)
 	errCh := make(chan error, 1)
 
 	go s.run(errCh)
 
 	return <-errCh
+}
+
+// SetPollRate changes how often the adapter requests data from SimConnect.
+func (s *SimConnectAdapter) SetPollRate(d time.Duration) {
+	// Drain any pending rate change so the latest always wins.
+	select {
+	case <-s.rateCh:
+	default:
+	}
+	select {
+	case s.rateCh <- d:
+	default:
+	}
 }
 
 func (s *SimConnectAdapter) Disconnect() error {
@@ -361,6 +376,8 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 		select {
 		case <-s.stopCh:
 			return
+		case newRate := <-s.rateCh:
+			requestTicker.Reset(newRate)
 		case <-requestTicker.C:
 			sc.RequestDataOnSimObjectType(0, defineID, 0, sim.SIMOBJECT_TYPE_USER)
 		default:

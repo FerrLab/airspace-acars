@@ -528,6 +528,21 @@ func (f *FlightDataService) dataStreamLoop() {
 	}
 }
 
+// SetSimPollRate adjusts the simulator adapter's data request frequency.
+// Adapters that don't support dynamic rates silently ignore the call.
+func (f *FlightDataService) SetSimPollRate(d time.Duration) {
+	f.mu.Lock()
+	connector := f.connector
+	f.mu.Unlock()
+
+	type pollRateSetter interface {
+		SetPollRate(time.Duration)
+	}
+	if pr, ok := connector.(pollRateSetter); ok {
+		pr.SetPollRate(d)
+	}
+}
+
 // GetFlightDataNow returns a one-shot read of the current flight data.
 func (f *FlightDataService) GetFlightDataNow() (*FlightData, error) {
 	f.mu.Lock()
