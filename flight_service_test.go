@@ -19,10 +19,20 @@ func TestMeasurement(t *testing.T) {
 }
 
 func TestPositionIntervalOrdering(t *testing.T) {
-	// Intervals should be ordered: critical < low < high < static
+	// Intervals should be ordered: highRes < critical < low < high < static
+	assert.Less(t, highResInterval, posIntervalCritical)
 	assert.Less(t, posIntervalCritical, posIntervalLow)
 	assert.Less(t, posIntervalLow, posIntervalHigh)
 	assert.Less(t, posIntervalHigh, posIntervalStatic)
+}
+
+func TestFlareAltThreshold(t *testing.T) {
+	assert.Less(t, flareAltThreshold, criticalAltThreshold,
+		"flare threshold must be below critical threshold")
+}
+
+func TestMaxHighResReportsConstant(t *testing.T) {
+	assert.Equal(t, 1500, maxHighResReports)
 }
 
 func TestBuildPositionReport(t *testing.T) {

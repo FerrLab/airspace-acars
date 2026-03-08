@@ -17,7 +17,11 @@ type FlightData struct {
 	APU          APUData           `json:"apu"`
 	Doors        [5]DoorData       `json:"doors"`
 	AircraftName string            `json:"aircraftName"`
+	AircraftType string            `json:"aircraftType"`
 	Weight       WeightData        `json:"weight"`
+	WindDirection float64          `json:"windDirection"` // degrees
+	WindSpeed     float64          `json:"windSpeed"`     // knots
+	QNH           float64          `json:"qnh"`           // hPa (millibars)
 }
 
 type PositionData struct {
@@ -54,6 +58,9 @@ type SensorData struct {
 	StallWarning     bool    `json:"stallWarning"`
 	OverspeedWarning bool    `json:"overspeedWarning"`
 	SimulationRate   float64 `json:"simulationRate"`
+	Paused           bool    `json:"paused"`
+	Slew             bool    `json:"slew"`
+	Crashed          bool    `json:"crashed"`
 }
 
 type RadioData struct {
