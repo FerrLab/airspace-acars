@@ -149,8 +149,21 @@ type simReport struct {
 	// Engine count
 	NumberOfEngines float64 `name:"NUMBER OF ENGINES" unit:"number"`
 
-	// Aircraft Title — must be last (256-byte array misaligns subsequent float64s)
+	// Wind
+	WindDirection float64 `name:"AMBIENT WIND DIRECTION" unit:"degrees"`
+	WindSpeed     float64 `name:"AMBIENT WIND VELOCITY" unit:"knots"`
+
+	// QNH (sea-level pressure in millibars / hPa)
+	QNH float64 `name:"SEA LEVEL PRESSURE" unit:"millibars"`
+
+	// Sim state
+	Paused  float64 `name:"SIM DISABLED" unit:"Bool"`
+	Slew    float64 `name:"IS SLEW ACTIVE" unit:"Bool"`
+	Crashed float64 `name:"CRASH FLAG" unit:"Bool"`
+
+	// Byte-array fields must be last (misalign subsequent float64s)
 	AircraftTitle [256]byte `name:"TITLE" unit:""`
+	AircraftType  [256]byte `name:"ATC MODEL" unit:""`
 }
 
 // findSimConnectDLL searches for a 64-bit SimConnect.dll.
@@ -453,6 +466,9 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						StallWarning:     r.StallWarning != 0,
 						OverspeedWarning: r.OverspeedWarning != 0,
 						SimulationRate:   r.SimulationRate,
+						Paused:           r.Paused != 0,
+						Slew:             r.Slew != 0,
+						Crashed:          r.Crashed != 0,
 					},
 					Radios: RadioData{
 						Com1:      r.Com1,
@@ -508,10 +524,14 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						{OpenRatio: r.Door4Open},
 					},
 					AircraftName: trimNullBytes(r.AircraftTitle[:]),
+					AircraftType: trimNullBytes(r.AircraftType[:]),
 					Weight: WeightData{
 						TotalWeight: r.TotalWeight,
 						FuelWeight:  r.FuelWeight,
 					},
+					WindDirection: r.WindDirection,
+					WindSpeed:     r.WindSpeed,
+					QNH:           r.QNH,
 				}
 				s.mu.Lock()
 				s.latestData = fd

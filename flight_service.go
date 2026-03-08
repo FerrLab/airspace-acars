@@ -580,6 +580,9 @@ func (f *FlightService) buildPositionReport(fd *FlightData) map[string]interface
 			"stallWarning":     fd.Sensors.StallWarning,
 			"overspeedWarning": fd.Sensors.OverspeedWarning,
 			"simulationRate":   m(fd.Sensors.SimulationRate, "x"),
+			"paused":           fd.Sensors.Paused,
+			"slew":             fd.Sensors.Slew,
+			"crashed":          fd.Sensors.Crashed,
 		},
 		"radios": map[string]interface{}{
 			"com1":             m(fd.Radios.Com1, "MHz"),
@@ -631,6 +634,12 @@ func (f *FlightService) buildPositionReport(fd *FlightData) map[string]interface
 			"localTime": m(fd.SimTime.LocalTime, "s"),
 		},
 		"aircraftName": fd.AircraftName,
+		"aircraftType": fd.AircraftType,
+		"wind": map[string]interface{}{
+			"direction": m(fd.WindDirection, "deg"),
+			"speed":     m(fd.WindSpeed, "kts"),
+		},
+		"qnh": m(fd.QNH, "hPa"),
 		"weight": map[string]interface{}{
 			"total": m(fd.Weight.TotalWeight, "lbs"),
 			"fuel":  m(fd.Weight.FuelWeight, "lbs"),
