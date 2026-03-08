@@ -361,11 +361,16 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 			if collecting {
 				f.flightData.SetSimPollRate(time.Second)
 			}
-			// Flight ending — flush high-res queue then pending reports
-			allPending := make([]map[string]interface{}, 0, len(highResQueue)+len(pendingReports))
-			allPending = append(allPending, highResQueue...)
-			allPending = append(allPending, pendingReports...)
-			f.flushPendingReports(allPending)
+			// Flight ending — flush high-res queue as batch, then pending reports individually
+			if len(highResQueue) > 0 {
+				if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", highResQueue); err != nil {
+					slog.Warn("failed to flush high-res reports on flight end", "count", len(highResQueue), "error", err)
+				} else {
+					posReportsSent.Add(context.Background(), int64(len(highResQueue)))
+					slog.Info("flushed high-res reports", "count", len(highResQueue))
+				}
+			}
+			f.flushPendingReports(pendingReports)
 			return
 
 		case <-collectTicker.C:
@@ -445,24 +450,19 @@ func (f *FlightService) positionLoop(stopCh chan struct{}) {
 				}
 			}
 
-			// Drain one high-res report per tick
+			// Drain high-res queue as a batch
 			if len(highResQueue) > 0 {
-				report := highResQueue[0]
-				highResQueue[0] = nil // release reference for GC
-				highResQueue = highResQueue[1:]
 				posHighResDepth.Record(context.Background(), int64(len(highResQueue)))
-				if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", report); err != nil {
-					if len(pendingReports) < maxPendingReports {
-						pendingReports = append(pendingReports, report)
-						posReportsQueued.Add(context.Background(), 1)
-					}
+				if _, _, err := f.auth.doRequest("POST", "/api/v2/acars/position", highResQueue); err != nil {
+					posReportsFailed.Add(context.Background(), int64(len(highResQueue)))
 				} else {
-					posReportsSent.Add(context.Background(), 1)
+					posReportsSent.Add(context.Background(), int64(len(highResQueue)))
+					highResQueue = nil // clear queue, release for GC
 				}
 			}
 
-			// Send current report — skip while collecting or draining high-res queue
-			if !collecting && len(highResQueue) == 0 {
+			// Send current report — skip while collecting (high-res queue handles it)
+			if !collecting {
 				report := f.buildPositionReport(fd)
 				_, _, err = f.auth.doRequest("POST", "/api/v2/acars/position", report)
 				if err != nil {
