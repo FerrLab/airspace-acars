@@ -128,6 +128,17 @@ var xplaneDatarefs = []string{
 
 	// Engine count (73)
 	"sim/aircraft/engine/acf_num_engines",                 // 73: number of engines
+
+	// Wind (74-75)
+	"sim/weather/wind_direction_degt[0]",                  // 74: wind direction (degrees true)
+	"sim/weather/wind_speed_kt[0]",                        // 75: wind speed (knots)
+
+	// QNH (76)
+	"sim/weather/barometer_sealevel_inhg",                 // 76: QNH (inHg → hPa)
+
+	// Sim state (77-78)
+	"sim/time/paused",                                     // 77: paused
+	"sim/flightmodel2/misc/has_crashed",                   // 78: crashed
 }
 
 func NewXPlaneAdapter(host string, port int) SimConnector {
@@ -450,6 +461,22 @@ func (x *XPlaneAdapter) listenLoop() {
 				x.data.Engines[1].Exists = n >= 2
 				x.data.Engines[2].Exists = n >= 3
 				x.data.Engines[3].Exists = n >= 4
+
+			// Wind
+			case 74:
+				x.data.WindDirection = float64(val)
+			case 75:
+				x.data.WindSpeed = float64(val)
+
+			// QNH (inHg → hPa)
+			case 76:
+				x.data.QNH = float64(val) * 33.8639
+
+			// Sim state
+			case 77:
+				x.data.Sensors.Paused = val != 0
+			case 78:
+				x.data.Sensors.Crashed = val != 0
 			}
 			x.mu.Unlock()
 		}
