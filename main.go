@@ -50,6 +50,9 @@ func main() {
 	}
 	defer shutdown(context.Background())
 
+	// --- Inject embedded DLL into SimConnect adapter ---
+	simconnectadapter.EmbeddedDLL = embeddedSimConnectDLL
+
 	// --- Create adapters ---
 	airspaceAdapter := airspace.NewAdapter()
 	wailsEmitter := wailsadapter.NewAdapter()
