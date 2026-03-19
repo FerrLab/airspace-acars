@@ -75,7 +75,7 @@ jobs:
         run: |
           mkdir -p bin
           go build -tags production -trimpath -buildvcs=false \
-            -ldflags="-w -s -H windowsgui -X main.Version=${{ steps.version.outputs.version }}" \
+            -ldflags="-w -s -H windowsgui -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
             -o bin/airspace-acars-windows-amd64.exe
         env:
           GOOS: windows
@@ -146,7 +146,7 @@ jobs:
         run: |
           mkdir -p bin
           go build -tags production -trimpath -buildvcs=false \
-            -ldflags="-w -s -X main.Version=${{ steps.version.outputs.version }}" \
+            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
             -o bin/airspace-acars-linux-amd64
         env:
           CGO_ENABLED: "1"
@@ -168,9 +168,83 @@ jobs:
             bin/*.deb
             bin/*.rpm
 
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.ref_name }}" = "production" ]; then
+            VERSION="1.$(date +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            VERSION="0.$(date +%Y%m%d).${GITHUB_RUN_NUMBER}-beta.${SHORT_SHA}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate bindings
+        run: wails3 generate bindings -f '-tags production -trimpath -buildvcs=false' -clean=true -ts
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+
+      - name: Build macOS arm64 binary
+        run: |
+          mkdir -p bin
+          go build -tags production -trimpath -buildvcs=false \
+            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
+            -o bin/airspace-acars-darwin-arm64
+        env:
+          CGO_ENABLED: "1"
+          GOOS: darwin
+          GOARCH: arm64
+
+      - name: Build macOS amd64 binary
+        run: |
+          go build -tags production -trimpath -buildvcs=false \
+            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
+            -o bin/airspace-acars-darwin-amd64
+        env:
+          CGO_ENABLED: "1"
+          GOOS: darwin
+          GOARCH: amd64
+
+      - name: Create universal binary
+        run: |
+          lipo -create -output bin/airspace-acars-darwin-universal \
+            bin/airspace-acars-darwin-arm64 \
+            bin/airspace-acars-darwin-amd64
+          rm bin/airspace-acars-darwin-arm64 bin/airspace-acars-darwin-amd64
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-macos-output
+          path: bin/airspace-acars-darwin-universal
+
   release:
     runs-on: windows-latest
-    needs: [build, build-linux]
+    needs: [build, build-linux, build-macos]
     steps:
       - uses: actions/checkout@v4
 
@@ -184,6 +258,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-linux-output
+          path: bin
+
+      - name: Download macOS build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-macos-output
           path: bin
 
       - name: Prepare installer
@@ -211,5 +291,6 @@ jobs:
             bin/airspace-acars-windows-amd64.exe
             bin/airspace-acars-windows-amd64-setup.exe
             bin/airspace-acars-linux-amd64
+            bin/airspace-acars-darwin-universal
             bin/airspace-acars*.deb
             bin/airspace-acars*.rpm
