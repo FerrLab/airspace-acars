@@ -4,11 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useFlightData } from "@/hooks/use-flight-data";
-import { Events, Call } from "@wailsio/runtime";
-import { FlightDataService } from "../../bindings/airspace-acars";
+import { Events } from "@wailsio/runtime";
+import { FlightDataService, UpdateService } from "../../bindings/airspace-acars";
 
 function tailLogs(n: number): Promise<string[]> {
-  return Call.ByName("airspace-acars/internal/ports.UserActionPort.TailLogs", n);
+  return UpdateService.TailLogs(n);
 }
 
 interface LogEntry {

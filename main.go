@@ -16,7 +16,6 @@ import (
 	"airspace-acars/internal/adapters/xplane"
 	"airspace-acars/internal/app"
 	"airspace-acars/internal/domain"
-	"airspace-acars/internal/ports"
 	"airspace-acars/observability"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -76,15 +75,29 @@ func main() {
 	appInstance.InitSettings()
 	appInstance.InitAudioCache()
 
-	// --- Create port (entry point for user actions) ---
-	userAction := ports.NewUserActionPort(appInstance)
+	// --- Create service wrappers (User Action Port for Wails) ---
+	flightDataSvc := &FlightDataService{app: appInstance}
+	flightSvc := &FlightService{app: appInstance}
+	authSvc := &AuthService{app: appInstance}
+	chatSvc := &ChatService{app: appInstance}
+	audioSvc := &AudioService{app: appInstance}
+	settingsSvc := &SettingsService{app: appInstance}
+	updateSvc := &UpdateService{app: appInstance}
+	discordSvc := &DiscordService{app: appInstance}
 
 	// --- Create Wails application ---
 	wailsApp := application.New(application.Options{
 		Name:        "Airspace ACARS",
 		Description: "Flight Simulator ACARS Desktop Application",
 		Services: []application.Service{
-			application.NewService(userAction),
+			application.NewService(flightDataSvc),
+			application.NewService(flightSvc),
+			application.NewService(authSvc),
+			application.NewService(chatSvc),
+			application.NewService(audioSvc),
+			application.NewService(settingsSvc),
+			application.NewService(updateSvc),
+			application.NewService(discordSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
