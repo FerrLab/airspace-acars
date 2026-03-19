@@ -42,8 +42,14 @@ func (a *App) comparableVersion() string {
 }
 
 func assetName() string {
-	name := fmt.Sprintf("airspace-acars-%s-%s", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
+	os := runtime.GOOS
+	arch := runtime.GOARCH
+	// macOS ships as a universal binary (arm64 + amd64)
+	if os == "darwin" {
+		arch = "universal"
+	}
+	name := fmt.Sprintf("airspace-acars-%s-%s", os, arch)
+	if os == "windows" {
 		name += ".exe"
 	}
 	return name
