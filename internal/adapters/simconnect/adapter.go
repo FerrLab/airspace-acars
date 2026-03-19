@@ -2,13 +2,10 @@
 
 package simconnect
 
-//go:generate cp ../../../SimConnect.dll SimConnect.dll
-
 import (
 	"bytes"
 	"crypto/sha256"
 	"debug/pe"
-	_ "embed"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,8 +22,9 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-//go:embed SimConnect.dll
-var embeddedSimConnectDLL []byte
+// EmbeddedDLL holds the SimConnect.dll bytes, injected from the root
+// package where the //go:embed directive lives (go:embed cannot use .. paths).
+var EmbeddedDLL []byte
 
 // Adapter implements domain.SimConnector for Microsoft Flight Simulator
 // via the SimConnect SDK. It always polls at 60Hz and caches the latest
@@ -319,7 +317,7 @@ func ensureSimConnectDLL() {
 	}
 
 	slog.Info("extracting embedded SimConnect.dll", "path", target)
-	if err := os.WriteFile(target, embeddedSimConnectDLL, 0644); err != nil {
+	if err := os.WriteFile(target, EmbeddedDLL, 0644); err != nil {
 		slog.Warn("failed to extract SimConnect.dll", "error", err)
 	}
 }
@@ -338,7 +336,7 @@ func fileMatchesEmbed(path string) bool {
 		return false
 	}
 
-	expected := sha256.Sum256(embeddedSimConnectDLL)
+	expected := sha256.Sum256(EmbeddedDLL)
 	return bytes.Equal(h.Sum(nil), expected[:])
 }
 
