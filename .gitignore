@@ -9,3 +9,4 @@ build/linux/appimage/build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 traces.jsonl
 metrics.jsonl
+internal/adapters/simconnect/SimConnect.dll

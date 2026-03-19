@@ -1,8 +1,16 @@
-package main
+//go:build windows
+
+package simconnect
+
+//go:generate cp ../../../SimConnect.dll SimConnect.dll
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"debug/pe"
+	_ "embed"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,16 +19,22 @@ import (
 	"time"
 	"unsafe"
 
+	"airspace-acars/internal/domain"
 	sim "airspace-acars/internal/simconnect"
 
 	"golang.org/x/sys/windows/registry"
 )
 
-type SimConnectAdapter struct {
+//go:embed SimConnect.dll
+var embeddedSimConnectDLL []byte
+
+// Adapter implements domain.SimConnector for Microsoft Flight Simulator
+// via the SimConnect SDK.
+type Adapter struct {
 	mu           sync.RWMutex
 	sc           *sim.SimConnect
 	report       *simReport
-	latestData   *FlightData
+	latestData   *domain.FlightData
 	lastReceived time.Time
 	stopCh       chan struct{}
 	stopped      chan struct{}
@@ -290,15 +304,64 @@ func checkDLL64(path string) (bool, error) {
 	return isDLL64Bit(path)
 }
 
-func NewSimConnectAdapter() SimConnector {
-	return &SimConnectAdapter{}
+// ensureSimConnectDLL extracts the embedded SimConnect.dll next to the
+// executable if it is missing or does not match the bundled version.
+func ensureSimConnectDLL() {
+	exePath, err := os.Executable()
+	if err != nil {
+		slog.Warn("cannot resolve executable path for DLL extraction", "error", err)
+		return
+	}
+	target := filepath.Join(filepath.Dir(exePath), "SimConnect.dll")
+
+	if fileMatchesEmbed(target) {
+		return
+	}
+
+	slog.Info("extracting embedded SimConnect.dll", "path", target)
+	if err := os.WriteFile(target, embeddedSimConnectDLL, 0644); err != nil {
+		slog.Warn("failed to extract SimConnect.dll", "error", err)
+	}
 }
 
-func (s *SimConnectAdapter) Name() string {
+// fileMatchesEmbed returns true if the file at path exists and has the same
+// SHA-256 hash as the embedded DLL.
+func fileMatchesEmbed(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+
+	expected := sha256.Sum256(embeddedSimConnectDLL)
+	return bytes.Equal(h.Sum(nil), expected[:])
+}
+
+// trimNullBytes returns a string from a null-padded byte slice.
+func trimNullBytes(b []byte) string {
+	for i, v := range b {
+		if v == 0 {
+			return string(b[:i])
+		}
+	}
+	return string(b)
+}
+
+// NewAdapter creates a new SimConnect adapter.
+func NewAdapter() domain.SimConnector {
+	return &Adapter{}
+}
+
+func (s *Adapter) Name() string {
 	return "SimConnect"
 }
 
-func (s *SimConnectAdapter) Connect() error {
+func (s *Adapter) Connect() error {
 	s.stopCh = make(chan struct{})
 	s.stopped = make(chan struct{})
 	s.rateCh = make(chan time.Duration, 1)
@@ -310,7 +373,7 @@ func (s *SimConnectAdapter) Connect() error {
 }
 
 // SetPollRate changes how often the adapter requests data from SimConnect.
-func (s *SimConnectAdapter) SetPollRate(d time.Duration) {
+func (s *Adapter) SetPollRate(d time.Duration) {
 	// Drain any pending rate change so the latest always wins.
 	select {
 	case <-s.rateCh:
@@ -322,7 +385,7 @@ func (s *SimConnectAdapter) SetPollRate(d time.Duration) {
 	}
 }
 
-func (s *SimConnectAdapter) Disconnect() error {
+func (s *Adapter) Disconnect() error {
 	s.mu.RLock()
 	sc := s.sc
 	s.mu.RUnlock()
@@ -335,7 +398,7 @@ func (s *SimConnectAdapter) Disconnect() error {
 }
 
 // run performs ALL SimConnect operations on a single locked OS thread.
-func (s *SimConnectAdapter) run(errCh chan<- error) {
+func (s *Adapter) run(errCh chan<- error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer close(s.stopped)
@@ -405,14 +468,14 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 			switch recvInfo.ID {
 			case sim.RECV_ID_SIMOBJECT_DATA_BYTYPE:
 				r := (*simReport)(ppData)
-				fd := &FlightData{
-					Position: PositionData{
+				fd := &domain.FlightData{
+					Position: domain.PositionData{
 						Latitude:    r.Latitude,
 						Longitude:   r.Longitude,
 						Altitude:    r.Altitude,
 						AltitudeAGL: r.AltitudeAGL,
 					},
-					Attitude: AttitudeData{
+					Attitude: domain.AttitudeData{
 						Pitch:       r.Pitch,
 						Roll:        r.Roll,
 						HeadingTrue: r.HeadingTrue,
@@ -423,7 +486,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						GS:          r.GS,
 						GForce:      r.GForce,
 					},
-					Engines: [4]EngineData{
+					Engines: [4]domain.EngineData{
 						{
 							Exists:      int(r.NumberOfEngines) >= 1,
 							Running:     r.Eng1Running != 0,
@@ -461,7 +524,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 							PropPos:     r.Eng4Prop,
 						},
 					},
-					Sensors: SensorData{
+					Sensors: domain.SensorData{
 						OnGround:         r.OnGround != 0,
 						StallWarning:     r.StallWarning != 0,
 						OverspeedWarning: r.OverspeedWarning != 0,
@@ -470,7 +533,7 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						Slew:             r.Slew != 0,
 						Crashed:          r.Crashed != 0,
 					},
-					Radios: RadioData{
+					Radios: domain.RadioData{
 						Com1:      r.Com1,
 						Com2:      r.Com2,
 						Nav1:      r.Nav1,
@@ -478,9 +541,9 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						Nav1OBS:   r.Nav1OBS,
 						Nav2OBS:   r.Nav2OBS,
 						XpdrCode:  r.XpdrCode,
-						XpdrState: TransponderStateString(r.XpdrState),
+						XpdrState: domain.TransponderStateString(r.XpdrState),
 					},
-					Autopilot: AutopilotData{
+					Autopilot: domain.AutopilotData{
 						Master:       r.APMaster != 0,
 						Heading:      r.APHeading,
 						Altitude:     r.APAltitude,
@@ -490,12 +553,12 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						NavLock:      r.APNavLock != 0,
 					},
 					Altimeter: r.AltimeterInHg,
-					Lights: LightData{
+					Lights: domain.LightData{
 						Beacon:  r.LightBeacon != 0,
 						Strobe:  r.LightStrobe != 0,
 						Landing: r.LightLanding != 0,
 					},
-					Controls: FlightControlData{
+					Controls: domain.FlightControlData{
 						Elevator: r.Elevator,
 						Aileron:  r.Aileron,
 						Rudder:   r.Rudder,
@@ -503,29 +566,29 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 						Spoilers: r.Spoilers * 100, // Percent Over 100 → percent
 						GearDown: r.GearDown != 0,
 					},
-					SimTime: SimTimeData{
+					SimTime: domain.SimTimeData{
 						ZuluTime:  r.ZuluTime,
 						ZuluDay:   r.ZuluDay,
 						ZuluMonth: r.ZuluMonth,
 						ZuluYear:  r.ZuluYear,
 						LocalTime: r.LocalTime,
 					},
-					APU: APUData{
+					APU: domain.APUData{
 						SwitchOn:   r.APUSwitch != 0,
 						RPMPercent: r.APURPMPct,
 						GenSwitch:  r.APUGenSwitch != 0,
 						GenActive:  r.APUGenActive != 0,
 					},
-					Doors: [5]DoorData{
+					Doors: [5]domain.DoorData{
 						{OpenRatio: r.Door0Open},
 						{OpenRatio: r.Door1Open},
 						{OpenRatio: r.Door2Open},
 						{OpenRatio: r.Door3Open},
 						{OpenRatio: r.Door4Open},
 					},
-					AircraftName: trimNullBytes(r.AircraftTitle[:]),
-					AircraftType: trimNullBytes(r.AircraftType[:]),
-					Weight: WeightData{
+					AircraftName:  trimNullBytes(r.AircraftTitle[:]),
+					AircraftType:  trimNullBytes(r.AircraftType[:]),
+					Weight: domain.WeightData{
 						TotalWeight: r.TotalWeight,
 						FuelWeight:  r.FuelWeight,
 					},
@@ -544,18 +607,8 @@ func (s *SimConnectAdapter) run(errCh chan<- error) {
 	}
 }
 
-// trimNullBytes returns a string from a null-padded byte slice.
-func trimNullBytes(b []byte) string {
-	for i, v := range b {
-		if v == 0 {
-			return string(b[:i])
-		}
-	}
-	return string(b)
-}
-
 // GetFlightData returns the most recently cached flight data.
-func (s *SimConnectAdapter) GetFlightData() (*FlightData, error) {
+func (s *Adapter) GetFlightData() (*domain.FlightData, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -569,7 +622,7 @@ func (s *SimConnectAdapter) GetFlightData() (*FlightData, error) {
 }
 
 // LastReceived returns the time the most recent data dispatch was received.
-func (s *SimConnectAdapter) LastReceived() time.Time {
+func (s *Adapter) LastReceived() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastReceived
