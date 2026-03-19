@@ -1,8 +1,6 @@
 package ports
 
 import (
-	"time"
-
 	"airspace-acars/internal/app"
 	"airspace-acars/internal/domain"
 )
@@ -39,10 +37,6 @@ func (p *UserActionPort) ConnectedAdapter() string {
 
 func (p *UserActionPort) GetFlightDataNow() (*domain.FlightData, error) {
 	return p.App.GetFlightDataNow()
-}
-
-func (p *UserActionPort) SetSimPollRate(d time.Duration) {
-	p.App.SetSimPollRate(d)
 }
 
 // --- Recording commands ---
@@ -173,6 +167,12 @@ func (p *UserActionPort) CheckForUpdate() (*domain.UpdateInfo, error) {
 
 func (p *UserActionPort) ApplyUpdate() error {
 	return p.App.ApplyUpdate()
+}
+
+// --- Logs ---
+
+func (p *UserActionPort) TailLogs(n int) ([]string, error) {
+	return p.App.TailLogs(n)
 }
 
 // --- Discord ---

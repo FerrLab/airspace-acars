@@ -131,8 +131,9 @@ func (x *Adapter) Connect() error {
 	}
 	x.conn = conn
 
+	// Subscribe at 60Hz. Consumers poll GetFlightData() at their own rate.
 	for i, dref := range xplaneDatarefs {
-		if err := x.subscribeRREF(i, 1, dref); err != nil {
+		if err := x.subscribeRREF(i, 60, dref); err != nil {
 			conn.Close()
 			x.conn = nil
 			return fmt.Errorf("subscribe %s: %w", dref, err)

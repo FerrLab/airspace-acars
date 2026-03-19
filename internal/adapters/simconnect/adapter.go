@@ -29,7 +29,8 @@ import (
 var embeddedSimConnectDLL []byte
 
 // Adapter implements domain.SimConnector for Microsoft Flight Simulator
-// via the SimConnect SDK.
+// via the SimConnect SDK. It always polls at 60Hz and caches the latest
+// FlightData snapshot for consumers to read at any rate they need.
 type Adapter struct {
 	mu           sync.RWMutex
 	sc           *sim.SimConnect
@@ -38,7 +39,6 @@ type Adapter struct {
 	lastReceived time.Time
 	stopCh       chan struct{}
 	stopped      chan struct{}
-	rateCh       chan time.Duration
 }
 
 type simReport struct {
@@ -364,25 +364,11 @@ func (s *Adapter) Name() string {
 func (s *Adapter) Connect() error {
 	s.stopCh = make(chan struct{})
 	s.stopped = make(chan struct{})
-	s.rateCh = make(chan time.Duration, 1)
 	errCh := make(chan error, 1)
 
 	go s.run(errCh)
 
 	return <-errCh
-}
-
-// SetPollRate changes how often the adapter requests data from SimConnect.
-func (s *Adapter) SetPollRate(d time.Duration) {
-	// Drain any pending rate change so the latest always wins.
-	select {
-	case <-s.rateCh:
-	default:
-	}
-	select {
-	case s.rateCh <- d:
-	default:
-	}
 }
 
 func (s *Adapter) Disconnect() error {
@@ -434,7 +420,8 @@ func (s *Adapter) run(errCh chan<- error) {
 
 	defineID := sc.GetDefineID(report)
 
-	requestTicker := time.NewTicker(time.Second)
+	// Request data at 60Hz (~16ms). Consumers poll GetFlightData() at their own rate.
+	requestTicker := time.NewTicker(16 * time.Millisecond)
 	defer requestTicker.Stop()
 
 	// Initial data request
@@ -452,8 +439,6 @@ func (s *Adapter) run(errCh chan<- error) {
 		select {
 		case <-s.stopCh:
 			return
-		case newRate := <-s.rateCh:
-			requestTicker.Reset(newRate)
 		case <-requestTicker.C:
 			sc.RequestDataOnSimObjectType(0, defineID, 0, sim.SIMOBJECT_TYPE_USER)
 		default:

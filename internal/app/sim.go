@@ -173,20 +173,6 @@ func (a *App) GetFlightDataNow() (*domain.FlightData, error) {
 	return connector.GetFlightData()
 }
 
-// SetSimPollRate adjusts the simulator adapter's data request frequency.
-func (a *App) SetSimPollRate(d time.Duration) {
-	a.simMu.Lock()
-	connector := a.connector
-	a.simMu.Unlock()
-
-	type pollRateSetter interface {
-		SetPollRate(time.Duration)
-	}
-	if pr, ok := connector.(pollRateSetter); ok {
-		pr.SetPollRate(d)
-	}
-}
-
 func (a *App) startDataStreamLocked() {
 	if a.streaming {
 		return

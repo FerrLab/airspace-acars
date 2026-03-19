@@ -464,9 +464,6 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 	for {
 		select {
 		case <-stopCh:
-			if collecting {
-				a.SetSimPollRate(time.Second)
-			}
 			if len(highResQueue) > 0 {
 				if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", highResQueue); err != nil {
 					slog.Warn("failed to flush high-res reports on flight end", "count", len(highResQueue), "error", err)
@@ -506,16 +503,16 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				lastChanged = time.Now()
 			}
 
+			// Enter/leave high-res flare zone. Adapters run at 60Hz always;
+			// the collectTicker just controls how often we snapshot for the queue.
 			inFlareZone := !fd.Sensors.OnGround && fd.Position.AltitudeAGL < flareAltThreshold
 			if inFlareZone && !collecting {
 				collecting = true
 				collectTicker.Reset(highResInterval)
-				a.SetSimPollRate(highResInterval)
 				slog.Info("high-res mode active", "agl", fd.Position.AltitudeAGL)
 			} else if !inFlareZone && collecting {
 				collecting = false
 				collectTicker.Stop()
-				a.SetSimPollRate(time.Second)
 				slog.Info("high-res mode ended", "agl", fd.Position.AltitudeAGL, "queued", len(highResQueue))
 			}
 
