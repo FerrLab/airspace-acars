@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
+	"airspace-acars/internal/domain"
 	"airspace-acars/observability"
 
 	"go.opentelemetry.io/otel/codes"
@@ -21,62 +20,36 @@ import (
 
 var audioTracer = observability.Tracer("audio")
 
-type AudioService struct {
-	auth       *AuthService
-	httpClient *http.Client
-	cacheDir   string
-	mu         sync.Mutex
+// InitAudioCache sets up the audio cache directory.
+func (a *App) InitAudioCache() {
+	a.audioCacheDir = filepath.Join(os.TempDir(), "airspace-audio")
+	os.MkdirAll(a.audioCacheDir, 0o755)
 }
 
-type SoundInstruction struct {
-	Type       string `json:"type"`
-	URL        string `json:"url,omitempty"`
-	LocalFile  string `json:"localFile,omitempty"`
-	DurationMs int    `json:"duration_ms"`
-}
-
-type soundResponse struct {
-	Instructions []SoundInstruction `json:"instructions"`
-}
-
-type AudioData struct {
-	Data        string `json:"data"`
-	ContentType string `json:"contentType"`
-}
-
-func NewAudioService(auth *AuthService) *AudioService {
-	cacheDir := filepath.Join(os.TempDir(), "airspace-audio")
-	os.MkdirAll(cacheDir, 0o755)
-
-	return &AudioService{
-		auth:       auth,
-		httpClient: &http.Client{Timeout: 15_000_000_000}, // 15 seconds
-		cacheDir:   cacheDir,
-	}
-}
-
-func (a *AudioService) FetchSoundInstructions() ([]SoundInstruction, error) {
+// FetchSoundInstructions retrieves audio instructions from the API and pre-downloads files.
+func (a *App) FetchSoundInstructions() ([]domain.SoundInstruction, error) {
 	_, span := audioTracer.Start(context.Background(), "audio.fetch_instructions")
 	defer span.End()
 
-	body, _, err := a.auth.doRequest("GET", "/api/acars/sound", nil)
+	body, _, err := a.Airspace.DoRequest("GET", "/api/acars/sound", nil)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
-	var resp soundResponse
+	var resp struct {
+		Instructions []domain.SoundInstruction `json:"instructions"`
+	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("parse sound instructions: %w", err)
 	}
 
-	// Pre-download any audio files with URLs
 	for i, inst := range resp.Instructions {
 		if inst.Type == "play" && inst.URL != "" {
-			filename, err := a.downloadAndCache(inst.URL)
+			filename, err := a.downloadAndCacheAudio(inst.URL)
 			if err != nil {
 				slog.Warn("failed to download audio", "url", inst.URL, "error", err)
 				continue
@@ -88,13 +61,13 @@ func (a *AudioService) FetchSoundInstructions() ([]SoundInstruction, error) {
 	return resp.Instructions, nil
 }
 
-func (a *AudioService) GetAudioData(filename string) (*AudioData, error) {
-	// Sanitize filename to prevent path traversal
+// GetAudioData reads a cached audio file and returns it as base64.
+func (a *App) GetAudioData(filename string) (*domain.AudioData, error) {
 	if strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
 		return nil, fmt.Errorf("invalid filename")
 	}
 
-	path := filepath.Join(a.cacheDir, filename)
+	path := filepath.Join(a.audioCacheDir, filename)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read audio file: %w", err)
@@ -109,39 +82,38 @@ func (a *AudioService) GetAudioData(filename string) (*AudioData, error) {
 		contentType = "audio/ogg"
 	}
 
-	return &AudioData{
+	return &domain.AudioData{
 		Data:        base64.StdEncoding.EncodeToString(data),
 		ContentType: contentType,
 	}, nil
 }
 
-func (a *AudioService) ClearCache() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// ClearCache removes all cached audio files.
+func (a *App) ClearCache() {
+	a.audioMu.Lock()
+	defer a.audioMu.Unlock()
 
-	entries, err := os.ReadDir(a.cacheDir)
+	entries, err := os.ReadDir(a.audioCacheDir)
 	if err != nil {
 		return
 	}
 	for _, e := range entries {
-		os.Remove(filepath.Join(a.cacheDir, e.Name()))
+		os.Remove(filepath.Join(a.audioCacheDir, e.Name()))
 	}
 }
 
-func (a *AudioService) downloadAndCache(audioURL string) (string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+func (a *App) downloadAndCacheAudio(audioURL string) (string, error) {
+	a.audioMu.Lock()
+	defer a.audioMu.Unlock()
 
-	// Use URL hash as filename base
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(audioURL)))[:16]
 
-	// Check if already cached
-	matches, _ := filepath.Glob(filepath.Join(a.cacheDir, hash+".*"))
+	matches, _ := filepath.Glob(filepath.Join(a.audioCacheDir, hash+".*"))
 	if len(matches) > 0 {
 		return filepath.Base(matches[0]), nil
 	}
 
-	resp, err := a.httpClient.Get(audioURL)
+	resp, err := a.audioClient.Get(audioURL)
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
 	}
@@ -156,7 +128,7 @@ func (a *AudioService) downloadAndCache(audioURL string) (string, error) {
 	}
 
 	filename := hash + ext
-	path := filepath.Join(a.cacheDir, filename)
+	path := filepath.Join(a.audioCacheDir, filename)
 
 	file, err := os.Create(path)
 	if err != nil {

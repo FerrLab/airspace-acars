@@ -1,4 +1,4 @@
-package main
+package domain
 
 import "time"
 
@@ -19,9 +19,9 @@ type FlightData struct {
 	AircraftName string            `json:"aircraftName"`
 	AircraftType string            `json:"aircraftType"`
 	Weight       WeightData        `json:"weight"`
-	WindDirection float64          `json:"windDirection"` // degrees
-	WindSpeed     float64          `json:"windSpeed"`     // knots
-	QNH           float64          `json:"qnh"`           // hPa (millibars)
+	WindDirection float64          `json:"windDirection"`
+	WindSpeed     float64          `json:"windSpeed"`
+	QNH           float64          `json:"qnh"`
 }
 
 type PositionData struct {
@@ -32,15 +32,15 @@ type PositionData struct {
 }
 
 type AttitudeData struct {
-	Pitch      float64 `json:"pitch"`
-	Roll       float64 `json:"roll"`
+	Pitch       float64 `json:"pitch"`
+	Roll        float64 `json:"roll"`
 	HeadingTrue float64 `json:"headingTrue"`
-	HeadingMag float64 `json:"headingMag"`
-	VS         float64 `json:"vs"`
-	IAS        float64 `json:"ias"`
-	TAS        float64 `json:"tas"`
-	GS         float64 `json:"gs"`
-	GForce     float64 `json:"gForce"`
+	HeadingMag  float64 `json:"headingMag"`
+	VS          float64 `json:"vs"`
+	IAS         float64 `json:"ias"`
+	TAS         float64 `json:"tas"`
+	GS          float64 `json:"gs"`
+	GForce      float64 `json:"gForce"`
 }
 
 type EngineData struct {
@@ -115,17 +115,15 @@ type APUData struct {
 }
 
 type DoorData struct {
-	OpenRatio float64 `json:"openRatio"` // 0.0=closed, 1.0=open
+	OpenRatio float64 `json:"openRatio"`
 }
 
 type WeightData struct {
-	TotalWeight float64 `json:"totalWeight"` // lbs
-	FuelWeight  float64 `json:"fuelWeight"`  // lbs
+	TotalWeight float64 `json:"totalWeight"`
+	FuelWeight  float64 `json:"fuelWeight"`
 }
 
 // TransponderStateString maps a numeric transponder mode to a human-readable string.
-// SimConnect: 0=Off, 1=Standby, ≥2=Active
-// X-Plane:   0=Off, 1=Standby, ≥2=Active
 func TransponderStateString(val float64) string {
 	switch int(val) {
 	case 0:

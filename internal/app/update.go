@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -9,11 +9,11 @@ import (
 	"runtime"
 	"strings"
 
+	"airspace-acars/internal/domain"
 	"airspace-acars/observability"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/creativeprojects/go-selfupdate"
-	"github.com/wailsapp/wails/v3/pkg/application"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -21,41 +21,24 @@ import (
 
 var updateTracer = observability.Tracer("update")
 
-var Version = "dev"
-
-type UpdateInfo struct {
-	CurrentVersion  string `json:"currentVersion"`
-	LatestVersion   string `json:"latestVersion"`
-	UpdateAvailable bool   `json:"updateAvailable"`
-	ReleaseURL      string `json:"releaseURL"`
+// GetCurrentVersion returns the app version.
+func (a *App) GetCurrentVersion() string {
+	return domain.Version
 }
 
-type UpdateService struct {
-	latest *selfupdate.Release
-	app    *application.App
+func (a *App) isBeta() bool {
+	return strings.Contains(domain.Version, "-beta")
 }
 
-func (s *UpdateService) setApp(app *application.App) {
-	s.app = app
+func (a *App) isStableRelease() bool {
+	return domain.Version != "dev" && !a.isBeta()
 }
 
-func (s *UpdateService) GetCurrentVersion() string {
-	return Version
-}
-
-func (s *UpdateService) isBeta() bool {
-	return strings.Contains(Version, "-beta")
-}
-
-func (s *UpdateService) isStableRelease() bool {
-	return Version != "dev" && !s.isBeta()
-}
-
-func (s *UpdateService) comparableVersion() string {
-	if Version == "dev" {
+func (a *App) comparableVersion() string {
+	if domain.Version == "dev" {
 		return "0.0.0"
 	}
-	return Version
+	return domain.Version
 }
 
 func assetName() string {
@@ -70,7 +53,7 @@ func assetFilter() string {
 	return assetName() + "$"
 }
 
-func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
+func (a *App) newUpdater() (*selfupdate.Updater, error) {
 	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create github source: %w", err)
@@ -80,8 +63,7 @@ func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
 		Source:  source,
 		Filters: []string{assetFilter()},
 	}
-	// Only stable releases skip pre-releases; dev and beta builds see everything
-	if !s.isStableRelease() {
+	if !a.isStableRelease() {
 		cfg.Prerelease = true
 	}
 
@@ -92,12 +74,13 @@ func (s *UpdateService) newUpdater() (*selfupdate.Updater, error) {
 	return updater, nil
 }
 
-func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
+// CheckForUpdate checks GitHub for a newer version.
+func (a *App) CheckForUpdate() (*domain.UpdateInfo, error) {
 	_, span := updateTracer.Start(context.Background(), "update.check",
-		trace.WithAttributes(attribute.String("update.current_version", Version)))
+		trace.WithAttributes(attribute.String("update.current_version", domain.Version)))
 	defer span.End()
 
-	updater, err := s.newUpdater()
+	updater, err := a.newUpdater()
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -107,17 +90,14 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 	ctx := context.Background()
 	slug := selfupdate.ParseSlug("FerrLab/airspace-acars")
 
-	info := &UpdateInfo{
-		CurrentVersion:  Version,
+	info := &domain.UpdateInfo{
+		CurrentVersion:  domain.Version,
 		UpdateAvailable: false,
 	}
 
-	if s.isBeta() {
-		// For beta builds, DetectLatest returns the stable release (higher major)
-		// which we'd skip. Instead, find the latest beta version explicitly.
-		betaVersion, err := s.findLatestBetaVersion(ctx)
+	if a.isBeta() {
+		betaVersion, err := a.findLatestBetaVersion(ctx)
 		if err != nil {
-			// GitHub may be rate-limiting or unavailable — skip update check.
 			slog.Warn("update check skipped (could not list beta releases)", "error", err)
 			span.SetAttributes(attribute.Bool("update.skipped", true))
 			return info, nil
@@ -131,7 +111,6 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 		latest, found, err := updater.DetectVersion(ctx, slug, betaVersion)
 		if err != nil || !found {
 			if err != nil {
-				// GitHub may be rate-limiting or unavailable — skip update check.
 				slog.Warn("update check skipped (could not detect beta version)", "error", err)
 				span.SetAttributes(attribute.Bool("update.skipped", true))
 			}
@@ -140,15 +119,13 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 
 		info.LatestVersion = latest.Version()
 		info.ReleaseURL = latest.ReleaseNotes
-		if latest.GreaterThan(s.comparableVersion()) {
+		if latest.GreaterThan(a.comparableVersion()) {
 			info.UpdateAvailable = true
-			s.latest = latest
+			a.updateLatest = latest
 		}
 	} else {
-		// Stable builds: use DetectLatest normally (pre-releases excluded)
 		latest, found, err := updater.DetectLatest(ctx, slug)
 		if err != nil {
-			// GitHub may be rate-limiting or unavailable — skip update check.
 			slog.Warn("update check skipped (could not detect latest version)", "error", err)
 			span.SetAttributes(attribute.Bool("update.skipped", true))
 			return info, nil
@@ -156,21 +133,19 @@ func (s *UpdateService) CheckForUpdate() (*UpdateInfo, error) {
 		if found {
 			info.LatestVersion = latest.Version()
 			info.ReleaseURL = latest.ReleaseNotes
-			if latest.GreaterThan(s.comparableVersion()) {
+			if latest.GreaterThan(a.comparableVersion()) {
 				info.UpdateAvailable = true
-				s.latest = latest
+				a.updateLatest = latest
 			}
 		}
 	}
 
-	slog.Info("update check complete", "current", Version, "latest", info.LatestVersion, "available", info.UpdateAvailable)
+	slog.Info("update check complete", "current", domain.Version, "latest", info.LatestVersion, "available", info.UpdateAvailable)
 	span.SetAttributes(attribute.Bool("update.available", info.UpdateAvailable))
 	return info, nil
 }
 
-// findLatestBetaVersion lists all GitHub releases and returns the version string
-// of the newest pre-release tagged with "-beta".
-func (s *UpdateService) findLatestBetaVersion(ctx context.Context) (string, error) {
+func (a *App) findLatestBetaVersion(ctx context.Context) (string, error) {
 	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
 	if err != nil {
 		return "", err
@@ -194,7 +169,6 @@ func (s *UpdateService) findLatestBetaVersion(ctx context.Context) (string, erro
 			continue
 		}
 
-		// Check that the release has a matching asset
 		hasAsset := false
 		expected := assetName()
 		for _, asset := range rel.GetAssets() {
@@ -220,30 +194,32 @@ func (s *UpdateService) findLatestBetaVersion(ctx context.Context) (string, erro
 	return bestTag, nil
 }
 
-func (s *UpdateService) ApplyUpdate() error {
-	if s.latest == nil {
+// ApplyUpdate downloads and applies the latest update.
+func (a *App) ApplyUpdate() error {
+	if a.updateLatest == nil {
 		return fmt.Errorf("no update available — run CheckForUpdate first")
 	}
 
-	updater, err := s.newUpdater()
+	updater, err := a.newUpdater()
 	if err != nil {
 		return err
 	}
 
-	if err := updater.UpdateTo(context.Background(), s.latest, ""); err != nil {
+	if err := updater.UpdateTo(context.Background(), a.updateLatest, ""); err != nil {
 		return fmt.Errorf("failed to apply update: %w", err)
 	}
 
-	slog.Info("update applied", "version", s.latest.Version())
+	slog.Info("update applied", "version", a.updateLatest.Version())
 	return nil
 }
 
-func (s *UpdateService) AutoUpdate() {
-	if Version == "dev" {
+// AutoUpdate checks for and applies updates on startup.
+func (a *App) AutoUpdate() {
+	if domain.Version == "dev" {
 		slog.Info("skipping auto-update in dev mode")
 		return
 	}
-	info, err := s.CheckForUpdate()
+	info, err := a.CheckForUpdate()
 	if err != nil {
 		slog.Warn("auto-update check failed", "error", err)
 		return
@@ -254,7 +230,7 @@ func (s *UpdateService) AutoUpdate() {
 	}
 
 	slog.Info("update available, applying", "version", info.LatestVersion)
-	if err := s.ApplyUpdate(); err != nil {
+	if err := a.ApplyUpdate(); err != nil {
 		slog.Error("auto-update apply failed", "error", err)
 		return
 	}
@@ -268,5 +244,7 @@ func (s *UpdateService) AutoUpdate() {
 		slog.Error("failed to restart after update", "error", err)
 		return
 	}
-	s.app.Quit()
+	if a.QuitFunc != nil {
+		a.QuitFunc()
+	}
 }
