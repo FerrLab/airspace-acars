@@ -231,16 +231,52 @@ jobs:
 
       - name: Create universal binary
         run: |
-          lipo -create -output bin/airspace-acars-darwin-universal \
+          lipo -create -output bin/airspace-acars \
             bin/airspace-acars-darwin-arm64 \
             bin/airspace-acars-darwin-amd64
           rm bin/airspace-acars-darwin-arm64 bin/airspace-acars-darwin-amd64
+
+      - name: Generate icons
+        run: wails3 generate icons -input build/appicon.png -macfilename build/darwin/icons.icns
+
+      - name: Rename universal binary for release
+        run: cp bin/airspace-acars bin/airspace-acars-darwin-universal
+
+      - name: Create .app bundle
+        run: |
+          APP="bin/Airspace ACARS.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+          cp bin/airspace-acars "$APP/Contents/MacOS/airspace-acars"
+          cp build/darwin/icons.icns "$APP/Contents/Resources/"
+          if [ -f build/darwin/Assets.car ]; then
+            cp build/darwin/Assets.car "$APP/Contents/Resources/"
+          fi
+          # Write Info.plist with correct version
+          sed "s/0.1.0/${{ steps.version.outputs.version }}/g" \
+            build/darwin/Info.plist > "$APP/Contents/Info.plist"
+          # Ad-hoc sign
+          codesign --force --deep --sign - "$APP"
+
+      - name: Create .dmg
+        run: |
+          # Create a temporary directory for DMG contents
+          DMG_DIR=$(mktemp -d)
+          cp -R "bin/Airspace ACARS.app" "$DMG_DIR/"
+          ln -s /Applications "$DMG_DIR/Applications"
+          hdiutil create -volname "Airspace ACARS" \
+            -srcfolder "$DMG_DIR" \
+            -ov -format UDZO \
+            "bin/airspace-acars-darwin-universal.dmg"
+          rm -rf "$DMG_DIR"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-macos-output
-          path: bin/airspace-acars-darwin-universal
+          path: |
+            bin/airspace-acars-darwin-universal.dmg
+            bin/airspace-acars-darwin-universal
 
   release:
     runs-on: windows-latest
@@ -292,5 +328,6 @@ jobs:
             bin/airspace-acars-windows-amd64-setup.exe
             bin/airspace-acars-linux-amd64
             bin/airspace-acars-darwin-universal
+            bin/airspace-acars-darwin-universal.dmg
             bin/airspace-acars*.deb
             bin/airspace-acars*.rpm
