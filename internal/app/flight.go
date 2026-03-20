@@ -44,8 +44,8 @@ const (
 	posIntervalLow       = 1 * time.Second
 	posIntervalHigh      = 2 * time.Second
 	posIntervalStatic    = 60 * time.Second
-	flareAltThreshold    = 10.0
-	criticalAltThreshold = 50.0
+	flareAltThreshold    = 50.0  // enter high-res below 50ft AGL (was 10ft — too narrow)
+	criticalAltThreshold = 200.0 // switch to 500ms reporting below 200ft AGL
 	highAltThreshold     = 10_000.0
 	maxPendingReports    = 500
 	maxHighResReports    = 1500
@@ -444,6 +444,21 @@ func (a *App) buildPositionReport(fd *domain.FlightData) map[string]interface{} 
 	}
 }
 
+func intervalName(d time.Duration) string {
+	switch d {
+	case posIntervalCritical:
+		return "critical(500ms)"
+	case posIntervalLow:
+		return "low(1s)"
+	case posIntervalHigh:
+		return "high(2s)"
+	case posIntervalStatic:
+		return "static(60s)"
+	default:
+		return d.String()
+	}
+}
+
 func (a *App) positionLoop(stopCh chan struct{}) {
 	ticker := time.NewTicker(posIntervalLow)
 	defer ticker.Stop()
@@ -460,10 +475,15 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 	var highResQueue []map[string]interface{}
 	var consecutiveFailures int
 	collecting := false
+	// Keep collecting for a short period after touchdown to capture rollout data
+	var touchdownGrace time.Time
+
+	slog.Info("position loop started", "interval", intervalName(currentInterval))
 
 	for {
 		select {
 		case <-stopCh:
+			slog.Info("position loop stopping", "collecting", collecting, "highResQueued", len(highResQueue), "pendingQueued", len(pendingReports))
 			if len(highResQueue) > 0 {
 				if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", highResQueue); err != nil {
 					slog.Warn("failed to flush high-res reports on flight end", "count", len(highResQueue), "error", err)
@@ -481,6 +501,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 			}
 			fd, err := a.GetFlightDataNow()
 			if err != nil {
+				slog.Warn("high-res collect tick: no data", "error", err)
 				continue
 			}
 			if len(highResQueue) < maxHighResReports {
@@ -503,32 +524,74 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				lastChanged = time.Now()
 			}
 
-			// Enter/leave high-res flare zone. Adapters run at 60Hz always;
-			// the collectTicker just controls how often we snapshot for the queue.
-			inFlareZone := !fd.Sensors.OnGround && fd.Position.AltitudeAGL < flareAltThreshold
-			if inFlareZone && !collecting {
-				collecting = true
-				collectTicker.Reset(highResInterval)
-				slog.Info("high-res mode active", "agl", fd.Position.AltitudeAGL)
-			} else if !inFlareZone && collecting {
-				collecting = false
-				collectTicker.Stop()
-				slog.Info("high-res mode ended", "agl", fd.Position.AltitudeAGL, "queued", len(highResQueue))
+			// High-res flare zone detection.
+			// Enter: airborne AND below flare threshold (50ft AGL).
+			// Stay: keep collecting through touchdown for 5 seconds of rollout data.
+			// Exit: only after on ground AND grace period expired AND GS < 40kts.
+			shouldCollect := false
+			if !fd.Sensors.OnGround && fd.Position.AltitudeAGL < flareAltThreshold {
+				// Airborne in the flare zone
+				shouldCollect = true
+				touchdownGrace = time.Time{} // reset grace — haven't touched down yet
+			} else if collecting && fd.Sensors.OnGround {
+				// Just touched down or rolling out — start/continue grace period
+				if touchdownGrace.IsZero() {
+					touchdownGrace = time.Now()
+					slog.Info("touchdown detected, continuing high-res collection",
+						"agl", fd.Position.AltitudeAGL, "gs", fd.Attitude.GS)
+				}
+				// Keep collecting for 5s after touchdown or until slowed below 40kts
+				if time.Since(touchdownGrace) < 5*time.Second && fd.Attitude.GS >= 40 {
+					shouldCollect = true
+				}
 			}
 
+			if shouldCollect && !collecting {
+				collecting = true
+				collectTicker.Reset(highResInterval)
+				slog.Info("HIGH-RES ON: entering flare zone",
+					"agl", fmt.Sprintf("%.1f", fd.Position.AltitudeAGL),
+					"gs", fmt.Sprintf("%.1f", fd.Attitude.GS),
+					"onGround", fd.Sensors.OnGround,
+					"interval", "33ms")
+			} else if !shouldCollect && collecting {
+				collecting = false
+				collectTicker.Stop()
+				slog.Info("HIGH-RES OFF: leaving flare zone",
+					"agl", fmt.Sprintf("%.1f", fd.Position.AltitudeAGL),
+					"gs", fmt.Sprintf("%.1f", fd.Attitude.GS),
+					"onGround", fd.Sensors.OnGround,
+					"queued", len(highResQueue),
+					"graceSec", fmt.Sprintf("%.1f", time.Since(touchdownGrace).Seconds()))
+				touchdownGrace = time.Time{}
+			}
+
+			// Determine reporting interval
 			var newInterval time.Duration
+			var reason string
 			if len(highResQueue) > 0 {
 				newInterval = posIntervalCritical
+				reason = "draining high-res queue"
 			} else if !posChanged && time.Since(lastChanged) > 5*time.Second {
 				newInterval = posIntervalStatic
-			} else if !fd.Sensors.OnGround && fd.Position.AltitudeAGL < criticalAltThreshold {
+				reason = "position static"
+			} else if fd.Position.AltitudeAGL < criticalAltThreshold && (!fd.Sensors.OnGround || collecting) {
 				newInterval = posIntervalCritical
+				reason = fmt.Sprintf("low altitude (%.0fft AGL)", fd.Position.AltitudeAGL)
 			} else if fd.Position.AltitudeAGL >= highAltThreshold {
 				newInterval = posIntervalHigh
+				reason = fmt.Sprintf("high altitude (%.0fft AGL)", fd.Position.AltitudeAGL)
 			} else {
 				newInterval = posIntervalLow
+				reason = "normal"
 			}
 			if newInterval != currentInterval {
+				slog.Info("position interval changed",
+					"from", intervalName(currentInterval),
+					"to", intervalName(newInterval),
+					"reason", reason,
+					"agl", fmt.Sprintf("%.1f", fd.Position.AltitudeAGL),
+					"onGround", fd.Sensors.OnGround)
 				currentInterval = newInterval
 				ticker.Reset(currentInterval)
 			}
