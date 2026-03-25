@@ -26,6 +26,8 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const [simType, setSimType] = useState("auto");
   const [chatSound, setChatSound] = useState<ChatSoundType>("default");
   const [discordPresence, setDiscordPresence] = useState(true);
+  const [autoStartFlight, setAutoStartFlight] = useState(true);
+  const [autoFinishFlight, setAutoFinishFlight] = useState(true);
   const [apiBaseURL, setApiBaseURL] = useState("");
   const [language, setLanguage] = useState(i18n.language);
   const [loaded, setLoaded] = useState(false);
@@ -37,6 +39,8 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         setSimType(settings.simType);
         setChatSound((settings.chatSound as ChatSoundType) || "default");
         setDiscordPresence(settings.discordPresence !== false);
+        setAutoStartFlight(settings.autoStartFlight !== false);
+        setAutoFinishFlight(settings.autoFinishFlight !== false);
         setApiBaseURL(settings.apiBaseURL);
         if (settings.language) setLanguage(settings.language);
         if (settings.theme === "light" || settings.theme === "dark") {
@@ -75,6 +79,22 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
       const settings = await SettingsService.GetSettings();
       await SettingsService.UpdateSettings({ ...settings, discordPresence: checked });
       await DiscordService.SetEnabled(checked);
+    } catch { /* ignore */ }
+  };
+
+  const handleAutoStartToggle = async (checked: boolean) => {
+    setAutoStartFlight(checked);
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, autoStartFlight: checked });
+    } catch { /* ignore */ }
+  };
+
+  const handleAutoFinishToggle = async (checked: boolean) => {
+    setAutoFinishFlight(checked);
+    try {
+      const settings = await SettingsService.GetSettings();
+      await SettingsService.UpdateSettings({ ...settings, autoFinishFlight: checked });
     } catch { /* ignore */ }
   };
 
@@ -276,6 +296,24 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
                 <SelectItem value="xplane">{t("settings.simXplane")}</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{t("settings.autoStartFlight")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.autoStartFlightDesc")}
+              </p>
+            </div>
+            <Switch checked={autoStartFlight} onCheckedChange={handleAutoStartToggle} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{t("settings.autoFinishFlight")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.autoFinishFlightDesc")}
+              </p>
+            </div>
+            <Switch checked={autoFinishFlight} onCheckedChange={handleAutoFinishToggle} />
           </div>
         </CardContent>
       </Card>

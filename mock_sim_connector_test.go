@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"airspace-acars/internal/domain"
 )
 
-// MockSimConnector implements SimConnector for use in tests.
+// MockSimConnector implements domain.SimConnector for use in tests.
 type MockSimConnector struct {
-	data         *FlightData
+	data         *domain.FlightData
 	err          error
 	name         string
 	lastReceived time.Time
@@ -18,7 +20,7 @@ func (m *MockSimConnector) Connect() error           { return nil }
 func (m *MockSimConnector) Disconnect() error        { return nil }
 func (m *MockSimConnector) Name() string             { return m.name }
 func (m *MockSimConnector) LastReceived() time.Time  { return m.lastReceived }
-func (m *MockSimConnector) GetFlightData() (*FlightData, error) {
+func (m *MockSimConnector) GetFlightData() (*domain.FlightData, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -32,7 +34,7 @@ func (m *MockSimConnector) GetFlightData() (*FlightData, error) {
 // dynamic error toggling for testing reconnection behaviour.
 type ReconnectableMockConnector struct {
 	mu              sync.Mutex
-	data            *FlightData
+	data            *domain.FlightData
 	getDataErr      error
 	connectErr      error
 	name            string
@@ -62,7 +64,7 @@ func (r *ReconnectableMockConnector) LastReceived() time.Time {
 	return r.lastReceived
 }
 
-func (r *ReconnectableMockConnector) GetFlightData() (*FlightData, error) {
+func (r *ReconnectableMockConnector) GetFlightData() (*domain.FlightData, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.getDataErr != nil {
@@ -100,15 +102,15 @@ func (r *ReconnectableMockConnector) DisconnectCalls() int {
 }
 
 // sampleFlightData returns a FlightData with realistic default values.
-func sampleFlightData() *FlightData {
-	return &FlightData{
-		Position: PositionData{
+func sampleFlightData() *domain.FlightData {
+	return &domain.FlightData{
+		Position: domain.PositionData{
 			Latitude:    51.4775,
 			Longitude:   -0.4614,
 			Altitude:    83.0,
 			AltitudeAGL: 0.0,
 		},
-		Attitude: AttitudeData{
+		Attitude: domain.AttitudeData{
 			Pitch:       -1.2,
 			Roll:        0.3,
 			HeadingTrue: 270.0,
@@ -119,15 +121,15 @@ func sampleFlightData() *FlightData {
 			GS:          0,
 			GForce:      1.0,
 		},
-		Engines: [4]EngineData{
+		Engines: [4]domain.EngineData{
 			{Exists: true, Running: true, N1: 22.5, N2: 60.0, ThrottlePos: 0, MixturePos: 100, PropPos: 0},
 			{Exists: true, Running: true, N1: 22.5, N2: 60.0, ThrottlePos: 0, MixturePos: 100, PropPos: 0},
 		},
-		Sensors: SensorData{
+		Sensors: domain.SensorData{
 			OnGround:       true,
 			SimulationRate: 1.0,
 		},
-		Radios: RadioData{
+		Radios: domain.RadioData{
 			Com1:      118.3,
 			Com2:      121.5,
 			Nav1:      110.1,
@@ -135,17 +137,17 @@ func sampleFlightData() *FlightData {
 			XpdrCode:  1200,
 			XpdrState: "stand-by",
 		},
-		Autopilot: AutopilotData{
+		Autopilot: domain.AutopilotData{
 			Heading:  270,
 			Altitude: 5000,
 		},
 		Altimeter:    29.92,
 		AircraftName: "Boeing 737-800",
-		Weight: WeightData{
+		Weight: domain.WeightData{
 			TotalWeight: 130000,
 			FuelWeight:  40000,
 		},
-		SimTime: SimTimeData{
+		SimTime: domain.SimTimeData{
 			ZuluTime:  43200, // 12:00:00
 			ZuluDay:   15,
 			ZuluMonth: 6,

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Plug, Unplug, Plane, Square, CheckCircle2, TriangleAlert } from "lucide-react";
+import { Plug, Unplug, Plane, Square, CheckCircle2, TriangleAlert, Zap } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
@@ -32,6 +32,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   const [onGround, setOnGround] = useState(false);
   const [groundSpeed, setGroundSpeed] = useState(0);
   const [activeFlightInfo, setActiveFlightInfo] = useState<{ callsign?: string; departure?: string; arrival?: string } | null>(null);
+  const [autoNotification, setAutoNotification] = useState<string | null>(null);
 
   useEffect(() => {
     FlightDataService.ConnectedAdapter().then(setConnectedAdapter).catch(() => {});
@@ -50,11 +51,22 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       if (d?.sensors) setOnGround(d.sensors.onGround ?? false);
       if (d?.attitude) setGroundSpeed(d.attitude.gs ?? 0);
     });
+    const cancelAutoStart = Events.On("auto-flight-start", (event: any) => {
+      const callsign = event.data ?? "";
+      setAutoNotification(t("acars.autoStarted", { callsign }));
+      setTimeout(() => setAutoNotification(null), 5000);
+    });
+    const cancelAutoFinish = Events.On("auto-flight-finish", () => {
+      setAutoNotification(t("acars.autoFinished"));
+      setTimeout(() => setAutoNotification(null), 5000);
+    });
 
     return () => {
       cancelConn();
       cancelFlight();
       cancelData();
+      cancelAutoStart();
+      cancelAutoFinish();
     };
   }, [localMode]);
 
@@ -177,6 +189,14 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       </div>
 
       <Separator />
+
+      {/* Auto-flight notification */}
+      {autoNotification && (
+        <div className="rounded-lg border border-primary/30 bg-primary/10 p-3 flex items-center gap-2 animate-in fade-in duration-300">
+          <Zap className="h-4 w-4 text-primary shrink-0" />
+          <span className="text-sm font-medium">{autoNotification}</span>
+        </div>
+      )}
 
       {/* Local Mode indicator */}
       {localMode && (

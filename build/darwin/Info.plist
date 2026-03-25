@@ -4,15 +4,15 @@
         <key>CFBundlePackageType</key>
             <string>APPL</string>
         <key>CFBundleName</key>
-            <string>My Product</string>
+            <string>Airspace ACARS</string>
         <key>CFBundleExecutable</key>
-            <string>airspace-acars-temp.exe</string>
+            <string>airspace-acars</string>
         <key>CFBundleIdentifier</key>
-            <string>com.example.airspaceacarstemp</string>
+            <string>com.ferrlab.airspace-acars</string>
         <key>CFBundleVersion</key>
             <string>0.1.0</string>
         <key>CFBundleGetInfoString</key>
-            <string>This is a comment</string>
+            <string>Flight Simulator ACARS Desktop Application</string>
         <key>CFBundleShortVersionString</key>
             <string>0.1.0</string>
         <key>CFBundleIconFile</key>
@@ -24,6 +24,6 @@
         <key>NSHighResolutionCapable</key>
             <string>true</string>
         <key>NSHumanReadableCopyright</key>
-            <string>© 2026, My Company</string>
+            <string>© 2025, FerrLab</string>
     </dict>
 </plist>

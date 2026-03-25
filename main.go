@@ -6,10 +6,16 @@ import (
 	_ "embed"
 	"log"
 	"log/slog"
-	"net/http"
-	"os"
 	"time"
 
+	"airspace-acars/internal/adapters/airspace"
+	discordadapter "airspace-acars/internal/adapters/discord"
+	simconnectadapter "airspace-acars/internal/adapters/simconnect"
+	"airspace-acars/internal/adapters/storage"
+	wailsadapter "airspace-acars/internal/adapters/wails"
+	"airspace-acars/internal/adapters/xplane"
+	"airspace-acars/internal/app"
+	"airspace-acars/internal/domain"
 	"airspace-acars/observability"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -23,54 +29,80 @@ var assets embed.FS
 var appIcon []byte
 
 func init() {
-	application.RegisterEvent[*FlightData]("flight-data")
+	application.RegisterEvent[*domain.FlightData]("flight-data")
 	application.RegisterEvent[bool]("recording-state")
 	application.RegisterEvent[string]("connection-state")
 	application.RegisterEvent[string]("flight-state")
 	application.RegisterEvent[bool]("update-check-done")
+	application.RegisterEvent[string]("auto-flight-start")
+	application.RegisterEvent[bool]("auto-flight-finish")
 }
 
 func main() {
 	si, err := NewSingleInstance()
 	if err != nil {
 		slog.Info("another instance is running, bringing to foreground")
-		os.Exit(0)
+		return
 	}
 	defer si.Close()
 
-	shutdown, err := observability.Init("airspace-acars", Version)
+	shutdown, err := observability.Init("airspace-acars", domain.Version)
 	if err != nil {
 		log.Fatal("failed to init observability:", err)
 	}
 	defer shutdown(context.Background())
 
-	db, err := initDB()
+	// --- Inject embedded DLL into SimConnect adapter ---
+	simconnectadapter.EmbeddedDLL = embeddedSimConnectDLL
+
+	// --- Create adapters ---
+	airspaceAdapter := airspace.NewAdapter()
+	wailsEmitter := wailsadapter.NewAdapter()
+	discordAdapter := discordadapter.NewAdapter()
+
+	db, err := storage.NewSQLiteAdapter()
 	if err != nil {
 		log.Fatal("failed to init database:", err)
 	}
 	defer db.Close()
 
-	settingsService := NewSettingsService()
-	authService := &AuthService{httpClient: &http.Client{Timeout: 30 * time.Second}, settings: settingsService}
-	flightDataService := NewFlightDataService(db)
-	flightService := NewFlightService(authService, flightDataService)
-	chatService := NewChatService(authService)
-	audioService := NewAudioService(authService)
-	updateService := &UpdateService{}
-	discordService := NewDiscordService(settingsService, authService, flightService)
+	// --- Create app instance (inject adapters) ---
+	appInstance := app.NewApp(
+		airspaceAdapter,
+		wailsEmitter,
+		db,
+		discordAdapter,
+		func() domain.SimConnector { return simconnectadapter.NewAdapter() },
+		func(host string, port int) domain.SimConnector { return xplane.NewAdapter(host, port) },
+	)
 
-	app := application.New(application.Options{
+	// Initialize settings and audio cache
+	appInstance.InitSettings()
+	appInstance.InitAudioCache()
+
+	// --- Create service wrappers (User Action Port for Wails) ---
+	flightDataSvc := &FlightDataService{app: appInstance}
+	flightSvc := &FlightService{app: appInstance}
+	authSvc := &AuthService{app: appInstance}
+	chatSvc := &ChatService{app: appInstance}
+	audioSvc := &AudioService{app: appInstance}
+	settingsSvc := &SettingsService{app: appInstance}
+	updateSvc := &UpdateService{app: appInstance}
+	discordSvc := &DiscordService{app: appInstance}
+
+	// --- Create Wails application ---
+	wailsApp := application.New(application.Options{
 		Name:        "Airspace ACARS",
 		Description: "Flight Simulator ACARS Desktop Application",
 		Services: []application.Service{
-			application.NewService(authService),
-			application.NewService(settingsService),
-			application.NewService(flightDataService),
-			application.NewService(flightService),
-			application.NewService(chatService),
-			application.NewService(audioService),
-			application.NewService(updateService),
-			application.NewService(discordService),
+			application.NewService(flightDataSvc),
+			application.NewService(flightSvc),
+			application.NewService(authSvc),
+			application.NewService(chatSvc),
+			application.NewService(audioSvc),
+			application.NewService(settingsSvc),
+			application.NewService(updateSvc),
+			application.NewService(discordSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -83,11 +115,12 @@ func main() {
 		},
 	})
 
-	flightDataService.setApp(app)
-	flightService.setApp(app)
-	updateService.setApp(app)
+	// Wire the Wails app back to the emitter and set quit function
+	wailsEmitter.SetApp(wailsApp)
+	appInstance.QuitFunc = func() { wailsApp.Quit() }
 
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	// --- Create window ---
+	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",
 		Width:  1100,
 		Height: 700,
@@ -105,35 +138,34 @@ func main() {
 		window.Focus()
 	})
 
-	// Hide to tray instead of closing
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
 		e.Cancel()
 	})
 
-	// System tray
+	// --- System tray ---
 	trayLabels := map[string][2]string{
 		"en": {"Show", "Quit"},
 		"es": {"Mostrar", "Salir"},
 		"pt": {"Mostrar", "Sair"},
 		"fr": {"Afficher", "Quitter"},
 	}
-	lang := settingsService.GetSettings().Language
+	lang := appInstance.GetSettings().Language
 	labels := trayLabels[lang]
 	if labels == [2]string{} {
 		labels = trayLabels["en"]
 	}
-	trayMenu := app.NewMenu()
+	trayMenu := wailsApp.NewMenu()
 	trayMenu.Add(labels[0]).OnClick(func(ctx *application.Context) {
 		window.Show()
 		window.Focus()
 	})
 	trayMenu.AddSeparator()
 	trayMenu.Add(labels[1]).OnClick(func(ctx *application.Context) {
-		app.Quit()
+		wailsApp.Quit()
 	})
 
-	systray := app.SystemTray.New()
+	systray := wailsApp.SystemTray.New()
 	systray.SetIcon(appIcon)
 	systray.SetTooltip("Airspace ACARS")
 	systray.SetMenu(trayMenu)
@@ -142,25 +174,19 @@ func main() {
 		window.Focus()
 	})
 
-	discordService.Start()
+	// --- Start background services ---
+	appInstance.StartDiscordLoop()
 
 	go func() {
 		time.Sleep(time.Second)
 
-		// Auto-update on startup
-		updateService.AutoUpdate()
-		app.Event.Emit("update-check-done", true)
+		appInstance.AutoUpdate()
+		wailsApp.Event.Emit("update-check-done", true)
 
-		// Auto-connect to sim
-		settings := settingsService.GetSettings()
-		if adapter, err := flightDataService.ConnectSim(settings.SimType); err != nil {
-			slog.Warn("auto-connect failed", "error", err)
-		} else {
-			slog.Info("auto-connected", "adapter", adapter)
-		}
+		appInstance.AutoConnectLoop()
 	}()
 
-	if err := app.Run(); err != nil {
+	if err := wailsApp.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
