@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -25,9 +26,10 @@ var (
 )
 
 const (
-	stalenessThreshold  = 10 * time.Second
-	reconnectBaseDelay  = 5 * time.Second
-	reconnectMaxBackoff = 60 * time.Second
+	stalenessThreshold   = 10 * time.Second
+	reconnectBaseDelay   = 5 * time.Second
+	reconnectMaxBackoff  = 60 * time.Second
+	autoConnectInterval  = 30 * time.Second
 )
 
 // ConnectSim connects to a flight simulator. simType can be "auto", "simconnect", or "xplane".
@@ -37,6 +39,7 @@ func (a *App) ConnectSim(simType string) (string, error) {
 	defer span.End()
 
 	a.simMu.Lock()
+	a.userDisconnected = false
 
 	if a.connector != nil {
 		a.stopDataStreamLocked()
@@ -141,6 +144,7 @@ func (a *App) DisconnectSim() {
 	a.adapterName = ""
 	a.reconnectAttempts = 0
 	a.lastReconnectAt = time.Time{}
+	a.userDisconnected = true
 	a.UI.EmitEvent("connection-state", "")
 }
 
@@ -244,6 +248,9 @@ func (a *App) dataStreamLoop() {
 				a.simMu.Unlock()
 			}
 
+			// Auto-flight detection
+			a.checkAutoFlight(data)
+
 			// Staleness check
 			if wasActive && !connector.LastReceived().IsZero() &&
 				time.Since(connector.LastReceived()) > stalenessThreshold {
@@ -289,6 +296,35 @@ func (a *App) dataStreamLoop() {
 					slog.Info("reconnected successfully", "adapter", adapterName)
 				}
 			}
+		}
+	}
+}
+
+// AutoConnectLoop tries to connect to the simulator every 30 seconds when not connected.
+// It should be called as a goroutine. The first attempt happens immediately.
+func (a *App) AutoConnectLoop() {
+	settings := a.GetSettings()
+	if adapter, err := a.ConnectSim(settings.SimType); err != nil {
+		slog.Debug("auto-connect: initial attempt failed", "error", err)
+	} else {
+		slog.Info("auto-connected to simulator", "adapter", adapter)
+	}
+
+	ticker := time.NewTicker(autoConnectInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		a.simMu.Lock()
+		skip := a.simActive || a.userDisconnected
+		a.simMu.Unlock()
+		if skip {
+			continue
+		}
+		settings := a.GetSettings()
+		if adapter, err := a.ConnectSim(settings.SimType); err != nil {
+			slog.Debug("auto-connect: attempt failed", "error", err)
+		} else {
+			slog.Info("auto-connected to simulator", "adapter", adapter)
 		}
 	}
 }
@@ -339,4 +375,112 @@ func (a *App) reconnectSim() error {
 	a.connector = connector
 	a.simMu.Unlock()
 	return nil
+}
+
+// checkAutoFlight evaluates conditions for auto-start and auto-finish.
+// Called once per tick from dataStreamLoop (single goroutine, no mutex needed for armed flags).
+func (a *App) checkAutoFlight(data *domain.FlightData) {
+	settings := a.GetSettings()
+	if settings.LocalMode {
+		return
+	}
+
+	a.flightMu.Lock()
+	flightState := a.state
+	a.flightMu.Unlock()
+
+	// --- Auto-start: beacon on, engine(s) running, on ground, stationary, flight idle ---
+	if settings.AutoStartFlight && flightState == "idle" {
+		anyEngineRunning := false
+		for _, e := range data.Engines {
+			if e.Running {
+				anyEngineRunning = true
+				break
+			}
+		}
+		startConditions := data.Lights.Beacon && anyEngineRunning &&
+			data.Sensors.OnGround && data.Attitude.GS < 1.0
+
+		if startConditions && !a.autoStartArmed {
+			a.autoStartArmed = true
+			go a.tryAutoStartFlight()
+		} else if !startConditions {
+			a.autoStartArmed = false
+		}
+	}
+
+	// --- Auto-finish: beacon off, all engines off, on ground, stationary, flight active ---
+	if settings.AutoFinishFlight && flightState == "active" {
+		allEnginesOff := true
+		for _, e := range data.Engines {
+			if e.Running {
+				allEnginesOff = false
+				break
+			}
+		}
+		finishConditions := !data.Lights.Beacon && allEnginesOff &&
+			data.Sensors.OnGround && data.Attitude.GS < 1.0
+
+		if finishConditions && !a.autoFinishArmed {
+			a.autoFinishArmed = true
+			go a.tryAutoFinishFlight()
+		} else if !finishConditions {
+			a.autoFinishArmed = false
+		}
+	}
+}
+
+// tryAutoStartFlight fetches the booking and starts the flight automatically.
+func (a *App) tryAutoStartFlight() {
+	body, _, err := a.Airspace.DoRequest("GET", "/api/acars/booking", nil)
+	if err != nil {
+		slog.Debug("auto-start: failed to fetch booking", "error", err)
+		return
+	}
+	var booking map[string]interface{}
+	if err := json.Unmarshal(body, &booking); err != nil {
+		slog.Debug("auto-start: failed to parse booking", "error", err)
+		return
+	}
+
+	callsign, _ := booking["callsign"].(string)
+	if callsign == "" {
+		if fn, ok := booking["flight_number"].(string); ok {
+			callsign = fn
+		}
+	}
+	if callsign == "" {
+		slog.Debug("auto-start: no booking available")
+		return
+	}
+
+	var departure, arrival string
+	if dep, ok := booking["departure_airport"].(map[string]interface{}); ok {
+		departure, _ = dep["icao"].(string)
+	}
+	if alt, ok := booking["alternate_airport"].(map[string]interface{}); ok {
+		arrival, _ = alt["icao"].(string)
+	}
+	if arrival == "" {
+		if arr, ok := booking["arrival_airport"].(map[string]interface{}); ok {
+			arrival, _ = arr["icao"].(string)
+		}
+	}
+
+	a.UI.EmitEvent("auto-flight-start", callsign)
+	if err := a.StartFlight(callsign, departure, arrival); err != nil {
+		slog.Warn("auto-start: failed to start flight", "error", err)
+	} else {
+		slog.Info("auto-start: flight started", "callsign", callsign, "dep", departure, "arr", arrival)
+	}
+}
+
+// tryAutoFinishFlight finishes the active flight automatically.
+func (a *App) tryAutoFinishFlight() {
+	a.UI.EmitEvent("auto-flight-finish", true)
+	if err := a.FinishFlight(); err != nil {
+		slog.Warn("auto-finish: failed to finish flight", "error", err)
+	} else {
+		slog.Info("auto-finish: flight finished")
+	}
 }

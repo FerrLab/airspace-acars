@@ -34,6 +34,8 @@ func init() {
 	application.RegisterEvent[string]("connection-state")
 	application.RegisterEvent[string]("flight-state")
 	application.RegisterEvent[bool]("update-check-done")
+	application.RegisterEvent[string]("auto-flight-start")
+	application.RegisterEvent[bool]("auto-flight-finish")
 }
 
 func main() {
@@ -181,12 +183,7 @@ func main() {
 		appInstance.AutoUpdate()
 		wailsApp.Event.Emit("update-check-done", true)
 
-		settings := appInstance.GetSettings()
-		if adapter, err := appInstance.ConnectSim(settings.SimType); err != nil {
-			slog.Warn("auto-connect failed", "error", err)
-		} else {
-			slog.Info("auto-connected", "adapter", adapter)
-		}
+		appInstance.AutoConnectLoop()
 	}()
 
 	if err := wailsApp.Run(); err != nil {

@@ -64,6 +64,7 @@ type App struct {
 	streamStopCh      chan struct{}
 	reconnectAttempts int
 	lastReconnectAt   time.Time
+	userDisconnected  bool
 
 	// Recording state
 	recording    bool
@@ -101,6 +102,10 @@ type App struct {
 	// Sim connector factories (injected from main for platform-specific construction)
 	NewSimConnectAdapter func() domain.SimConnector
 	NewXPlaneAdapter     func(host string, port int) domain.SimConnector
+
+	// Auto-flight detection state (only accessed from dataStreamLoop goroutine)
+	autoStartArmed  bool
+	autoFinishArmed bool
 
 	// Discord loop control
 	discordNudge chan struct{}
