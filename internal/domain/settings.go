@@ -10,8 +10,7 @@ type Settings struct {
 	ChatSound        string `json:"chatSound"`
 	DiscordPresence  bool   `json:"discordPresence"`
 	Language         string `json:"language"`
-	AutoStartFlight  bool   `json:"autoStartFlight"`
-	AutoFinishFlight bool   `json:"autoFinishFlight"`
+	AutoStartFlight bool `json:"autoStartFlight"`
 }
 
 func DefaultSettings() Settings {
@@ -24,7 +23,6 @@ func DefaultSettings() Settings {
 		ChatSound:        "default",
 		DiscordPresence:  true,
 		Language:         "en",
-		AutoStartFlight:  true,
-		AutoFinishFlight: true,
+		AutoStartFlight: true,
 	}
 }

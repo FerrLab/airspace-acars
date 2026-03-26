@@ -35,7 +35,6 @@ func init() {
 	application.RegisterEvent[string]("flight-state")
 	application.RegisterEvent[bool]("update-check-done")
 	application.RegisterEvent[string]("auto-flight-start")
-	application.RegisterEvent[bool]("auto-flight-finish")
 }
 
 func main() {

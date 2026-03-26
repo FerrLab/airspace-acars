@@ -104,8 +104,7 @@ type App struct {
 	NewXPlaneAdapter     func(host string, port int) domain.SimConnector
 
 	// Auto-flight detection state (only accessed from dataStreamLoop goroutine)
-	autoStartArmed  bool
-	autoFinishArmed bool
+	autoStartArmed bool
 
 	// Discord loop control
 	discordNudge chan struct{}
