@@ -56,17 +56,12 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       setAutoNotification(t("acars.autoStarted", { callsign }));
       setTimeout(() => setAutoNotification(null), 5000);
     });
-    const cancelAutoFinish = Events.On("auto-flight-finish", () => {
-      setAutoNotification(t("acars.autoFinished"));
-      setTimeout(() => setAutoNotification(null), 5000);
-    });
 
     return () => {
       cancelConn();
       cancelFlight();
       cancelData();
       cancelAutoStart();
-      cancelAutoFinish();
     };
   }, [localMode]);
 

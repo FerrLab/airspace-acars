@@ -377,7 +377,7 @@ func (a *App) reconnectSim() error {
 	return nil
 }
 
-// checkAutoFlight evaluates conditions for auto-start and auto-finish.
+// checkAutoFlight evaluates conditions for auto-start.
 // Called once per tick from dataStreamLoop (single goroutine, no mutex needed for armed flags).
 func (a *App) checkAutoFlight(data *domain.FlightData) {
 	settings := a.GetSettings()
@@ -406,26 +406,6 @@ func (a *App) checkAutoFlight(data *domain.FlightData) {
 			go a.tryAutoStartFlight()
 		} else if !startConditions {
 			a.autoStartArmed = false
-		}
-	}
-
-	// --- Auto-finish: beacon off, all engines off, on ground, stationary, flight active ---
-	if settings.AutoFinishFlight && flightState == "active" {
-		allEnginesOff := true
-		for _, e := range data.Engines {
-			if e.Running {
-				allEnginesOff = false
-				break
-			}
-		}
-		finishConditions := !data.Lights.Beacon && allEnginesOff &&
-			data.Sensors.OnGround && data.Attitude.GS < 1.0
-
-		if finishConditions && !a.autoFinishArmed {
-			a.autoFinishArmed = true
-			go a.tryAutoFinishFlight()
-		} else if !finishConditions {
-			a.autoFinishArmed = false
 		}
 	}
 }
@@ -475,12 +455,3 @@ func (a *App) tryAutoStartFlight() {
 	}
 }
 
-// tryAutoFinishFlight finishes the active flight automatically.
-func (a *App) tryAutoFinishFlight() {
-	a.UI.EmitEvent("auto-flight-finish", true)
-	if err := a.FinishFlight(); err != nil {
-		slog.Warn("auto-finish: failed to finish flight", "error", err)
-	} else {
-		slog.Info("auto-finish: flight finished")
-	}
-}
