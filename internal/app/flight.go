@@ -139,11 +139,11 @@ func (a *App) StartFlight(callsign, departure, arrival string) error {
 		return err
 	}
 
-	payload := map[string]string{
+	payload := map[string]interface{}{
 		"callsign":  callsign,
 		"departure": departure,
 		"arrival":   arrival,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"timestamp": time.Now().UnixMilli(),
 	}
 
 	_, status, err := a.Airspace.DoRequest("POST", "/api/acars/start", payload)
@@ -188,9 +188,9 @@ func (a *App) StopFlight() error {
 		return fmt.Errorf("no active flight")
 	}
 
-	payload := map[string]string{
+	payload := map[string]interface{}{
 		"callsign":  a.callsign,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"timestamp": time.Now().UnixMilli(),
 	}
 
 	_, _, err := a.doRequestWithRetry("POST", "/api/acars/stop", payload)
@@ -223,11 +223,11 @@ func (a *App) FinishFlight() error {
 		return err
 	}
 
-	payload := map[string]string{
+	payload := map[string]interface{}{
 		"callsign":  a.callsign,
 		"departure": a.departure,
 		"arrival":   a.arrival,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"timestamp": time.Now().UnixMilli(),
 	}
 
 	body, status, err := a.doRequestWithRetry("POST", "/api/acars/finish", payload)
@@ -352,7 +352,7 @@ func (a *App) buildPositionReport(fd *domain.FlightData) map[string]interface{} 
 		"callsign":     callsign,
 		"departure":    departure,
 		"arrival":      arrival,
-		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		"timestamp":    time.Now().UnixMilli(),
 		"elapsedTime":  m(elapsed, "s"),
 		"position": map[string]interface{}{
 			"latitude":    m(fd.Position.Latitude, "deg"),
