@@ -62,10 +62,8 @@ var xplaneDatarefs = []string{
 	"sim/cockpit/switches/gear_handle_status",
 	"sim/time/zulu_time_sec",
 	"sim/time/local_date_days",
-	"sim/time/local_date_days",
-	"sim/time/local_date_days",
 	"sim/time/local_time_sec",
-	"sim/flightmodel/position/g_nrml",
+	"sim/flightmodel/forces/g_nrml",
 	"sim/flightmodel/engine/ENGN_running[1]",
 	"sim/flightmodel/engine/ENGN_N1_[1]",
 	"sim/flightmodel/engine/ENGN_N2_[1]",
@@ -185,6 +183,15 @@ func (x *Adapter) LastReceived() time.Time {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	return x.lastReceived
+}
+
+// dayOfYearToDate converts X-Plane's sim/time/local_date_days (day-of-year, 0-indexed)
+// into calendar day/month/year, matching the SimConnect adapter's contract.
+// X-Plane does not expose year over UDP, so the host system's current UTC year is used.
+// time.Date normalizes out-of-range day fields, so leap years resolve automatically.
+func dayOfYearToDate(dayOfYear int) (day, month, year int) {
+	t := time.Date(time.Now().UTC().Year(), time.January, 1+dayOfYear, 0, 0, 0, 0, time.UTC)
+	return t.Day(), int(t.Month()), t.Year()
 }
 
 func (x *Adapter) subscribeRREF(index, freq int, dataref string) error {
@@ -333,70 +340,69 @@ func (x *Adapter) listenLoop() {
 			case 47:
 				x.data.SimTime.ZuluTime = float64(val)
 			case 48:
-				x.data.SimTime.ZuluDay = float64(val)
+				day, month, year := dayOfYearToDate(int(val))
+				x.data.SimTime.ZuluDay = float64(day)
+				x.data.SimTime.ZuluMonth = float64(month)
+				x.data.SimTime.ZuluYear = float64(year)
 			case 49:
-				x.data.SimTime.ZuluMonth = float64(val)
-			case 50:
-				x.data.SimTime.ZuluYear = float64(val)
-			case 51:
 				x.data.SimTime.LocalTime = float64(val)
-			case 52:
+			case 50:
 				x.data.Attitude.GForce = float64(val)
-			case 53:
+			case 51:
 				x.data.Engines[1].Running = val != 0
-			case 54:
+			case 52:
 				x.data.Engines[1].N1 = float64(val)
-			case 55:
+			case 53:
 				x.data.Engines[1].N2 = float64(val)
-			case 56:
+			case 54:
 				x.data.Engines[1].ThrottlePos = float64(val) * 100
-			case 57:
+			case 55:
 				x.data.Engines[1].MixturePos = float64(val) * 100
-			case 58:
+			case 56:
 				x.data.Engines[1].PropPos = float64(val) * 100
-			case 59:
+			case 57:
 				x.data.Engines[2].Running = val != 0
-			case 60:
+			case 58:
 				x.data.Engines[2].N1 = float64(val)
-			case 61:
+			case 59:
 				x.data.Engines[2].N2 = float64(val)
-			case 62:
+			case 60:
 				x.data.Engines[2].ThrottlePos = float64(val) * 100
-			case 63:
+			case 61:
 				x.data.Engines[2].MixturePos = float64(val) * 100
-			case 64:
+			case 62:
 				x.data.Engines[2].PropPos = float64(val) * 100
-			case 65:
+			case 63:
 				x.data.Engines[3].Running = val != 0
-			case 66:
+			case 64:
 				x.data.Engines[3].N1 = float64(val)
-			case 67:
+			case 65:
 				x.data.Engines[3].N2 = float64(val)
-			case 68:
+			case 66:
 				x.data.Engines[3].ThrottlePos = float64(val) * 100
-			case 69:
+			case 67:
 				x.data.Engines[3].MixturePos = float64(val) * 100
-			case 70:
+			case 68:
 				x.data.Engines[3].PropPos = float64(val) * 100
-			case 71:
+			case 69:
 				x.data.Weight.TotalWeight = float64(val) * 2.20462
-			case 72:
+			case 70:
 				x.data.Weight.FuelWeight = float64(val) * 2.20462
-			case 73:
+			case 71:
 				n := int(val)
 				x.data.Engines[0].Exists = n >= 1
 				x.data.Engines[1].Exists = n >= 2
 				x.data.Engines[2].Exists = n >= 3
 				x.data.Engines[3].Exists = n >= 4
-			case 74:
+			case 72:
 				x.data.WindDirection = float64(val)
-			case 75:
+			case 73:
 				x.data.WindSpeed = float64(val)
-			case 76:
+			case 74:
 				x.data.QNH = float64(val) * 33.8639
-			case 77:
+			case 75:
 				x.data.Sensors.Paused = val != 0
-			case 78:
+			case 76:
 				x.data.Sensors.Crashed = val != 0
 			}
 			x.mu.Unlock()
