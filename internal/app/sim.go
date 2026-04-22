@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"airspace-acars/internal/domain"
@@ -447,8 +448,16 @@ func (a *App) tryAutoStartFlight() {
 		}
 	}
 
+	var bookingID string
+	switch v := booking["id"].(type) {
+	case string:
+		bookingID = v
+	case float64:
+		bookingID = strconv.FormatInt(int64(v), 10)
+	}
+
 	a.UI.EmitEvent("auto-flight-start", callsign)
-	if err := a.StartFlight(callsign, departure, arrival); err != nil {
+	if err := a.StartFlight(callsign, departure, arrival, bookingID); err != nil {
 		slog.Warn("auto-start: failed to start flight", "error", err)
 	} else {
 		slog.Info("auto-start: flight started", "callsign", callsign, "dep", departure, "arr", arrival)

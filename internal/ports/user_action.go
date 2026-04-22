@@ -79,8 +79,8 @@ func (p *UserActionPort) GetPilot() (map[string]interface{}, error) {
 	return p.App.GetPilot()
 }
 
-func (p *UserActionPort) StartFlight(callsign, departure, arrival string) error {
-	return p.App.StartFlight(callsign, departure, arrival)
+func (p *UserActionPort) StartFlight(callsign, departure, arrival, bookingID string) error {
+	return p.App.StartFlight(callsign, departure, arrival, bookingID)
 }
 
 func (p *UserActionPort) StopFlight() error {
@@ -89,6 +89,10 @@ func (p *UserActionPort) StopFlight() error {
 
 func (p *UserActionPort) FinishFlight() error {
 	return p.App.FinishFlight()
+}
+
+func (p *UserActionPort) CancelFinish() error {
+	return p.App.CancelFinish()
 }
 
 // --- Auth commands ---
