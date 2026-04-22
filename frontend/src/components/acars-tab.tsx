@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { useDevMode } from "@/hooks/use-dev-mode";
 import { FlightDataService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
 import { translateError } from "@/lib/translate-error";
+import { playAutoStartDing } from "@/lib/notification-sounds";
 
 interface AcarsTabProps {
   localMode?: boolean;
@@ -34,6 +35,13 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   const [activeFlightInfo, setActiveFlightInfo] = useState<{ callsign?: string; departure?: string; arrival?: string } | null>(null);
   const [autoNotification, setAutoNotification] = useState<string | null>(null);
 
+  // Kept in a ref so the auto-start event handler always reads the current
+  // volume without re-subscribing to the Wails event on every slider drag.
+  const volumeRef = useRef(volume);
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
   useEffect(() => {
     FlightDataService.ConnectedAdapter().then(setConnectedAdapter).catch(() => {});
     if (!localMode) {
@@ -55,6 +63,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       const callsign = event.data ?? "";
       setAutoNotification(t("acars.autoStarted", { callsign }));
       setTimeout(() => setAutoNotification(null), 5000);
+      playAutoStartDing(volumeRef.current);
     });
 
     return () => {

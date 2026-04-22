@@ -50,6 +50,10 @@ const (
 	maxPendingReports    = 500
 	maxHighResReports    = 1500
 	retryAttempts        = 4
+
+	// minFlightDuration guards against fat-fingered finishes immediately after
+	// start. Cancel/stop is unaffected — only "finish" claims the flight is complete.
+	minFlightDuration = 1 * time.Minute
 )
 
 // GetFlightState returns "idle" or "active".
@@ -218,6 +222,14 @@ func (a *App) FinishFlight() error {
 
 	if a.state != "active" {
 		err := fmt.Errorf("no active flight")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	if elapsed := time.Since(a.startTime); elapsed < minFlightDuration {
+		remaining := (minFlightDuration - elapsed).Round(time.Second)
+		err := fmt.Errorf("flight too short to finish, please wait %s", remaining)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
