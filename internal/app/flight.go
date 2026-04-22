@@ -36,6 +36,14 @@ var (
 		metric.WithDescription("High-resolution reports queued during flare"))
 	posHighResDepth, _  = flightMeter.Int64Histogram("position.highres_depth",
 		metric.WithDescription("High-resolution queue depth at each drain"))
+	posOutboxEnqueued, _ = flightMeter.Int64Counter("position.outbox_enqueued",
+		metric.WithDescription("Position reports persisted to the SQLite outbox"))
+	posOutboxDepth, _    = flightMeter.Int64Histogram("position.outbox_depth",
+		metric.WithDescription("Outbox row count sampled at each drain pass"))
+	finishDrainDur, _    = flightMeter.Float64Histogram("flight.finish_drain_duration_sec",
+		metric.WithDescription("Seconds from FinishFlight call to /api/acars/finish success"))
+	finishCanceledTotal, _ = flightMeter.Int64Counter("flight.finish_canceled_total",
+		metric.WithDescription("Number of times CancelFinish was invoked"))
 )
 
 const (
@@ -44,12 +52,19 @@ const (
 	posIntervalLow       = 1 * time.Second
 	posIntervalHigh      = 2 * time.Second
 	posIntervalStatic    = 60 * time.Second
-	flareAltThreshold    = 50.0  // enter high-res below 50ft AGL (was 10ft — too narrow)
-	criticalAltThreshold = 200.0 // switch to 500ms reporting below 200ft AGL
+	flareAltThreshold    = 50.0
+	criticalAltThreshold = 200.0
 	highAltThreshold     = 10_000.0
-	maxPendingReports    = 500
-	maxHighResReports    = 1500
+	maxHighResReports    = 3000
+	maxBatchSize         = 250
 	retryAttempts        = 4
+
+	finishDrainTickEvery  = 1 * time.Second
+	finishDrainBackoffMax = 60 * time.Second
+
+	// minFlightDuration guards against fat-fingered finishes immediately after
+	// start. Cancel/stop is unaffected — only "finish" claims the flight is complete.
+	minFlightDuration = 1 * time.Minute
 )
 
 // GetFlightState returns "idle" or "active".
@@ -100,12 +115,13 @@ func (a *App) GetPilot() (map[string]interface{}, error) {
 }
 
 // StartFlight begins a new flight tracking session.
-func (a *App) StartFlight(callsign, departure, arrival string) error {
+func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error {
 	_, span := flightTracer.Start(context.Background(), "flight.start",
 		trace.WithAttributes(
 			attribute.String("flight.callsign", callsign),
 			attribute.String("flight.departure", departure),
 			attribute.String("flight.arrival", arrival),
+			attribute.String("flight.booking_id", bookingID),
 		))
 	defer span.End()
 
@@ -164,6 +180,7 @@ func (a *App) StartFlight(callsign, departure, arrival string) error {
 	a.callsign = callsign
 	a.departure = departure
 	a.arrival = arrival
+	a.bookingID = bookingID
 	a.startTime = time.Now()
 	a.stopCh = make(chan struct{})
 
@@ -171,6 +188,12 @@ func (a *App) StartFlight(callsign, departure, arrival string) error {
 
 	slog.Info("flight started", "callsign", callsign, "dep", departure, "arr", arrival)
 	a.UI.EmitEvent("flight-state", "active")
+	if bookingID != "" {
+		if n, err := a.DB.CountOutbox(bookingID); err == nil && n > 0 {
+			slog.Info("resuming unsent positions from previous session", "booking_id", bookingID, "count", n)
+			a.UI.EmitEvent("flight-outbox-resuming", map[string]interface{}{"pending": n})
+		}
+	}
 	return nil
 }
 
@@ -203,13 +226,14 @@ func (a *App) StopFlight() error {
 	return nil
 }
 
-// FinishFlight completes the active flight.
+// FinishFlight transitions to the "finishing" state and kicks off an async
+// drain. Returns immediately. The frontend listens for flight-finish-*
+// events to render progress and the terminal state.
 func (a *App) FinishFlight() error {
 	_, span := flightTracer.Start(context.Background(), "flight.finish")
 	defer span.End()
 
 	a.flightMu.Lock()
-	defer a.flightMu.Unlock()
 
 	span.SetAttributes(
 		attribute.String("flight.callsign", a.callsign),
@@ -217,43 +241,173 @@ func (a *App) FinishFlight() error {
 	)
 
 	if a.state != "active" {
+		a.flightMu.Unlock()
 		err := fmt.Errorf("no active flight")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
-	payload := map[string]interface{}{
-		"callsign":  a.callsign,
-		"departure": a.departure,
-		"arrival":   a.arrival,
-		"timestamp": time.Now().UnixMilli(),
-	}
-
-	body, status, err := a.doRequestWithRetry("POST", "/api/acars/finish", payload)
-	if err != nil {
-		err = fmt.Errorf("finish flight: %w", err)
+	if elapsed := time.Since(a.startTime); elapsed < minFlightDuration {
+		a.flightMu.Unlock()
+		remaining := (minFlightDuration - elapsed).Round(time.Second)
+		err := fmt.Errorf("flight too short to finish, please wait %s", remaining)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if status >= 400 {
-		var errResp map[string]interface{}
-		json.Unmarshal(body, &errResp)
-		if msg, ok := errResp["error"].(string); ok {
-			err = fmt.Errorf("finish flight: %s", msg)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
+
+	// Snapshot what we need in the goroutine.
+	bookingID := a.bookingID
+	callsign := a.callsign
+	departure := a.departure
+	arrival := a.arrival
+
+	// Stop the position loop (it will flush in-RAM highResQueue to outbox).
+	if a.stopCh != nil {
+		close(a.stopCh)
+		a.stopCh = nil
+	}
+	a.state = "finishing"
+	a.finishCancelCh = make(chan struct{})
+	cancelCh := a.finishCancelCh
+
+	a.flightMu.Unlock()
+
+	a.UI.EmitEvent("flight-state", "finishing")
+	slog.Info("flight finishing, draining outbox", "booking_id", bookingID, "callsign", callsign)
+
+	go a.finishDrainLoop(bookingID, callsign, departure, arrival, cancelCh)
+	return nil
+}
+
+// finishDrainLoop runs until the outbox for the booking is empty, then POSTs
+// /api/acars/finish. Emits flight-finish-progress events once per tick, and a
+// terminal flight-finish-complete or flight-finish-failed event. Retries
+// transient errors forever (exponential backoff capped at finishDrainBackoffMax).
+// If cancelCh is closed, the loop exits and reverts state to "active".
+func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, cancelCh chan struct{}) {
+	started := time.Now()
+	backoff := 2 * time.Second
+
+	for {
+		select {
+		case <-cancelCh:
+			a.flightMu.Lock()
+			a.state = "active"
+			a.stopCh = make(chan struct{})
+			a.flightMu.Unlock()
+			go a.positionLoop(a.stopCh)
+			a.UI.EmitEvent("flight-state", "active")
+			slog.Info("flight finish cancelled by user", "booking_id", bookingID)
+			return
+		default:
 		}
-		err = fmt.Errorf("finish flight: server returned %d", status)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
 
-	a.endFlight()
-	slog.Info("flight finished")
+		count, err := a.DB.CountOutbox(bookingID)
+		if err != nil {
+			slog.Warn("outbox count failed during finish drain", "error", err)
+			a.sleepOrCancel(backoff, cancelCh)
+			backoff = minDuration(backoff*2, finishDrainBackoffMax)
+			continue
+		}
+
+		if count == 0 {
+			payload := map[string]interface{}{
+				"callsign":  callsign,
+				"departure": departure,
+				"arrival":   arrival,
+				"timestamp": time.Now().UnixMilli(),
+			}
+			body, status, err := a.doRequestWithRetry("POST", "/api/acars/finish", payload)
+			if err != nil || status >= 400 {
+				msg := "server error"
+				if err != nil {
+					msg = err.Error()
+				} else {
+					var errResp map[string]interface{}
+					_ = json.Unmarshal(body, &errResp)
+					if m, ok := errResp["error"].(string); ok {
+						msg = m
+					}
+				}
+				a.flightMu.Lock()
+				a.state = "active"
+				a.stopCh = make(chan struct{})
+				a.flightMu.Unlock()
+				go a.positionLoop(a.stopCh)
+				a.UI.EmitEvent("flight-state", "active")
+				a.UI.EmitEvent("flight-finish-failed", map[string]interface{}{"reason": msg})
+				slog.Warn("flight finish request failed", "error", msg)
+				return
+			}
+
+			// Success.
+			a.flightMu.Lock()
+			a.endFlight()
+			a.flightMu.Unlock()
+			a.UI.EmitEvent("flight-finish-complete", map[string]interface{}{
+				"duration_sec": time.Since(started).Seconds(),
+			})
+			finishDrainDur.Record(context.Background(), time.Since(started).Seconds())
+			slog.Info("flight finished cleanly",
+				"booking_id", bookingID,
+				"callsign", callsign,
+				"drain_sec", time.Since(started).Seconds())
+			return
+		}
+
+		a.UI.EmitEvent("flight-finish-progress", map[string]interface{}{"pending": count})
+		posOutboxDepth.Record(context.Background(), int64(count))
+
+		sent, _, err := a.drainOutbox(bookingID, 4) // 4 batches = 1000 rows per pass
+		if sent > 0 {
+			posReportsSent.Add(context.Background(), int64(sent))
+			backoff = 2 * time.Second
+		}
+		if err != nil {
+			slog.Warn("finish drain batch failed, will retry", "error", err, "remaining", count-sent)
+			a.sleepOrCancel(backoff, cancelCh)
+			backoff = minDuration(backoff*2, finishDrainBackoffMax)
+			continue
+		}
+
+		a.sleepOrCancel(finishDrainTickEvery, cancelCh)
+	}
+}
+
+func (a *App) sleepOrCancel(d time.Duration, cancelCh chan struct{}) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-cancelCh:
+	}
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// CancelFinish aborts an in-progress finish drain and returns to "active".
+// The outbox is left intact; the user can retry FinishFlight later.
+func (a *App) CancelFinish() error {
+	a.flightMu.Lock()
+	if a.state != "finishing" {
+		a.flightMu.Unlock()
+		return fmt.Errorf("no finish in progress")
+	}
+	ch := a.finishCancelCh
+	a.finishCancelCh = nil
+	a.flightMu.Unlock()
+
+	if ch != nil {
+		close(ch)
+	}
+	finishCanceledTotal.Add(context.Background(), 1)
 	return nil
 }
 
@@ -266,6 +420,7 @@ func (a *App) endFlight() {
 	a.callsign = ""
 	a.departure = ""
 	a.arrival = ""
+	a.bookingID = ""
 	a.UI.EmitEvent("flight-state", "idle")
 }
 
@@ -302,6 +457,77 @@ func (a *App) doRequestWithRetry(method, path string, body interface{}) ([]byte,
 	span.RecordError(lastErr)
 	span.SetStatus(codes.Error, lastErr.Error())
 	return nil, 0, fmt.Errorf("all %d attempts failed: %w", retryAttempts, lastErr)
+}
+
+// sendPositionBatches POSTs reports to /api/v2/acars/position in chunks of at
+// most maxBatchSize. Returns the number sent successfully before returning.
+// On error, returns (sent, err) and leaves the unsent suffix to the caller.
+func (a *App) sendPositionBatches(reports []map[string]interface{}) (int, error) {
+	sent := 0
+	for sent < len(reports) {
+		end := sent + maxBatchSize
+		if end > len(reports) {
+			end = len(reports)
+		}
+		batch := reports[sent:end]
+		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", batch); err != nil {
+			return sent, err
+		}
+		sent = end
+	}
+	return sent, nil
+}
+
+// drainOutbox pulls up to maxBatches batches of maxBatchSize from the outbox
+// for the given booking and POSTs each. Successfully shipped rows are deleted
+// from the DB. Returns (sent, remaining, err); on error the unsent rows stay.
+func (a *App) drainOutbox(bookingID string, maxBatches int) (int, int, error) {
+	if bookingID == "" {
+		return 0, 0, nil
+	}
+	sent := 0
+	for i := 0; i < maxBatches; i++ {
+		ids, payloads, err := a.DB.PeekOutboxBatch(bookingID, maxBatchSize)
+		if err != nil {
+			remaining, _ := a.DB.CountOutbox(bookingID)
+			return sent, remaining, err
+		}
+		if len(ids) == 0 {
+			return sent, 0, nil
+		}
+
+		goodIDs := make([]int64, 0, len(ids))
+		goodReports := make([]map[string]interface{}, 0, len(payloads))
+		for j, raw := range payloads {
+			var report map[string]interface{}
+			if err := json.Unmarshal(raw, &report); err != nil {
+				// Poison row — delete it inline so we don't loop forever.
+				slog.Warn("outbox: dropping unparsable payload", "id", ids[j], "error", err)
+				_ = a.DB.DeleteOutboxBatch([]int64{ids[j]})
+				continue
+			}
+			goodIDs = append(goodIDs, ids[j])
+			goodReports = append(goodReports, report)
+		}
+
+		if len(goodReports) == 0 {
+			// All rows in this batch were poison and are already deleted; keep looping.
+			continue
+		}
+
+		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", goodReports); err != nil {
+			remaining, _ := a.DB.CountOutbox(bookingID)
+			return sent, remaining, err
+		}
+		if err := a.DB.DeleteOutboxBatch(goodIDs); err != nil {
+			slog.Warn("outbox: delete after send failed", "count", len(goodIDs), "error", err)
+			remaining, _ := a.DB.CountOutbox(bookingID)
+			return sent, remaining, err
+		}
+		sent += len(goodIDs)
+	}
+	remaining, _ := a.DB.CountOutbox(bookingID)
+	return sent, remaining, nil
 }
 
 // measurement wraps a numeric value with its unit of measurement.
@@ -471,28 +697,43 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 	var lastLat, lastLng float64
 	lastChanged := time.Now()
 
-	var pendingReports []map[string]interface{}
 	var highResQueue []map[string]interface{}
 	var consecutiveFailures int
 	collecting := false
-	// Keep collecting for a short period after touchdown to capture rollout data
 	var touchdownGrace time.Time
 
-	slog.Info("position loop started", "interval", intervalName(currentInterval))
+	a.flightMu.Lock()
+	bookingID := a.bookingID
+	a.flightMu.Unlock()
+
+	slog.Info("position loop started", "interval", intervalName(currentInterval), "booking_id", bookingID)
+
+	persistQueue := func(q []map[string]interface{}, reason string) {
+		if bookingID == "" || len(q) == 0 {
+			return
+		}
+		for _, report := range q {
+			raw, err := json.Marshal(report)
+			if err != nil {
+				slog.Warn("position: marshal for outbox failed", "error", err, "reason", reason)
+				continue
+			}
+			if err := a.DB.EnqueuePosition(bookingID, raw); err != nil {
+				slog.Warn("position: enqueue to outbox failed", "error", err, "reason", reason)
+				continue
+			}
+			posReportsQueued.Add(context.Background(), 1)
+			posOutboxEnqueued.Add(context.Background(), 1)
+		}
+	}
 
 	for {
 		select {
 		case <-stopCh:
-			slog.Info("position loop stopping", "collecting", collecting, "highResQueued", len(highResQueue), "pendingQueued", len(pendingReports))
-			if len(highResQueue) > 0 {
-				if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", highResQueue); err != nil {
-					slog.Warn("failed to flush high-res reports on flight end", "count", len(highResQueue), "error", err)
-				} else {
-					posReportsSent.Add(context.Background(), int64(len(highResQueue)))
-					slog.Info("flushed high-res reports", "count", len(highResQueue))
-				}
-			}
-			a.flushPendingReports(pendingReports)
+			slog.Info("position loop stopping",
+				"collecting", collecting,
+				"highResQueued", len(highResQueue))
+			persistQueue(highResQueue, "loop-stop")
 			return
 
 		case <-collectTicker.C:
@@ -515,8 +756,6 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				continue
 			}
 
-			posQueueDepth.Record(context.Background(), int64(len(pendingReports)))
-
 			posChanged := fd.Position.Latitude != lastLat || fd.Position.Longitude != lastLng
 			if posChanged {
 				lastLat = fd.Position.Latitude
@@ -524,23 +763,17 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				lastChanged = time.Now()
 			}
 
-			// High-res flare zone detection.
-			// Enter: airborne AND below flare threshold (50ft AGL).
-			// Stay: keep collecting through touchdown for 5 seconds of rollout data.
-			// Exit: only after on ground AND grace period expired AND GS < 40kts.
+			// Flare zone detection (unchanged).
 			shouldCollect := false
 			if !fd.Sensors.OnGround && fd.Position.AltitudeAGL < flareAltThreshold {
-				// Airborne in the flare zone
 				shouldCollect = true
-				touchdownGrace = time.Time{} // reset grace — haven't touched down yet
+				touchdownGrace = time.Time{}
 			} else if collecting && fd.Sensors.OnGround {
-				// Just touched down or rolling out — start/continue grace period
 				if touchdownGrace.IsZero() {
 					touchdownGrace = time.Now()
 					slog.Info("touchdown detected, continuing high-res collection",
 						"agl", fd.Position.AltitudeAGL, "gs", fd.Attitude.GS)
 				}
-				// Keep collecting for 5s after touchdown or until slowed below 40kts
 				if time.Since(touchdownGrace) < 5*time.Second && fd.Attitude.GS >= 40 {
 					shouldCollect = true
 				}
@@ -561,12 +794,11 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 					"agl", fmt.Sprintf("%.1f", fd.Position.AltitudeAGL),
 					"gs", fmt.Sprintf("%.1f", fd.Attitude.GS),
 					"onGround", fd.Sensors.OnGround,
-					"queued", len(highResQueue),
-					"graceSec", fmt.Sprintf("%.1f", time.Since(touchdownGrace).Seconds()))
+					"queued", len(highResQueue))
 				touchdownGrace = time.Time{}
 			}
 
-			// Determine reporting interval
+			// Reporting interval selection.
 			var newInterval time.Duration
 			var reason string
 			if len(highResQueue) > 0 {
@@ -596,68 +828,63 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				ticker.Reset(currentInterval)
 			}
 
-			if len(pendingReports) > 0 {
-				sent := 0
-				for _, queued := range pendingReports {
-					if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", queued); err != nil {
-						break
+			// Drain one batch from the outbox (non-blocking).
+			if bookingID != "" {
+				if sent, remaining, derr := a.drainOutbox(bookingID, 1); derr != nil {
+					if consecutiveFailures%30 == 0 {
+						slog.Warn("outbox drain failed", "error", derr, "remaining", remaining)
 					}
-					sent++
-				}
-				if sent > 0 {
-					pendingReports = pendingReports[sent:]
+				} else if sent > 0 {
 					posReportsSent.Add(context.Background(), int64(sent))
-					slog.Info("sent queued position reports", "sent", sent, "remaining", len(pendingReports))
+					slog.Info("outbox drained", "sent", sent, "remaining", remaining)
 				}
 			}
 
+			// High-res queue drain — batched; on failure persist to outbox.
 			if len(highResQueue) > 0 {
 				posHighResDepth.Record(context.Background(), int64(len(highResQueue)))
-				if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", highResQueue); err != nil {
-					posReportsFailed.Add(context.Background(), int64(len(highResQueue)))
+				shipped, err := a.sendPositionBatches(highResQueue)
+				if shipped > 0 {
+					posReportsSent.Add(context.Background(), int64(shipped))
+				}
+				if err != nil {
+					unsent := highResQueue[shipped:]
+					posReportsFailed.Add(context.Background(), int64(len(unsent)))
+					persistQueue(unsent, "highres-drain-failed")
+					highResQueue = nil
 				} else {
-					posReportsSent.Add(context.Background(), int64(len(highResQueue)))
 					highResQueue = nil
 				}
 			}
 
+			// Normal single-report send (only when not in high-res collection mode).
 			if !collecting {
 				report := a.buildPositionReport(fd)
 				_, _, err = a.Airspace.DoRequest("POST", "/api/v2/acars/position", report)
 				if err != nil {
 					consecutiveFailures++
-					if len(pendingReports) < maxPendingReports {
-						pendingReports = append(pendingReports, report)
-						posReportsQueued.Add(context.Background(), 1)
+					if bookingID != "" {
+						raw, mErr := json.Marshal(report)
+						if mErr == nil {
+							if eErr := a.DB.EnqueuePosition(bookingID, raw); eErr == nil {
+								posReportsQueued.Add(context.Background(), 1)
+								posOutboxEnqueued.Add(context.Background(), 1)
+							}
+						}
 					}
 					if consecutiveFailures == 1 {
 						slog.Warn("server connection lost, queuing position reports", "error", err)
 					} else if consecutiveFailures%30 == 0 {
-						slog.Warn("server still unreachable", "failures", consecutiveFailures, "queued", len(pendingReports))
+						slog.Warn("server still unreachable", "failures", consecutiveFailures)
 					}
 				} else {
 					posReportsSent.Add(context.Background(), 1)
 					if consecutiveFailures > 0 {
-						slog.Info("server connection restored", "had_failures", consecutiveFailures, "queued_remaining", len(pendingReports))
+						slog.Info("server connection restored", "had_failures", consecutiveFailures)
 					}
 					consecutiveFailures = 0
 				}
 			}
 		}
-	}
-}
-
-func (a *App) flushPendingReports(pending []map[string]interface{}) {
-	for i, report := range pending {
-		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", report); err != nil {
-			slog.Warn("failed to flush queued report on flight end", "remaining", len(pending)-i, "error", err)
-			posFlushTotal.Add(context.Background(), 1, metric.WithAttributes(attribute.Bool("success", false)))
-			return
-		}
-	}
-	if len(pending) > 0 {
-		slog.Info("flushed all queued position reports", "count", len(pending))
-		posFlushTotal.Add(context.Background(), 1, metric.WithAttributes(attribute.Bool("success", true)))
-		posReportsSent.Add(context.Background(), int64(len(pending)))
 	}
 }

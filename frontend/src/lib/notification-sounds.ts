@@ -101,3 +101,37 @@ export function playNotificationPreview(type: ChatSoundType) {
   audio.play().catch(() => {});
   audio.addEventListener("ended", () => URL.revokeObjectURL(url));
 }
+
+// Two-tone cabin chime used when a flight auto-starts. Intentionally louder
+// and longer than the chat notification sounds so it can't be missed.
+function generateAutoStartDing(): Blob {
+  const sampleRate = 44100;
+  const tone1Dur = 0.28;
+  const tone2Dur = 0.45;
+  const gap = 0.04;
+  const total = tone1Dur + gap + tone2Dur;
+  const samples = new Float32Array(Math.floor(sampleRate * total));
+
+  const writeTone = (offset: number, freq: number, dur: number, decay: number) => {
+    const n = Math.floor(sampleRate * dur);
+    for (let i = 0; i < n; i++) {
+      const t = i / sampleRate;
+      samples[offset + i] += Math.sin(2 * Math.PI * freq * t) * Math.exp(-t * decay) * 0.85;
+    }
+  };
+
+  writeTone(0, 1047, tone1Dur, 6);
+  writeTone(Math.floor(sampleRate * (tone1Dur + gap)), 784, tone2Dur, 4);
+
+  return encodeWav(samples, sampleRate);
+}
+
+export function playAutoStartDing(volumePercent: number) {
+  if (volumePercent <= 0) return;
+  const blob = generateAutoStartDing();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.volume = Math.min(1, volumePercent / 100);
+  audio.play().catch(() => {});
+  audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+}

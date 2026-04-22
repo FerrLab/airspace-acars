@@ -42,6 +42,12 @@ type Storage interface {
 	SaveFlightData(data *domain.FlightData) error
 	QueryFlightData() (*sql.Rows, error)
 	PurgeFlightData() error
+
+	// Position outbox
+	EnqueuePosition(bookingID string, payload []byte) error
+	PeekOutboxBatch(bookingID string, limit int) ([]int64, [][]byte, error)
+	DeleteOutboxBatch(ids []int64) error
+	CountOutbox(bookingID string) (int, error)
 }
 
 // --- App struct ---
@@ -72,13 +78,15 @@ type App struct {
 	dataCount    int
 
 	// Flight state
-	flightMu  sync.Mutex
-	state     string // "idle" or "active"
-	callsign  string
-	departure string
-	arrival   string
-	startTime time.Time
-	stopCh    chan struct{}
+	flightMu       sync.Mutex
+	state          string // "idle" | "active" | "finishing"
+	callsign       string
+	departure      string
+	arrival        string
+	bookingID      string
+	startTime      time.Time
+	stopCh         chan struct{}
+	finishCancelCh chan struct{}
 
 	// Settings
 	settingsMu   sync.RWMutex

@@ -43,11 +43,12 @@ func (s *FlightService) GetActiveFlightInfo() map[string]string {
 }
 func (s *FlightService) GetBooking() (map[string]interface{}, error) { return s.app.GetBooking() }
 func (s *FlightService) GetPilot() (map[string]interface{}, error)   { return s.app.GetPilot() }
-func (s *FlightService) StartFlight(callsign, departure, arrival string) error {
-	return s.app.StartFlight(callsign, departure, arrival)
+func (s *FlightService) StartFlight(callsign, departure, arrival, bookingID string) error {
+	return s.app.StartFlight(callsign, departure, arrival, bookingID)
 }
 func (s *FlightService) StopFlight() error   { return s.app.StopFlight() }
 func (s *FlightService) FinishFlight() error { return s.app.FinishFlight() }
+func (s *FlightService) CancelFinish() error { return s.app.CancelFinish() }
 
 // --- AuthService: tenant selection, device-code OAuth ---
 

@@ -22,13 +22,20 @@ export function mockFlightService() {
     GetFlightState: () => Promise.resolve("idle"),
     GetBooking: () =>
       Promise.resolve({
+        id: "bk_test_1",
         callsign: "BAW123",
         departure_airport: { icao: "EGLL", city: "London" },
         arrival_airport: { icao: "KJFK", city: "New York" },
       }),
-    StartFlight: () => Promise.resolve(),
+    StartFlight: (
+      _callsign: string,
+      _departure: string,
+      _arrival: string,
+      _bookingID: string,
+    ) => Promise.resolve(),
     StopFlight: () => Promise.resolve(),
     FinishFlight: () => Promise.resolve(),
+    CancelFinish: () => Promise.resolve(),
   };
 }
 
