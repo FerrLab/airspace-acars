@@ -1,110 +1,286 @@
-# Position Batching Design
+# Durable Position Outbox + Batched Delivery
 
 **Date:** 2026-04-22
-**Area:** `internal/app/flight.go`
+**Area:** `internal/app/flight.go`, `internal/adapters/storage/sqlite.go`,
+`internal/app/app.go`, `frontend/src/components/acars-tab.tsx`
 **Status:** Approved (pending implementation)
 
 ## Problem
 
-When position reports accumulate (during flare high-res collection, or during a
-server outage that fills the pending queue), the current code sends the entire
-accumulated slice in a single HTTP POST. A single request can carry up to 1500
-high-res reports, which risks overflowing the backend's request size or
-processing budget.
+Today position reports live only in RAM. Two problems compound:
 
-## Goal
+1. A single `POST /api/v2/acars/position` can ship up to `maxHighResReports`
+   (1500) reports at once, risking backend overflow.
+2. If the server is unreachable when a user clicks "Finish flight", up to 500
+   queued reports are flushed best-effort and silently lost on error.
 
-Cap any single `POST /api/v2/acars/position` request to at most **1000 reports**
-per request, applied at every site that can ship more than one report at a time.
+## Goals
+
+1. Cap every `POST /api/v2/acars/position` at **250 reports** per request.
+2. Persist every report that cannot be sent immediately in a SQLite **outbox**,
+   keyed by `booking_id`, so nothing is lost across crashes or disconnects.
+3. **Never finish a flight with pending positions** — `FinishFlight` blocks
+   (asynchronously, via events) until the outbox for that booking is empty,
+   retrying forever with backoff on transient errors. The user can cancel.
+4. Show the user a live progress message:
+   *"Sending X missing positions before finishing this flight…"*
+5. Raise capacities: `maxPendingReports = 1000`, `maxHighResReports = 3000`.
 
 ## Non-goals
 
-- No change to in-memory queue caps (`maxPendingReports = 500`,
-  `maxHighResReports = 1500`).
-- No change to the normal per-tick single-report POST — it is already ≤1 report.
-- No change to the backend contract — it already accepts either a single object
-  or an array.
-- No new retry logic inside the batching helper — callers already handle
-  retry/queue-and-defer semantics.
+- No change to the per-tick normal single-report POST — still ≤1 report.
+- No change to the backend contract — endpoint already accepts an array.
+- No outbox compression, encryption, or vacuuming beyond `DELETE`.
+- No automatic drain on app startup (only on start/finish flight).
+- No cross-booking drain — each booking's rows drain independently.
 
 ## Design
 
-### Constant
+### 1. Constants
 
 ```go
-const maxBatchSize = 1000
+const (
+    maxBatchSize         = 250    // per-request cap
+    maxPendingReports    = 1000   // was 500
+    maxHighResReports    = 3000   // was 1500
+    finishDrainTickEvery = 1 * time.Second  // UI progress event cadence
+)
 ```
 
-Added alongside the other flight constants (near `maxHighResReports`).
+### 2. Storage layer — outbox table and methods
 
-### Helper
+**Schema migration** in `internal/adapters/storage/sqlite.go`:
 
-New method on `*App`, placed near `doRequestWithRetry`:
+```sql
+CREATE TABLE IF NOT EXISTS position_outbox (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    booking_id TEXT    NOT NULL,
+    payload    TEXT    NOT NULL,   -- JSON of the position report
+    created_at INTEGER NOT NULL    -- unix millis
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_booking ON position_outbox(booking_id, id);
+```
+
+**`Storage` port** extended in `internal/app/app.go`:
+
+```go
+type Storage interface {
+    SaveFlightData(*domain.FlightData) error
+    QueryFlightData() (*sql.Rows, error)
+    PurgeFlightData() error
+
+    // Position outbox
+    EnqueuePosition(bookingID string, payload []byte) error
+    PeekOutboxBatch(bookingID string, limit int) (ids []int64, payloads [][]byte, err error)
+    DeleteOutboxBatch(ids []int64) error
+    CountOutbox(bookingID string) (int, error)
+}
+```
+
+SQLite implementations serialize writers with a `sync.Mutex` to avoid
+contention against `SaveFlightData`. `PeekOutboxBatch` orders by `id ASC` so
+reports ship in insertion order.
+
+### 3. App layer — booking ID plumbing and state
+
+**`StartFlight` signature** gains `bookingID`:
+
+```go
+func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error
+```
+
+Callers:
+- `internal/app/sim.go:tryAutoStartFlight` — booking is fetched there; extract
+  `booking["id"]` (string or number → string).
+- Frontend `handleStartFlight` — already holds `booking`; pass `booking.id`.
+
+**State values**:
+
+```go
+state string // "idle" | "active" | "finishing"
+```
+
+`bookingID` is stored in the `App` struct alongside `callsign`/`departure`/etc.
+
+### 4. Positionloop — outbox-based write path
+
+Tick-by-tick behavior:
+
+| Step                           | Today                                    | New                                                                      |
+| ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------ |
+| Single-report POST             | On fail, append to in-RAM pendingReports | On fail, `EnqueuePosition(bookingID, payload)`                           |
+| In-RAM `pendingReports` drain  | Loop one-by-one                          | **Removed** — drain path now goes through outbox                         |
+| `highResQueue` drain           | Single POST of full slice                | Send in batches of 250 via `sendPositionBatches`; failed → `EnqueuePosition` per row |
+| Outbox drain per tick          | —                                        | `a.drainOutbox(bookingID, 1)` — one batch of 250 per tick                |
+| Stop loop (endFlight)          | Flush in-RAM                             | Persist remaining in-RAM `highResQueue` to outbox before returning       |
+
+The `highResQueue` stays in-memory as today (cap 3000) for instantaneous flare
+capture; it's only persisted to the outbox when (a) a batch POST fails, or
+(b) the loop is stopping.
+
+### 5. `sendPositionBatches` helper
 
 ```go
 // sendPositionBatches POSTs reports to /api/v2/acars/position in chunks of at
-// most maxBatchSize. Returns how many reports were sent successfully before
-// either finishing or hitting an error. Stops on the first error so callers
-// can keep the unsent suffix queued.
+// most maxBatchSize. Returns the number sent successfully before returning.
+// On error, returns (sent, err) and leaves the unsent suffix to the caller.
 func (a *App) sendPositionBatches(reports []map[string]interface{}) (int, error)
 ```
 
-Semantics:
-- Iterates `reports` in slices of up to `maxBatchSize`.
-- On success of a batch, increments `sent` by the batch length.
-- On error, returns `(sent, err)` immediately — caller decides what to do with
-  the unsent suffix.
-- Empty input returns `(0, nil)`.
+Callers decide what to do with unsent suffix (re-enqueue, shift slice, etc.).
 
-### Call-site changes
+### 6. `drainOutbox` helper
 
-Four sites convert from their current pattern to the helper:
+```go
+// drainOutbox sends up to `maxBatches` batches of maxBatchSize from the outbox
+// for the given booking. Returns (sent, remaining, err). Stops on the first
+// batch failure, leaving unsent rows in the DB.
+func (a *App) drainOutbox(bookingID string, maxBatches int) (sent, remaining int, err error)
+```
 
-| Site (approx. line)                              | Today                                                  | After                                                                                     |
-| ------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| High-res flush on flight end (line 500)          | Single POST of full `highResQueue`                     | `sent, err := a.sendPositionBatches(highResQueue)`; log sent/remaining; increment metrics |
-| High-res drain during ticker (line 628)          | Single POST of full `highResQueue`                     | Batch; `highResQueue = highResQueue[sent:]`; if empty assign `nil`; metrics per success   |
-| `pendingReports` resend during ticker (line 611) | One-by-one loop, break on first error                  | Single call to helper; `pendingReports = pendingReports[sent:]`; nil-on-empty             |
-| `flushPendingReports` on flight end (line 662)   | One-by-one loop, early-return on first error           | Single call to helper; on error log remaining; on success log count                       |
+On each successful batch: `DeleteOutboxBatch(ids)` to remove the shipped rows.
+Rows only leave the DB after the server has 200'd them.
 
-### Slice-pinning
+### 7. `StartFlight` — non-blocking drain of leftover outbox
 
-After truncating a queue with `queue = queue[sent:]`, the old backing array
-stays alive. When `len(queue) == 0` the callers also assign `nil` to release
-it. This is a small memory hygiene fix that matters in a long-lived loop.
+After the successful `/api/acars/start` call and state transition to `active`:
 
-### Metrics
+1. Check `CountOutbox(bookingID)`. If >0, log and emit a toast event
+   `flight-outbox-resuming` with `{pending: count}`.
+2. Do **not** block start. The position loop will drain in the normal
+   one-batch-per-tick cadence.
 
-- `posReportsSent` — incremented by actual `sent` (whether partial or full),
-  exactly as today.
-- `posReportsFailed` — on error, incremented by `len(input) - sent` so we now
-  record the precise failure count instead of the whole-queue count.
-- `posReportsQueued` — unchanged; only the tick-time single-report failure path
-  queues new reports.
-- `posFlushTotal` — success attribute is `err == nil` as today.
-- `posHighResDepth` — recorded before the drain, unchanged.
+Rationale: blocking start on drain would make the app unusable when the API
+is down. Drain-during-flight is safe because each tick drains one batch.
 
-## Error handling
+### 8. `FinishFlight` — asynchronous, durable
 
-All errors are handled at the call site, not the helper. The helper does not
-log — callers already have their own context-specific log lines
-(`"server connection lost"`, `"failed to flush queued report on flight end"`,
-etc.). The helper is a pure mechanical splitter.
+**Synchronous phase** (under `flightMu`):
+1. Validate preconditions (state == "active", min flight duration) — as today.
+2. Set `state = "finishing"`, emit `flight-state = "finishing"`.
+3. Stop the position loop (`close(a.stopCh)`) — which persists remaining
+   in-RAM `highResQueue` into the outbox.
+4. Spawn `a.finishDrainLoop(bookingID, callsign, departure, arrival)`.
+5. Return `nil` immediately. The UI is event-driven from here.
+
+**`finishDrainLoop` goroutine**:
+
+```
+loop:
+    count, _ := a.DB.CountOutbox(bookingID)
+    if count == 0:
+        body, status, err := a.doRequestWithRetry("POST", "/api/acars/finish", payload)
+        if err != nil || status >= 400:
+            emit flight-finish-failed { reason: ... }
+            state = "active"   // revert so user can try again
+            return
+        emit flight-finish-complete
+        state = "idle"; clear booking fields
+        return
+
+    emit flight-finish-progress { pending: count }
+
+    sent, _, err := a.drainOutbox(bookingID, 4)   // 4 batches = 1000 rows per pass
+    if err != nil:
+        sleep backoff (2s doubling up to 60s, capped)
+    else:
+        sleep finishDrainTickEvery
+```
+
+The loop also listens on an `a.finishCancelCh` — if closed, it exits without
+calling `/finish`, leaves outbox intact, and reverts state to `active`.
+
+### 9. `CancelFinish` (new command)
+
+```go
+func (a *App) CancelFinish() error
+```
+
+- Valid only when `state == "finishing"`.
+- Closes `a.finishCancelCh`, reverts state to `active`, restarts the position
+  loop. Outbox rows remain. User can retry `FinishFlight` later.
+
+### 10. UI changes (`acars-tab.tsx`)
+
+- Pass `booking.id` to `FlightService.StartFlight`.
+- Subscribe to new events:
+  - `flight-state = "finishing"` → disable buttons, show drain panel.
+  - `flight-finish-progress { pending }` → render *"Sending X missing
+    positions before finishing this flight…"* (via `t("acars.finishingDrain",
+    { count: pending })`).
+  - `flight-finish-complete` → success toast, return to idle.
+  - `flight-finish-failed { reason }` → alert; state reverts to active.
+  - `flight-outbox-resuming { pending }` → toast on start:
+    *"Resuming delivery of X positions from a previous session."*
+- Add a "Cancel finish" button while in `finishing` state → calls
+  `FlightService.CancelFinish()`.
+- i18n keys added to `frontend/src/i18n/` (or equivalent).
+
+### 11. Metrics
+
+Added:
+- `position.outbox_depth` (histogram) — recorded per tick and per drain pass.
+- `position.outbox_enqueued` (counter) — increments on `EnqueuePosition`.
+- `flight.finish_drain_duration_sec` (histogram) — time from finish click to
+  `/finish` success.
+- `flight.finish_canceled_total` (counter) — `CancelFinish` calls.
+
+Retained:
+- `posReportsSent`, `posReportsFailed`, `posReportsQueued` (now reflects
+  outbox enqueues), `posFlushTotal`, `posHighResQueued`, `posHighResDepth`.
+
+Removed:
+- `posQueueDepth` (in-RAM pending queue no longer exists) — or repurposed to
+  track outbox depth; see implementation plan.
+
+### 12. Failure behavior summary
+
+| Failure                              | Behavior                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| Single-report POST fails mid-flight  | Enqueue to outbox; metric `posReportsQueued`; logs throttled               |
+| High-res batch POST fails            | Row-by-row enqueue to outbox; counters bumped                              |
+| Outbox drain batch POST fails        | Rows stay in DB; next tick retries                                         |
+| App crashes mid-flight               | Outbox rows survive; drained on next `StartFlight` with same `bookingID`   |
+| Server down at finish click          | `finishDrainLoop` retries forever; user sees progress; may `CancelFinish`  |
+| `/api/acars/finish` 4xx after drain  | `flight-finish-failed` event; state reverts to `active`                    |
+| DB write fails                       | Logged, counter incremented; reports lost for that tick (SQLite down ≈ disk full; no better option) |
 
 ## Testing
 
-No automated tests exist for `flight.go`. Validation will be manual:
-- Build: `go build .`
-- Smoke: run a short flight, trigger flare, confirm batching via logs.
-- (Optional) temporarily lower `maxBatchSize` and verify multiple POSTs go out
-  when the high-res queue has >1 batch worth of reports.
+No automated tests exist for `flight.go` today. Validation plan:
+
+1. `go build .` — compile clean.
+2. Manual smoke:
+   - Start flight with network up → confirm `flight-state = active`, no outbox growth.
+   - Disconnect network mid-flight → observe outbox grow via logs.
+   - Reconnect → observe drain (250/tick) via logs.
+   - Click Finish with outbox empty → normal finish.
+   - Click Finish with outbox non-empty → progress UI, then completion.
+   - Kill app mid-flight → restart, start same booking → observe resume toast + drain.
+   - Click Finish with network down → progress stays, test Cancel → returns to active.
+3. Optional: temporarily lower `maxBatchSize` to 5 to exercise batch loop without
+   a 3000-report flare.
 
 ## Files changed
 
-- `internal/app/flight.go` — constant, helper, four call-site edits.
+- `internal/adapters/storage/sqlite.go` — migration + 4 new methods.
+- `internal/app/app.go` — extend `Storage` interface; add `finishCancelCh`,
+  `bookingID` fields.
+- `internal/app/flight.go` — constants, helpers, rewritten positionLoop
+  write/drain paths, async finish, `CancelFinish`.
+- `internal/app/sim.go` — pass booking id into `StartFlight`.
+- `internal/ports/user_action.go` — expose `CancelFinish`; update `StartFlight` signature.
+- `services.go` — regenerate/update Wails service signatures.
+- `frontend/src/components/acars-tab.tsx` — booking id, new events, progress UI,
+  cancel button.
+- `frontend/src/__mocks__/wails-bindings.ts` — mock new methods/events.
+- i18n files — new keys.
 
-## Out of scope
+## Open items handled at implementation time
 
-- No new tests.
-- No frontend change.
-- No change to observability schema beyond the existing counters.
+- Booking id coercion: server may return number or string — normalize to string
+  at the boundary.
+- Outbox row retention after a successful finish: rows are deleted per batch
+  as they ship, so the table for that booking is empty on successful finish.
+  No cleanup job needed.
+- Frontend bindings regen: `wails3 generate bindings` after Go signature changes.
