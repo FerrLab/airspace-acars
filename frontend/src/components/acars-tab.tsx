@@ -26,7 +26,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   const [connectedAdapter, setConnectedAdapter] = useState("");
   const [connecting, setConnecting] = useState(false);
   const isConnected = connectedAdapter !== "";
-  const [flightState, setFlightState] = useState<"idle" | "active">("idle");
+  const [flightState, setFlightState] = useState<"idle" | "active" | "finishing">("idle");
   const [booking, setBooking] = useState<any>(null);
   const [startingFlight, setStartingFlight] = useState(false);
   const [endingFlight, setEndingFlight] = useState(false);
@@ -34,6 +34,8 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   const [groundSpeed, setGroundSpeed] = useState(0);
   const [activeFlightInfo, setActiveFlightInfo] = useState<{ callsign?: string; departure?: string; arrival?: string } | null>(null);
   const [autoNotification, setAutoNotification] = useState<string | null>(null);
+  const [finishPending, setFinishPending] = useState<number | null>(null);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
   // Kept in a ref so the auto-start event handler always reads the current
   // volume without re-subscribing to the Wails event on every slider drag.
@@ -65,12 +67,35 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       setTimeout(() => setAutoNotification(null), 5000);
       playAutoStartDing(volumeRef.current);
     });
+    const cancelFinishProgress = Events.On("flight-finish-progress", (event: any) => {
+      const pending = event?.data?.pending ?? 0;
+      setFinishPending(pending);
+    });
+    const cancelFinishComplete = Events.On("flight-finish-complete", () => {
+      setFinishPending(null);
+      setAutoNotification(t("acars.finishComplete"));
+      setTimeout(() => setAutoNotification(null), 5000);
+    });
+    const cancelFinishFailed = Events.On("flight-finish-failed", (event: any) => {
+      const reason = event?.data?.reason ?? "";
+      setFinishPending(null);
+      alert(t("acars.finishFailedWithReason", { reason }));
+    });
+    const cancelResume = Events.On("flight-outbox-resuming", (event: any) => {
+      const pending = event?.data?.pending ?? 0;
+      setResumeNotice(t("acars.resumingOutbox", { count: pending }));
+      setTimeout(() => setResumeNotice(null), 8000);
+    });
 
     return () => {
       cancelConn();
       cancelFlight();
       cancelData();
       cancelAutoStart();
+      cancelFinishProgress();
+      cancelFinishComplete();
+      cancelFinishFailed();
+      cancelResume();
     };
   }, [localMode]);
 
@@ -131,7 +156,8 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       const callsign = booking.callsign ?? booking.flight_number ?? "";
       const departure = booking.departure_airport?.icao ?? "";
       const arrival = booking.alternate_airport?.icao ?? booking.arrival_airport?.icao ?? "";
-      await FlightService.StartFlight(callsign, departure, arrival);
+      const bookingID = String(booking.id ?? "");
+      await FlightService.StartFlight(callsign, departure, arrival, bookingID);
     } catch (e: any) {
       alert(translateError(t, "Failed to start flight: " + e));
     } finally {
@@ -158,6 +184,14 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       alert(translateError(t, "Failed to finish flight: " + e));
     } finally {
       setEndingFlight(false);
+    }
+  };
+
+  const handleCancelFinish = async () => {
+    try {
+      await FlightService.CancelFinish();
+    } catch (e: any) {
+      console.error("Cancel finish failed:", e);
     }
   };
 
@@ -199,6 +233,12 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
         <div className="rounded-lg border border-primary/30 bg-primary/10 p-3 flex items-center gap-2 animate-in fade-in duration-300">
           <Zap className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-medium">{autoNotification}</span>
+        </div>
+      )}
+
+      {resumeNotice && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+          {resumeNotice}
         </div>
       )}
 
@@ -280,7 +320,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
             </div>
           )}
 
-          {flightState === "active" && (
+          {(flightState === "active" || flightState === "finishing") && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -311,28 +351,43 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                   </div>
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={handleFinishFlight}
-                  disabled={endingFlight}
-                  className="gap-2"
-                >
-                  <CheckCircle2 className="h-3 w-3" />
-                  {endingFlight ? t("acars.finishing") : t("acars.finishFlight")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleStopFlight}
-                  disabled={endingFlight}
-                  className="gap-2"
-                >
-                  <Square className="h-3 w-3" />
-                  {t("acars.cancel")}
-                </Button>
-              </div>
+              {flightState === "active" && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={handleFinishFlight}
+                    disabled={endingFlight}
+                    className="gap-2"
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    {endingFlight ? t("acars.finishing") : t("acars.finishFlight")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleStopFlight}
+                    disabled={endingFlight}
+                    className="gap-2"
+                  >
+                    <Square className="h-3 w-3" />
+                    {t("acars.cancel")}
+                  </Button>
+                </div>
+              )}
+
+              {flightState === "finishing" && (
+                <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
+                  <p>
+                    {finishPending !== null && finishPending > 0
+                      ? t("acars.finishingDrain", { count: finishPending })
+                      : t("acars.finishing")}
+                  </p>
+                  <Button size="sm" variant="outline" onClick={handleCancelFinish}>
+                    {t("acars.cancelFinish")}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

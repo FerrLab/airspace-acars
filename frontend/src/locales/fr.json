@@ -57,6 +57,11 @@
   "acars.startFlightFailed": "Échec du démarrage du vol : {{error}}",
   "acars.stopFlightFailed": "Échec de l'arrêt du vol : {{error}}",
   "acars.finishFlightFailed": "Échec de la finalisation du vol : {{error}}",
+  "acars.finishingDrain": "Sending {{count}} missing positions before finishing this flight...",
+  "acars.resumingOutbox": "Resuming delivery of {{count}} positions from a previous session.",
+  "acars.cancelFinish": "Cancel finish",
+  "acars.finishComplete": "Flight finished successfully.",
+  "acars.finishFailedWithReason": "Finish failed: {{reason}}",
 
   "chat.title": "Chat",
   "chat.subtitle": "Communication de dispatch",
