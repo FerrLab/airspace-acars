@@ -42,6 +42,12 @@ type Storage interface {
 	SaveFlightData(data *domain.FlightData) error
 	QueryFlightData() (*sql.Rows, error)
 	PurgeFlightData() error
+
+	// Position outbox
+	EnqueuePosition(bookingID string, payload []byte) error
+	PeekOutboxBatch(bookingID string, limit int) ([]int64, [][]byte, error)
+	DeleteOutboxBatch(ids []int64) error
+	CountOutbox(bookingID string) (int, error)
 }
 
 // --- App struct ---
