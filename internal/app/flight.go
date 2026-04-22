@@ -324,6 +324,70 @@ func (a *App) doRequestWithRetry(method, path string, body interface{}) ([]byte,
 	return nil, 0, fmt.Errorf("all %d attempts failed: %w", retryAttempts, lastErr)
 }
 
+// sendPositionBatches POSTs reports to /api/v2/acars/position in chunks of at
+// most maxBatchSize. Returns the number sent successfully before returning.
+// On error, returns (sent, err) and leaves the unsent suffix to the caller.
+func (a *App) sendPositionBatches(reports []map[string]interface{}) (int, error) {
+	sent := 0
+	for sent < len(reports) {
+		end := sent + maxBatchSize
+		if end > len(reports) {
+			end = len(reports)
+		}
+		batch := reports[sent:end]
+		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", batch); err != nil {
+			return sent, err
+		}
+		sent = end
+	}
+	return sent, nil
+}
+
+// drainOutbox pulls up to maxBatches batches of maxBatchSize from the outbox
+// for the given booking and POSTs each. Successfully shipped rows are deleted
+// from the DB. Returns (sent, remaining, err); on error the unsent rows stay.
+func (a *App) drainOutbox(bookingID string, maxBatches int) (int, int, error) {
+	if bookingID == "" {
+		return 0, 0, nil
+	}
+	sent := 0
+	for i := 0; i < maxBatches; i++ {
+		ids, payloads, err := a.DB.PeekOutboxBatch(bookingID, maxBatchSize)
+		if err != nil {
+			remaining, _ := a.DB.CountOutbox(bookingID)
+			return sent, remaining, err
+		}
+		if len(ids) == 0 {
+			return sent, 0, nil
+		}
+
+		reports := make([]map[string]interface{}, len(payloads))
+		for j, raw := range payloads {
+			var report map[string]interface{}
+			if err := json.Unmarshal(raw, &report); err != nil {
+				// Poison row — delete it so we don't loop forever.
+				slog.Warn("outbox: dropping unparsable payload", "id", ids[j], "error", err)
+				_ = a.DB.DeleteOutboxBatch([]int64{ids[j]})
+				continue
+			}
+			reports[j] = report
+		}
+
+		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", reports); err != nil {
+			remaining, _ := a.DB.CountOutbox(bookingID)
+			return sent, remaining, err
+		}
+		if err := a.DB.DeleteOutboxBatch(ids); err != nil {
+			slog.Warn("outbox: delete after send failed", "count", len(ids), "error", err)
+			remaining, _ := a.DB.CountOutbox(bookingID)
+			return sent, remaining, err
+		}
+		sent += len(ids)
+	}
+	remaining, _ := a.DB.CountOutbox(bookingID)
+	return sent, remaining, nil
+}
+
 // measurement wraps a numeric value with its unit of measurement.
 type measurement struct {
 	Value interface{} `json:"value"`
