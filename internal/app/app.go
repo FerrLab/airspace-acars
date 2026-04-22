@@ -78,13 +78,15 @@ type App struct {
 	dataCount    int
 
 	// Flight state
-	flightMu  sync.Mutex
-	state     string // "idle" or "active"
-	callsign  string
-	departure string
-	arrival   string
-	startTime time.Time
-	stopCh    chan struct{}
+	flightMu       sync.Mutex
+	state          string // "idle" | "active" | "finishing"
+	callsign       string
+	departure      string
+	arrival        string
+	bookingID      string
+	startTime      time.Time
+	stopCh         chan struct{}
+	finishCancelCh chan struct{}
 
 	// Settings
 	settingsMu   sync.RWMutex

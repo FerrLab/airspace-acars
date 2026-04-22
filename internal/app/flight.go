@@ -44,12 +44,20 @@ const (
 	posIntervalLow       = 1 * time.Second
 	posIntervalHigh      = 2 * time.Second
 	posIntervalStatic    = 60 * time.Second
-	flareAltThreshold    = 50.0  // enter high-res below 50ft AGL (was 10ft — too narrow)
-	criticalAltThreshold = 200.0 // switch to 500ms reporting below 200ft AGL
+	flareAltThreshold    = 50.0
+	criticalAltThreshold = 200.0
 	highAltThreshold     = 10_000.0
-	maxPendingReports    = 500
-	maxHighResReports    = 1500
-	retryAttempts        = 4
+	maxHighResReports    = 3000
+	maxBatchSize         = 250
+	// maxPendingReports is the in-RAM cap for the legacy pendingReports slice.
+	// It is removed when the positionLoop rewrite (Task 5) replaces the in-RAM
+	// queue with the durable SQLite outbox. Kept transitionally so each task's
+	// build stays green.
+	maxPendingReports = 1000
+	retryAttempts     = 4
+
+	finishDrainTickEvery  = 1 * time.Second
+	finishDrainBackoffMax = 60 * time.Second
 
 	// minFlightDuration guards against fat-fingered finishes immediately after
 	// start. Cancel/stop is unaffected — only "finish" claims the flight is complete.
