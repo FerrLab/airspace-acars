@@ -16,7 +16,7 @@ import (
 
 // SQLiteAdapter implements the Storage interface with SQLite.
 type SQLiteAdapter struct {
-	db    *sql.DB
+	db      *sql.DB
 	writeMu sync.Mutex
 }
 
@@ -85,6 +85,8 @@ func (s *SQLiteAdapter) SaveFlightData(data *domain.FlightData) error {
 	if err != nil {
 		return fmt.Errorf("marshal flight data: %w", err)
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, err = s.db.Exec(`INSERT INTO flight_data (data) VALUES (?)`, string(jsonBytes))
 	return err
 }
@@ -96,6 +98,8 @@ func (s *SQLiteAdapter) QueryFlightData() (*sql.Rows, error) {
 
 // PurgeFlightData deletes all recorded data.
 func (s *SQLiteAdapter) PurgeFlightData() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, err := s.db.Exec(`DELETE FROM flight_data`)
 	return err
 }
