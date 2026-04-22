@@ -36,6 +36,14 @@ var (
 		metric.WithDescription("High-resolution reports queued during flare"))
 	posHighResDepth, _  = flightMeter.Int64Histogram("position.highres_depth",
 		metric.WithDescription("High-resolution queue depth at each drain"))
+	posOutboxEnqueued, _ = flightMeter.Int64Counter("position.outbox_enqueued",
+		metric.WithDescription("Position reports persisted to the SQLite outbox"))
+	posOutboxDepth, _    = flightMeter.Int64Histogram("position.outbox_depth",
+		metric.WithDescription("Outbox row count sampled at each drain pass"))
+	finishDrainDur, _    = flightMeter.Float64Histogram("flight.finish_drain_duration_sec",
+		metric.WithDescription("Seconds from FinishFlight call to /api/acars/finish success"))
+	finishCanceledTotal, _ = flightMeter.Int64Counter("flight.finish_canceled_total",
+		metric.WithDescription("Number of times CancelFinish was invoked"))
 )
 
 const (
@@ -341,6 +349,7 @@ func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, ca
 			a.UI.EmitEvent("flight-finish-complete", map[string]interface{}{
 				"duration_sec": time.Since(started).Seconds(),
 			})
+			finishDrainDur.Record(context.Background(), time.Since(started).Seconds())
 			slog.Info("flight finished cleanly",
 				"booking_id", bookingID,
 				"callsign", callsign,
@@ -349,6 +358,7 @@ func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, ca
 		}
 
 		a.UI.EmitEvent("flight-finish-progress", map[string]interface{}{"pending": count})
+		posOutboxDepth.Record(context.Background(), int64(count))
 
 		sent, _, err := a.drainOutbox(bookingID, 4) // 4 batches = 1000 rows per pass
 		if sent > 0 {
@@ -397,6 +407,7 @@ func (a *App) CancelFinish() error {
 	if ch != nil {
 		close(ch)
 	}
+	finishCanceledTotal.Add(context.Background(), 1)
 	return nil
 }
 
@@ -712,6 +723,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				continue
 			}
 			posReportsQueued.Add(context.Background(), 1)
+			posOutboxEnqueued.Add(context.Background(), 1)
 		}
 	}
 
@@ -856,6 +868,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 						if mErr == nil {
 							if eErr := a.DB.EnqueuePosition(bookingID, raw); eErr == nil {
 								posReportsQueued.Add(context.Background(), 1)
+								posOutboxEnqueued.Add(context.Background(), 1)
 							}
 						}
 					}
