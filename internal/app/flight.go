@@ -361,28 +361,35 @@ func (a *App) drainOutbox(bookingID string, maxBatches int) (int, int, error) {
 			return sent, 0, nil
 		}
 
-		reports := make([]map[string]interface{}, len(payloads))
+		goodIDs := make([]int64, 0, len(ids))
+		goodReports := make([]map[string]interface{}, 0, len(payloads))
 		for j, raw := range payloads {
 			var report map[string]interface{}
 			if err := json.Unmarshal(raw, &report); err != nil {
-				// Poison row — delete it so we don't loop forever.
+				// Poison row — delete it inline so we don't loop forever.
 				slog.Warn("outbox: dropping unparsable payload", "id", ids[j], "error", err)
 				_ = a.DB.DeleteOutboxBatch([]int64{ids[j]})
 				continue
 			}
-			reports[j] = report
+			goodIDs = append(goodIDs, ids[j])
+			goodReports = append(goodReports, report)
 		}
 
-		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", reports); err != nil {
+		if len(goodReports) == 0 {
+			// All rows in this batch were poison and are already deleted; keep looping.
+			continue
+		}
+
+		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", goodReports); err != nil {
 			remaining, _ := a.DB.CountOutbox(bookingID)
 			return sent, remaining, err
 		}
-		if err := a.DB.DeleteOutboxBatch(ids); err != nil {
-			slog.Warn("outbox: delete after send failed", "count", len(ids), "error", err)
+		if err := a.DB.DeleteOutboxBatch(goodIDs); err != nil {
+			slog.Warn("outbox: delete after send failed", "count", len(goodIDs), "error", err)
 			remaining, _ := a.DB.CountOutbox(bookingID)
 			return sent, remaining, err
 		}
-		sent += len(ids)
+		sent += len(goodIDs)
 	}
 	remaining, _ := a.DB.CountOutbox(bookingID)
 	return sent, remaining, nil
