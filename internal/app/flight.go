@@ -218,13 +218,14 @@ func (a *App) StopFlight() error {
 	return nil
 }
 
-// FinishFlight completes the active flight.
+// FinishFlight transitions to the "finishing" state and kicks off an async
+// drain. Returns immediately. The frontend listens for flight-finish-*
+// events to render progress and the terminal state.
 func (a *App) FinishFlight() error {
 	_, span := flightTracer.Start(context.Background(), "flight.finish")
 	defer span.End()
 
 	a.flightMu.Lock()
-	defer a.flightMu.Unlock()
 
 	span.SetAttributes(
 		attribute.String("flight.callsign", a.callsign),
@@ -232,6 +233,7 @@ func (a *App) FinishFlight() error {
 	)
 
 	if a.state != "active" {
+		a.flightMu.Unlock()
 		err := fmt.Errorf("no active flight")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -239,6 +241,7 @@ func (a *App) FinishFlight() error {
 	}
 
 	if elapsed := time.Since(a.startTime); elapsed < minFlightDuration {
+		a.flightMu.Unlock()
 		remaining := (minFlightDuration - elapsed).Round(time.Second)
 		err := fmt.Errorf("flight too short to finish, please wait %s", remaining)
 		span.RecordError(err)
@@ -246,37 +249,154 @@ func (a *App) FinishFlight() error {
 		return err
 	}
 
-	payload := map[string]interface{}{
-		"callsign":  a.callsign,
-		"departure": a.departure,
-		"arrival":   a.arrival,
-		"timestamp": time.Now().UnixMilli(),
-	}
+	// Snapshot what we need in the goroutine.
+	bookingID := a.bookingID
+	callsign := a.callsign
+	departure := a.departure
+	arrival := a.arrival
 
-	body, status, err := a.doRequestWithRetry("POST", "/api/acars/finish", payload)
-	if err != nil {
-		err = fmt.Errorf("finish flight: %w", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
+	// Stop the position loop (it will flush in-RAM highResQueue to outbox).
+	if a.stopCh != nil {
+		close(a.stopCh)
+		a.stopCh = nil
 	}
-	if status >= 400 {
-		var errResp map[string]interface{}
-		json.Unmarshal(body, &errResp)
-		if msg, ok := errResp["error"].(string); ok {
-			err = fmt.Errorf("finish flight: %s", msg)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
+	a.state = "finishing"
+	a.finishCancelCh = make(chan struct{})
+	cancelCh := a.finishCancelCh
+
+	a.flightMu.Unlock()
+
+	a.UI.EmitEvent("flight-state", "finishing")
+	slog.Info("flight finishing, draining outbox", "booking_id", bookingID, "callsign", callsign)
+
+	go a.finishDrainLoop(bookingID, callsign, departure, arrival, cancelCh)
+	return nil
+}
+
+// finishDrainLoop runs until the outbox for the booking is empty, then POSTs
+// /api/acars/finish. Emits flight-finish-progress events once per tick, and a
+// terminal flight-finish-complete or flight-finish-failed event. Retries
+// transient errors forever (exponential backoff capped at finishDrainBackoffMax).
+// If cancelCh is closed, the loop exits and reverts state to "active".
+func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, cancelCh chan struct{}) {
+	started := time.Now()
+	backoff := 2 * time.Second
+
+	for {
+		select {
+		case <-cancelCh:
+			a.flightMu.Lock()
+			a.state = "active"
+			a.stopCh = make(chan struct{})
+			a.flightMu.Unlock()
+			go a.positionLoop(a.stopCh)
+			a.UI.EmitEvent("flight-state", "active")
+			slog.Info("flight finish cancelled by user", "booking_id", bookingID)
+			return
+		default:
 		}
-		err = fmt.Errorf("finish flight: server returned %d", status)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
 
-	a.endFlight()
-	slog.Info("flight finished")
+		count, err := a.DB.CountOutbox(bookingID)
+		if err != nil {
+			slog.Warn("outbox count failed during finish drain", "error", err)
+			a.sleepOrCancel(backoff, cancelCh)
+			backoff = minDuration(backoff*2, finishDrainBackoffMax)
+			continue
+		}
+
+		if count == 0 {
+			payload := map[string]interface{}{
+				"callsign":  callsign,
+				"departure": departure,
+				"arrival":   arrival,
+				"timestamp": time.Now().UnixMilli(),
+			}
+			body, status, err := a.doRequestWithRetry("POST", "/api/acars/finish", payload)
+			if err != nil || status >= 400 {
+				msg := "server error"
+				if err != nil {
+					msg = err.Error()
+				} else {
+					var errResp map[string]interface{}
+					_ = json.Unmarshal(body, &errResp)
+					if m, ok := errResp["error"].(string); ok {
+						msg = m
+					}
+				}
+				a.flightMu.Lock()
+				a.state = "active"
+				a.stopCh = make(chan struct{})
+				a.flightMu.Unlock()
+				go a.positionLoop(a.stopCh)
+				a.UI.EmitEvent("flight-state", "active")
+				a.UI.EmitEvent("flight-finish-failed", map[string]interface{}{"reason": msg})
+				slog.Warn("flight finish request failed", "error", msg)
+				return
+			}
+
+			// Success.
+			a.flightMu.Lock()
+			a.endFlight()
+			a.flightMu.Unlock()
+			a.UI.EmitEvent("flight-finish-complete", map[string]interface{}{
+				"duration_sec": time.Since(started).Seconds(),
+			})
+			slog.Info("flight finished cleanly",
+				"booking_id", bookingID,
+				"callsign", callsign,
+				"drain_sec", time.Since(started).Seconds())
+			return
+		}
+
+		a.UI.EmitEvent("flight-finish-progress", map[string]interface{}{"pending": count})
+
+		sent, _, err := a.drainOutbox(bookingID, 4) // 4 batches = 1000 rows per pass
+		if sent > 0 {
+			posReportsSent.Add(context.Background(), int64(sent))
+			backoff = 2 * time.Second
+		}
+		if err != nil {
+			slog.Warn("finish drain batch failed, will retry", "error", err, "remaining", count-sent)
+			a.sleepOrCancel(backoff, cancelCh)
+			backoff = minDuration(backoff*2, finishDrainBackoffMax)
+			continue
+		}
+
+		a.sleepOrCancel(finishDrainTickEvery, cancelCh)
+	}
+}
+
+func (a *App) sleepOrCancel(d time.Duration, cancelCh chan struct{}) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-cancelCh:
+	}
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// CancelFinish aborts an in-progress finish drain and returns to "active".
+// The outbox is left intact; the user can retry FinishFlight later.
+func (a *App) CancelFinish() error {
+	a.flightMu.Lock()
+	if a.state != "finishing" {
+		a.flightMu.Unlock()
+		return fmt.Errorf("no finish in progress")
+	}
+	ch := a.finishCancelCh
+	a.finishCancelCh = nil
+	a.flightMu.Unlock()
+
+	if ch != nil {
+		close(ch)
+	}
 	return nil
 }
 
