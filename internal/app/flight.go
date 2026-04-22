@@ -112,12 +112,13 @@ func (a *App) GetPilot() (map[string]interface{}, error) {
 }
 
 // StartFlight begins a new flight tracking session.
-func (a *App) StartFlight(callsign, departure, arrival string) error {
+func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error {
 	_, span := flightTracer.Start(context.Background(), "flight.start",
 		trace.WithAttributes(
 			attribute.String("flight.callsign", callsign),
 			attribute.String("flight.departure", departure),
 			attribute.String("flight.arrival", arrival),
+			attribute.String("flight.booking_id", bookingID),
 		))
 	defer span.End()
 
@@ -176,6 +177,7 @@ func (a *App) StartFlight(callsign, departure, arrival string) error {
 	a.callsign = callsign
 	a.departure = departure
 	a.arrival = arrival
+	a.bookingID = bookingID
 	a.startTime = time.Now()
 	a.stopCh = make(chan struct{})
 
@@ -183,6 +185,12 @@ func (a *App) StartFlight(callsign, departure, arrival string) error {
 
 	slog.Info("flight started", "callsign", callsign, "dep", departure, "arr", arrival)
 	a.UI.EmitEvent("flight-state", "active")
+	if bookingID != "" {
+		if n, err := a.DB.CountOutbox(bookingID); err == nil && n > 0 {
+			slog.Info("resuming unsent positions from previous session", "booking_id", bookingID, "count", n)
+			a.UI.EmitEvent("flight-outbox-resuming", map[string]interface{}{"pending": n})
+		}
+	}
 	return nil
 }
 
@@ -286,6 +294,7 @@ func (a *App) endFlight() {
 	a.callsign = ""
 	a.departure = ""
 	a.arrival = ""
+	a.bookingID = ""
 	a.UI.EmitEvent("flight-state", "idle")
 }
 
