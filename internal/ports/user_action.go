@@ -91,6 +91,10 @@ func (p *UserActionPort) FinishFlight() error {
 	return p.App.FinishFlight()
 }
 
+func (p *UserActionPort) CancelFinish() error {
+	return p.App.CancelFinish()
+}
+
 // --- Auth commands ---
 
 func (p *UserActionPort) FetchTenants() ([]domain.Tenant, error) {

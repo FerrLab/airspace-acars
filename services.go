@@ -48,6 +48,7 @@ func (s *FlightService) StartFlight(callsign, departure, arrival, bookingID stri
 }
 func (s *FlightService) StopFlight() error   { return s.app.StopFlight() }
 func (s *FlightService) FinishFlight() error { return s.app.FinishFlight() }
+func (s *FlightService) CancelFinish() error { return s.app.CancelFinish() }
 
 // --- AuthService: tenant selection, device-code OAuth ---
 
