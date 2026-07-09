@@ -21,7 +21,7 @@ func (a *App) GetMessages(page int) (*domain.MessagesResponse, error) {
 		trace.WithAttributes(attribute.Int("chat.page", page)))
 	defer span.End()
 
-	path := fmt.Sprintf("/api/acars/messages?page=%d", page)
+	path := fmt.Sprintf("/api/v2/acars/messages?page=%d", page)
 	body, _, err := a.Airspace.DoRequest("GET", path, nil)
 	if err != nil {
 		span.RecordError(err)
@@ -51,7 +51,7 @@ func (a *App) SendMessage(message string) (*domain.ChatMessage, error) {
 	defer span.End()
 
 	payload := map[string]string{"message": message}
-	body, status, err := a.Airspace.DoRequest("POST", "/api/acars/message", payload)
+	body, status, err := a.Airspace.DoRequest("POST", "/api/v2/acars/message", payload)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -79,6 +79,6 @@ func (a *App) SendMessage(message string) (*domain.ChatMessage, error) {
 // ConfirmMessage marks a message as read.
 func (a *App) ConfirmMessage(messageID int) error {
 	payload := map[string]int{"message_id": messageID}
-	_, _, err := a.Airspace.DoRequest("PUT", "/api/acars/message/confirm", payload)
+	_, _, err := a.Airspace.DoRequest("PUT", "/api/v2/acars/message/confirm", payload)
 	return err
 }

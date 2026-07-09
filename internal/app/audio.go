@@ -31,7 +31,7 @@ func (a *App) FetchSoundInstructions() ([]domain.SoundInstruction, error) {
 	_, span := audioTracer.Start(context.Background(), "audio.fetch_instructions")
 	defer span.End()
 
-	body, _, err := a.Airspace.DoRequest("GET", "/api/acars/sound", nil)
+	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/sound", nil)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
