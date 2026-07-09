@@ -50,6 +50,7 @@
   "acars.positionReporting": "Reportando posición",
   "acars.finishing": "Finalizando...",
   "acars.finishFlight": "Finalizar Vuelo",
+  "acars.finishCooldown": "Finalizar Vuelo ({{seconds}}s)",
   "acars.cancel": "Cancelar",
   "acars.autoStarted": "Vuelo auto-iniciado: {{callsign}}",
   "acars.cabinAudio": "Audio de Cabina",

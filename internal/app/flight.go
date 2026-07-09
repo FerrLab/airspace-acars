@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"airspace-acars/internal/domain"
@@ -63,7 +64,9 @@ const (
 	finishDrainBackoffMax = 60 * time.Second
 
 	// minFlightDuration guards against fat-fingered finishes immediately after
-	// start. Cancel/stop is unaffected — only "finish" claims the flight is complete.
+	// start. Cancel/stop is unaffected — only "finish" claims the flight is
+	// complete. The UI mirrors this as a countdown on the Finish button, fed
+	// by the finishCooldownSec field of GetActiveFlightInfo.
 	minFlightDuration = 1 * time.Minute
 )
 
@@ -74,17 +77,24 @@ func (a *App) GetFlightState() string {
 	return a.state
 }
 
-// GetActiveFlightInfo returns callsign, departure and arrival for the current flight.
+// GetActiveFlightInfo returns callsign, departure and arrival for the current
+// flight, plus finishCooldownSec — how long until minFlightDuration allows the
+// flight to be finished (0 once finishable).
 func (a *App) GetActiveFlightInfo() map[string]string {
 	a.flightMu.Lock()
 	defer a.flightMu.Unlock()
 	if a.state != "active" {
 		return map[string]string{}
 	}
+	cooldown := minFlightDuration - time.Since(a.startTime)
+	if cooldown < 0 {
+		cooldown = 0
+	}
 	return map[string]string{
-		"callsign":  a.callsign,
-		"departure": a.departure,
-		"arrival":   a.arrival,
+		"callsign":          a.callsign,
+		"departure":         a.departure,
+		"arrival":           a.arrival,
+		"finishCooldownSec": strconv.Itoa(int((cooldown + time.Second - 1) / time.Second)),
 	}
 }
 
