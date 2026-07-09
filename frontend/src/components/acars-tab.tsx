@@ -36,6 +36,15 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   const [autoNotification, setAutoNotification] = useState<string | null>(null);
   const [finishPending, setFinishPending] = useState<number | null>(null);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  // Seconds until the backend's minFlightDuration guard allows finishing;
+  // seeded from GetActiveFlightInfo so it survives remounts mid-flight.
+  const [finishCooldown, setFinishCooldown] = useState(0);
+
+  useEffect(() => {
+    if (finishCooldown <= 0) return;
+    const id = setTimeout(() => setFinishCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [finishCooldown]);
 
   // Kept in a ref so the auto-start event handler always reads the current
   // volume without re-subscribing to the Wails event on every slider drag.
@@ -120,10 +129,14 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   useEffect(() => {
     if (localMode || flightState !== "active") {
       setActiveFlightInfo(null);
+      setFinishCooldown(0);
       return;
     }
     FlightService.GetActiveFlightInfo()
-      .then((info) => setActiveFlightInfo(info as any))
+      .then((info: any) => {
+        setActiveFlightInfo(info);
+        setFinishCooldown(Number(info?.finishCooldownSec ?? 0) || 0);
+      })
       .catch(() => {});
   }, [localMode, flightState]);
 
@@ -177,6 +190,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   };
 
   const handleFinishFlight = async () => {
+    if (finishCooldown > 0) return;
     setEndingFlight(true);
     try {
       await FlightService.FinishFlight();
@@ -357,11 +371,15 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                     size="sm"
                     variant="default"
                     onClick={handleFinishFlight}
-                    disabled={endingFlight}
+                    disabled={endingFlight || finishCooldown > 0}
                     className="gap-2"
                   >
                     <CheckCircle2 className="h-3 w-3" />
-                    {endingFlight ? t("acars.finishing") : t("acars.finishFlight")}
+                    {endingFlight
+                      ? t("acars.finishing")
+                      : finishCooldown > 0
+                        ? t("acars.finishCooldown", { seconds: finishCooldown })
+                        : t("acars.finishFlight")}
                   </Button>
                   <Button
                     size="sm"
