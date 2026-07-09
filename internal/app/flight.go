@@ -41,7 +41,7 @@ var (
 	posOutboxDepth, _    = flightMeter.Int64Histogram("position.outbox_depth",
 		metric.WithDescription("Outbox row count sampled at each drain pass"))
 	finishDrainDur, _    = flightMeter.Float64Histogram("flight.finish_drain_duration_sec",
-		metric.WithDescription("Seconds from FinishFlight call to /api/acars/finish success"))
+		metric.WithDescription("Seconds from FinishFlight call to /api/v2/acars/finish success"))
 	finishCanceledTotal, _ = flightMeter.Int64Counter("flight.finish_canceled_total",
 		metric.WithDescription("Number of times CancelFinish was invoked"))
 )
@@ -90,7 +90,7 @@ func (a *App) GetActiveFlightInfo() map[string]string {
 
 // GetBooking fetches the current booking from the API.
 func (a *App) GetBooking() (map[string]interface{}, error) {
-	body, _, err := a.Airspace.DoRequest("GET", "/api/acars/booking", nil)
+	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 		"timestamp": time.Now().UnixMilli(),
 	}
 
-	_, status, err := a.Airspace.DoRequest("POST", "/api/acars/start", payload)
+	_, status, err := a.Airspace.DoRequest("POST", "/api/v2/acars/start", payload)
 	if err != nil {
 		err = fmt.Errorf("start flight: %w", err)
 		span.RecordError(err)
@@ -216,7 +216,7 @@ func (a *App) StopFlight() error {
 		"timestamp": time.Now().UnixMilli(),
 	}
 
-	_, _, err := a.doRequestWithRetry("POST", "/api/acars/stop", payload)
+	_, _, err := a.doRequestWithRetry("POST", "/api/v2/acars/stop", payload)
 	if err != nil {
 		slog.Warn("stop flight request failed after retries", "error", err)
 	}
@@ -282,7 +282,7 @@ func (a *App) FinishFlight() error {
 }
 
 // finishDrainLoop runs until the outbox for the booking is empty, then POSTs
-// /api/acars/finish. Emits flight-finish-progress events once per tick, and a
+// /api/v2/acars/finish. Emits flight-finish-progress events once per tick, and a
 // terminal flight-finish-complete or flight-finish-failed event. Retries
 // transient errors forever (exponential backoff capped at finishDrainBackoffMax).
 // If cancelCh is closed, the loop exits and reverts state to "active".
@@ -319,7 +319,7 @@ func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, ca
 				"arrival":   arrival,
 				"timestamp": time.Now().UnixMilli(),
 			}
-			body, status, err := a.doRequestWithRetry("POST", "/api/acars/finish", payload)
+			body, status, err := a.doRequestWithRetry("POST", "/api/v2/acars/finish", payload)
 			if err != nil || status >= 400 {
 				msg := "server error"
 				if err != nil {

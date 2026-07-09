@@ -413,7 +413,7 @@ func (a *App) checkAutoFlight(data *domain.FlightData) {
 
 // tryAutoStartFlight fetches the booking and starts the flight automatically.
 func (a *App) tryAutoStartFlight() {
-	body, _, err := a.Airspace.DoRequest("GET", "/api/acars/booking", nil)
+	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
 	if err != nil {
 		slog.Debug("auto-start: failed to fetch booking", "error", err)
 		return
