@@ -27,6 +27,9 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const [chatSound, setChatSound] = useState<ChatSoundType>("default");
   const [discordPresence, setDiscordPresence] = useState(true);
   const [autoStartFlight, setAutoStartFlight] = useState(true);
+  const [confirmCloseApp, setConfirmCloseApp] = useState(false);
+  const [confirmCancelFlight, setConfirmCancelFlight] = useState(false);
+  const [confirmFinishFlight, setConfirmFinishFlight] = useState(false);
   const [apiBaseURL, setApiBaseURL] = useState("");
   const [language, setLanguage] = useState(i18n.language);
   const [loaded, setLoaded] = useState(false);
@@ -39,6 +42,9 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         setChatSound((settings.chatSound as ChatSoundType) || "default");
         setDiscordPresence(settings.discordPresence !== false);
         setAutoStartFlight(settings.autoStartFlight !== false);
+        setConfirmCloseApp(settings.confirmCloseApp === true);
+        setConfirmCancelFlight(settings.confirmCancelFlight === true);
+        setConfirmFinishFlight(settings.confirmFinishFlight === true);
         setApiBaseURL(settings.apiBaseURL);
         if (settings.language) setLanguage(settings.language);
         if (settings.theme === "light" || settings.theme === "dark") {
@@ -85,6 +91,33 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
     try {
       const settings = await SettingsService.GetSettings();
       await SettingsService.UpdateSettings({ ...settings, autoStartFlight: checked });
+    } catch { /* ignore */ }
+  };
+
+  const handleConfirmCloseAppToggle = async (checked: boolean) => {
+    setConfirmCloseApp(checked);
+    try {
+      const settings = await SettingsService.GetSettings();
+      settings.confirmCloseApp = checked;
+      await SettingsService.UpdateSettings(settings);
+    } catch { /* ignore */ }
+  };
+
+  const handleConfirmCancelFlightToggle = async (checked: boolean) => {
+    setConfirmCancelFlight(checked);
+    try {
+      const settings = await SettingsService.GetSettings();
+      settings.confirmCancelFlight = checked;
+      await SettingsService.UpdateSettings(settings);
+    } catch { /* ignore */ }
+  };
+
+  const handleConfirmFinishFlightToggle = async (checked: boolean) => {
+    setConfirmFinishFlight(checked);
+    try {
+      const settings = await SettingsService.GetSettings();
+      settings.confirmFinishFlight = checked;
+      await SettingsService.UpdateSettings(settings);
     } catch { /* ignore */ }
   };
 
@@ -295,6 +328,33 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
               </p>
             </div>
             <Switch checked={autoStartFlight} onCheckedChange={handleAutoStartToggle} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{t("settings.confirmCloseApp")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.confirmCloseAppDesc")}
+              </p>
+            </div>
+            <Switch checked={confirmCloseApp} onCheckedChange={handleConfirmCloseAppToggle} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{t("settings.confirmCancelFlight")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.confirmCancelFlightDesc")}
+              </p>
+            </div>
+            <Switch checked={confirmCancelFlight} onCheckedChange={handleConfirmCancelFlightToggle} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{t("settings.confirmFinishFlight")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.confirmFinishFlightDesc")}
+              </p>
+            </div>
+            <Switch checked={confirmFinishFlight} onCheckedChange={handleConfirmFinishFlightToggle} />
           </div>
         </CardContent>
       </Card>

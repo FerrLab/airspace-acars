@@ -221,7 +221,7 @@ func (a *App) ApplyUpdate() error {
 
 // AutoUpdate checks for and applies updates on startup.
 func (a *App) AutoUpdate() {
-	if domain.Version == "dev" {
+	if domain.Version == "dev" || domain.Version == "" {
 		slog.Info("skipping auto-update in dev mode")
 		return
 	}

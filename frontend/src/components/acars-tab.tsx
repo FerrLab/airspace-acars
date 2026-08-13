@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Plug, Unplug, Plane, Square, CheckCircle2, TriangleAlert, Zap } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Plug, Unplug, Plane, Square, CheckCircle2, TriangleAlert, Zap, AlertTriangle } from "lucide-react";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
-import { FlightDataService, FlightService } from "../../bindings/airspace-acars";
+import { FlightDataService, FlightService, SettingsService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
 import { translateError } from "@/lib/translate-error";
 import { playAutoStartDing } from "@/lib/notification-sounds";
@@ -39,6 +40,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   // Seconds until the backend's minFlightDuration guard allows finishing;
   // seeded from GetActiveFlightInfo so it survives remounts mid-flight.
   const [finishCooldown, setFinishCooldown] = useState(0);
+  const [confirmModal, setConfirmModal] = useState<"none" | "cancel" | "finish">("none");
 
   useEffect(() => {
     if (finishCooldown <= 0) return;
@@ -201,6 +203,70 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     }
   };
 
+  const [confirmCancelFlightSetting, setConfirmCancelFlightSetting] = useState(false);
+  const [confirmFinishFlightSetting, setConfirmFinishFlightSetting] = useState(false);
+
+  const reloadSettings = useCallback(async () => {
+    try {
+      const s = await SettingsService.GetSettings();
+      setConfirmCancelFlightSetting(Boolean(s?.confirmCancelFlight));
+      setConfirmFinishFlightSetting(Boolean(s?.confirmFinishFlight));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    reloadSettings();
+    window.addEventListener("focus", reloadSettings);
+    return () => window.removeEventListener("focus", reloadSettings);
+  }, [reloadSettings, flightState]);
+
+  const requestFinishFlight = async () => {
+    if (finishCooldown > 0) return;
+    try {
+      const s = await SettingsService.GetSettings();
+      if (s?.confirmFinishFlight) {
+        setConfirmFinishFlightSetting(true);
+        setConfirmModal("finish");
+        return;
+      }
+    } catch {}
+
+    if (confirmFinishFlightSetting) {
+      setConfirmModal("finish");
+      return;
+    }
+
+    handleFinishFlight();
+  };
+
+  const requestStopFlight = async () => {
+    try {
+      const s = await SettingsService.GetSettings();
+      if (s?.confirmCancelFlight) {
+        setConfirmCancelFlightSetting(true);
+        setConfirmModal("cancel");
+        return;
+      }
+    } catch {}
+
+    if (confirmCancelFlightSetting) {
+      setConfirmModal("cancel");
+      return;
+    }
+
+    handleStopFlight();
+  };
+
+  const handleConfirmCancel = async () => {
+    setConfirmModal("none");
+    await handleStopFlight();
+  };
+
+  const handleConfirmFinish = async () => {
+    setConfirmModal("none");
+    await handleFinishFlight();
+  };
+
   const handleCancelFinish = async () => {
     try {
       await FlightService.CancelFinish();
@@ -214,7 +280,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">{t("acars.title")}</h2>
@@ -370,7 +436,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                   <Button
                     size="sm"
                     variant="default"
-                    onClick={handleFinishFlight}
+                    onClick={requestFinishFlight}
                     disabled={endingFlight || finishCooldown > 0}
                     className="gap-2"
                   >
@@ -384,7 +450,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={handleStopFlight}
+                    onClick={requestStopFlight}
                     disabled={endingFlight}
                     className="gap-2"
                   >
@@ -434,6 +500,67 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       <Separator />
 
       {devMode && <RecordingControls isRecording={isRecording} isConnected={isConnected} />}
+
+      {/* Confirmation Modal Overlay */}
+      {confirmModal !== "none" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-[420px] max-w-full border-border bg-card shadow-2xl space-y-4">
+            <CardHeader className="space-y-2 text-center pb-2">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-1">
+                {confirmModal === "cancel" ? (
+                  <AlertTriangle className="h-6 w-6 text-destructive" />
+                ) : (
+                  <CheckCircle2 className="h-6 w-6 text-primary" />
+                )}
+              </div>
+              <CardTitle className="text-xl tracking-tight font-semibold">
+                {confirmModal === "cancel"
+                  ? t("acars.cancelConfirmTitle")
+                  : t("acars.finishConfirmTitle")}
+              </CardTitle>
+              <CardDescription className="text-sm text-muted-foreground leading-relaxed">
+                {confirmModal === "cancel"
+                  ? t("acars.cancelConfirmDesc")
+                  : t("acars.finishConfirmDesc")}
+              </CardDescription>
+            </CardHeader>
+            <CardFooter className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmModal("none")}
+                disabled={endingFlight}
+              >
+                {t("acars.confirmReturn")}
+              </Button>
+              {confirmModal === "cancel" ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleConfirmCancel}
+                  disabled={endingFlight}
+                  className="gap-2"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                  {t("acars.cancelConfirmAction")}
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleConfirmFinish}
+                  disabled={endingFlight}
+                  className="gap-2"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {t("acars.finishConfirmAction")}
+                </Button>
+              )}
+            </CardFooter>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
+
