@@ -35,6 +35,7 @@ func init() {
 	application.RegisterEvent[string]("flight-state")
 	application.RegisterEvent[bool]("update-check-done")
 	application.RegisterEvent[string]("auto-flight-start")
+	application.RegisterEvent[bool]("request-window-close")
 }
 
 func main() {
@@ -138,6 +139,13 @@ func main() {
 	})
 
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if appInstance.GetSettings().ConfirmCloseApp {
+			wailsApp.Event.Emit("request-window-close", true)
+			window.Show()
+			window.Focus()
+			e.Cancel()
+			return
+		}
 		window.Hide()
 		e.Cancel()
 	})
