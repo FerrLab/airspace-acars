@@ -10,19 +10,25 @@ type Settings struct {
 	ChatSound        string `json:"chatSound"`
 	DiscordPresence  bool   `json:"discordPresence"`
 	Language         string `json:"language"`
-	AutoStartFlight bool `json:"autoStartFlight"`
+	AutoStartFlight     bool   `json:"autoStartFlight"`
+	ConfirmCloseApp     bool   `json:"confirmCloseApp"`
+	ConfirmCancelFlight bool   `json:"confirmCancelFlight"`
+	ConfirmFinishFlight bool   `json:"confirmFinishFlight"`
 }
 
 func DefaultSettings() Settings {
 	return Settings{
-		Theme:            "dark",
-		SimType:          "auto",
-		XPlaneHost:       "127.0.0.1",
-		XPlanePort:       49000,
-		APIBaseURL:       "https://airspace.ferrlab.com",
-		ChatSound:        "default",
-		DiscordPresence:  true,
-		Language:         "en",
-		AutoStartFlight: true,
+		Theme:               "dark",
+		SimType:             "auto",
+		XPlaneHost:          "127.0.0.1",
+		XPlanePort:          49000,
+		APIBaseURL:          "https://airspace.ferrlab.com",
+		ChatSound:           "default",
+		DiscordPresence:     true,
+		Language:            "en",
+		AutoStartFlight:     true,
+		ConfirmCloseApp:     false,
+		ConfirmCancelFlight: false,
+		ConfirmFinishFlight: false,
 	}
 }
