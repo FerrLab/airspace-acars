@@ -1,0 +1,36 @@
+{
+  "id": "pmdg-737",
+  "name": "PMDG 737",
+  "description": "PMDG 737-600/700/800/900 on MSFS. Takes the radio readout from the active COM frequencies rounded to the 8.33 kHz channel spacing the PMDG radios display, and the flap position from the surface angle rather than the handle, which the PMDG flap logic drives independently.",
+  "notes": "PMDG publishes most of its systems through the PMDG SDK shared data area rather than through local variables. That transport is not implemented yet, so this profile stays on the simulation variables PMDG does drive.",
+  "priority": 100,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      { "field": "aircraftName", "op": "contains", "value": "PMDG" },
+      {
+        "any": [
+          { "field": "aircraftName", "op": "contains", "value": "737" },
+          { "field": "aircraftType", "op": "matches", "value": "^B73[6-9]$" }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "radios.com1": {
+      "sim": "simconnect",
+      "source": { "kind": "simvar", "name": "COM ACTIVE FREQUENCY:1", "unit": "MHz" },
+      "transform": [{ "op": "round", "value": 3 }]
+    },
+    "radios.com2": {
+      "sim": "simconnect",
+      "source": { "kind": "simvar", "name": "COM ACTIVE FREQUENCY:2", "unit": "MHz" },
+      "transform": [{ "op": "round", "value": 3 }]
+    },
+    "controls.flaps": {
+      "sim": "simconnect",
+      "source": { "kind": "simvar", "name": "TRAILING EDGE FLAPS LEFT PERCENT", "unit": "Percent" },
+      "transform": [{ "op": "clamp", "min": 0, "max": 100 }]
+    }
+  }
+}

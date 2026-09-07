@@ -146,6 +146,7 @@ func (a *App) DisconnectSim() {
 	a.reconnectAttempts = 0
 	a.lastReconnectAt = time.Time{}
 	a.userDisconnected = true
+	a.clearAircraftProfile()
 	a.UI.EmitEvent("connection-state", "")
 }
 
@@ -236,6 +237,10 @@ func (a *App) dataStreamLoop() {
 				a.UI.EmitEvent("connection-state", connector.Name())
 				slog.Info("simulator data received", "adapter", connector.Name())
 			}
+
+			// Resolve the aircraft profile before the data is published, so
+			// the adapter is already collecting the variables it asks for.
+			a.refreshAircraftProfile(connector)
 
 			a.UI.EmitEvent("flight-data", data)
 

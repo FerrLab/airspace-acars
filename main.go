@@ -16,6 +16,7 @@ import (
 	"airspace-acars/internal/adapters/xplane"
 	"airspace-acars/internal/app"
 	"airspace-acars/internal/domain"
+	"airspace-acars/internal/profiles"
 	"airspace-acars/observability"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -36,6 +37,7 @@ func init() {
 	application.RegisterEvent[bool]("update-check-done")
 	application.RegisterEvent[string]("auto-flight-start")
 	application.RegisterEvent[bool]("request-window-close")
+	application.RegisterEvent[*profiles.Plan]("aircraft-profile")
 }
 
 func main() {
@@ -79,6 +81,7 @@ func main() {
 	// Initialize settings and audio cache
 	appInstance.InitSettings()
 	appInstance.InitAudioCache()
+	appInstance.InitProfiles()
 
 	// --- Create service wrappers (User Action Port for Wails) ---
 	flightDataSvc := &FlightDataService{app: appInstance}
@@ -89,6 +92,7 @@ func main() {
 	settingsSvc := &SettingsService{app: appInstance}
 	updateSvc := &UpdateService{app: appInstance}
 	discordSvc := &DiscordService{app: appInstance}
+	profileSvc := &ProfileService{app: appInstance}
 
 	// --- Create Wails application ---
 	wailsApp := application.New(application.Options{
@@ -103,6 +107,7 @@ func main() {
 			application.NewService(settingsSvc),
 			application.NewService(updateSvc),
 			application.NewService(discordSvc),
+			application.NewService(profileSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

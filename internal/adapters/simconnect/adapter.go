@@ -14,9 +14,9 @@ import (
 	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 
 	"airspace-acars/internal/domain"
+	"airspace-acars/internal/profiles"
 	sim "airspace-acars/internal/simconnect"
 
 	"golang.org/x/sys/windows/registry"
@@ -37,6 +37,23 @@ type Adapter struct {
 	lastReceived time.Time
 	stopCh       chan struct{}
 	stopped      chan struct{}
+
+	// Aircraft identity as the simulator reports it, before profiles run.
+	identity profiles.Context
+
+	// Active aircraft profile and the extra simulation variables it needs.
+	// pendingPlan is staged by ApplyProfile and installed by the dispatch
+	// loop, which owns the SimConnect session's thread.
+	plan           *profiles.Plan
+	pendingPlan    *profiles.Plan
+	planPending    bool
+	extraDefined   bool
+	extraDefineID  sim.DWORD
+	extraRequestID sim.DWORD
+	extraKeys      []string
+	extraCount     int
+	extraValues    map[string]float64
+	requestSeq     int
 }
 
 type simReport struct {
@@ -430,6 +447,10 @@ func (s *Adapter) run(errCh chan<- error) {
 		s.mu.Lock()
 		s.sc = nil
 		s.latestData = nil
+		s.extraDefined = false
+		s.extraCount = 0
+		s.extraKeys = nil
+		s.extraValues = nil
 		s.mu.Unlock()
 	}()
 
@@ -438,7 +459,15 @@ func (s *Adapter) run(errCh chan<- error) {
 		case <-s.stopCh:
 			return
 		case <-requestTicker.C:
+			s.installPendingPlan(sc)
 			sc.RequestDataOnSimObjectType(0, defineID, 0, sim.SIMOBJECT_TYPE_USER)
+
+			s.mu.RLock()
+			extraDefineID, extraRequestID, extraCount := s.extraDefineID, s.extraRequestID, s.extraCount
+			s.mu.RUnlock()
+			if extraCount > 0 {
+				sc.RequestDataOnSimObjectType(extraRequestID, extraDefineID, 0, sim.SIMOBJECT_TYPE_USER)
+			}
 		default:
 			ppData, r1, _ := sc.GetNextDispatch()
 			if r1 < 0 {
@@ -450,6 +479,10 @@ func (s *Adapter) run(errCh chan<- error) {
 
 			switch recvInfo.ID {
 			case sim.RECV_ID_SIMOBJECT_DATA_BYTYPE:
+				if hdr := (*sim.RecvSimobjectDataByType)(ppData); hdr.RequestID != 0 {
+					s.readExtras(ppData, hdr)
+					continue
+				}
 				r := (*simReport)(ppData)
 				fd := &domain.FlightData{
 					Position: domain.PositionData{
@@ -579,8 +612,21 @@ func (s *Adapter) run(errCh chan<- error) {
 					WindSpeed:     r.WindSpeed,
 					QNH:           r.QNH,
 				}
+				engines := 0
+				for _, e := range fd.Engines {
+					if e.Exists {
+						engines++
+					}
+				}
+
 				s.mu.Lock()
 				s.latestData = fd
+				s.identity = profiles.Context{
+					AircraftName: fd.AircraftName,
+					AircraftType: fd.AircraftType,
+					Simulator:    profiles.SimSimConnect,
+					EngineCount:  engines,
+				}
 				s.lastReceived = time.Now()
 				s.mu.Unlock()
 			case sim.RECV_ID_EXCEPTION:
@@ -600,7 +646,7 @@ func (s *Adapter) GetFlightData() (*domain.FlightData, error) {
 	}
 
 	data := *s.latestData
-	_ = unsafe.Pointer(nil)
+	s.plan.Apply(&data, s.extraValues)
 	return &data, nil
 }
 

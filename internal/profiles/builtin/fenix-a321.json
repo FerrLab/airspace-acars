@@ -1,0 +1,16 @@
+{
+  "id": "fenix-a321",
+  "name": "Fenix A321",
+  "description": "Reports the ICAO type A321 for the Fenix A321. The systems bindings come from the fenix-a32x family profile.",
+  "priority": 110,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      { "field": "aircraftName", "op": "contains", "value": "fenix" },
+      { "field": "aircraftName", "op": "matches", "value": "a\\s*-?321" }
+    ]
+  },
+  "mash": {
+    "aircraft.type": { "source": { "kind": "const", "value": "A321" } }
+  }
+}

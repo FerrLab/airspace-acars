@@ -1,0 +1,23 @@
+{
+  "id": "fenix-a321neo",
+  "name": "Fenix A321neo",
+  "description": "Reports the ICAO type A21N for the Fenix A321neo, overriding the A321 ceo variant profile.",
+  "priority": 120,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      { "field": "aircraftName", "op": "contains", "value": "fenix" },
+      { "field": "aircraftName", "op": "matches", "value": "a\\s*-?321" },
+      {
+        "any": [
+          { "field": "aircraftName", "op": "contains", "value": "neo" },
+          { "field": "aircraftName", "op": "contains", "value": "lr" },
+          { "field": "aircraftName", "op": "contains", "value": "xlr" }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "aircraft.type": { "source": { "kind": "const", "value": "A21N" } }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "fbw-a32nx",
+  "name": "FlyByWire A32NX",
+  "description": "FlyByWire A32NX / A380X family on MSFS. Reads the autopilot and APU state from the aircraft's own local variables instead of the stock simulation variables, which the fly-by-wire systems do not always drive.",
+  "notes": "Local variables are read through the WASM bridge. Until that bridge is available the simvar fallback listed after each L: var is used, so this profile is safe to run today.",
+  "priority": 100,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      {
+        "any": [
+          { "field": "aircraftName", "op": "contains", "value": "A32NX" },
+          { "field": "aircraftName", "op": "contains", "value": "FlyByWire" }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": [
+      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_AUTOPILOT_1_ACTIVE" }, "transform": [{ "op": "bool" }] },
+      { "sim": "simconnect", "source": { "kind": "simvar", "name": "AUTOPILOT MASTER", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
+    ],
+    "autopilot.speed": [
+      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_AUTOPILOT_SPEED_SELECTED" } },
+      { "sim": "simconnect", "source": { "kind": "simvar", "name": "AUTOPILOT AIRSPEED HOLD VAR", "unit": "knots" } }
+    ],
+    "autopilot.navLock": [
+      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_FCU_LOC_MODE_ACTIVE" }, "transform": [{ "op": "bool" }] },
+      { "sim": "simconnect", "source": { "kind": "simvar", "name": "AUTOPILOT NAV1 LOCK", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
+    ],
+    "apu.rpmPercent": [
+      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_APU_N" }, "transform": [{ "op": "clamp", "min": 0, "max": 100 }] },
+      { "sim": "simconnect", "source": { "kind": "simvar", "name": "APU PCT RPM", "unit": "Percent" } }
+    ],
+    "apu.switchOn": [
+      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_OVHD_APU_MASTER_SW_PB_IS_ON" }, "transform": [{ "op": "bool" }] },
+      { "sim": "simconnect", "source": { "kind": "simvar", "name": "APU SWITCH", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
+    ],
+    "aircraft.type": { "source": { "kind": "const", "value": "A20N" } }
+  }
+}
