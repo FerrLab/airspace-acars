@@ -33,9 +33,10 @@ type SourceKind string
 const (
 	// SourceSimVar is an MSFS SimConnect simulation variable ("A:" var).
 	SourceSimVar SourceKind = "simvar"
-	// SourceLVar is an MSFS local (panel) variable ("L:" var). Reading these
-	// requires a WASM bridge in the simulator; adapters that cannot read them
-	// report the kind as unsupported and the next candidate binding is used.
+	// SourceLVar is an MSFS local (panel) variable ("L:" var). SimConnect
+	// resolves these itself since Sim Update 12; on an adapter that cannot
+	// read them the kind is reported as unsupported and the next candidate
+	// binding is used instead.
 	SourceLVar SourceKind = "lvar"
 	// SourceDataRef is an X-Plane dataref.
 	SourceDataRef SourceKind = "dataref"
@@ -46,15 +47,18 @@ const (
 // Profile is a single aircraft profile as stored on disk.
 type Profile struct {
 	// Schema is an optional "$schema" key so editors can offer completion.
-	Schema      string     `json:"$schema,omitempty"`
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Notes       string     `json:"notes,omitempty"`
-	Priority    int        `json:"priority,omitempty"`
-	Disabled    bool       `json:"disabled,omitempty"`
-	Match       *MatchNode `json:"match,omitempty"`
-	Mash        MashMap    `json:"mash,omitempty"`
+	Schema      string `json:"$schema,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Notes       string `json:"notes,omitempty"`
+	Priority    int    `json:"priority,omitempty"`
+	Disabled    bool   `json:"disabled,omitempty"`
+	// Generated marks a profile drafted by cmd/hubhop from the community
+	// variable database rather than confirmed against the aircraft.
+	Generated bool       `json:"x-generated,omitempty"`
+	Match     *MatchNode `json:"match,omitempty"`
+	Mash      MashMap    `json:"mash,omitempty"`
 
 	// Origin records where the profile was loaded from ("builtin" or a path).
 	Origin string `json:"-"`

@@ -1,23 +1,264 @@
 {
   "id": "fslabs-a32x",
   "name": "FSLabs A319/A320/A321",
-  "description": "FSLabs A32X family on MSFS. Reads the landing gear from the aircraft's own animation variables, which follow the actual gear rather than the handle.",
-  "notes": "Taken from the FSLabs interior model behaviour file, which carries the cockpit and animation variables (FSLA320_gear_* run 0 fully up to 2000 fully down). That file does not expose the systems state — FCU selections and autopilot engagement are not in it — so those data points stay on the stock simulation variables until the FSLabs systems variable list is wired in.",
+  "description": "FSLabs A32X family on MSFS. Reads the FCU selections and the autopilot engagement from the aircraft's own variables, and the gear from the actual gear position rather than the handle.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The FCU annunciators are brightness values rather than booleans, so they are compared against a mid-scale threshold. The gear bindings are stock simulation variables: FSLabs drives GEAR LEFT/RIGHT/CENTER POSITION, which reaches 100 percent only when the leg is down and locked.",
   "priority": 100,
   "match": {
     "all": [
-      { "field": "simulator", "op": "equals", "value": "simconnect" },
-      { "field": "aircraftName", "op": "matches", "value": "fs\\s*-?labs?" }
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "fs\\s*-?labs?"
+      }
     ]
   },
   "mash": {
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "VC_GSLD_FCU_AP1_Brt_Lt"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 50
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "VC_GSLD_FCU_AP2_Brt_Lt"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 50
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.approachHold": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "VC_GSLD_FCU_APPR_Brt_Lt"
+        },
+        "transform": [
+          {
+            "op": "gt",
+            "value": 50
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT APPROACH HOLD",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.navLock": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "VC_GSLD_FCU_LOC_Brt_Lt"
+        },
+        "transform": [
+          {
+            "op": "gt",
+            "value": 50
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT NAV1 LOCK",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.heading": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "FSL_FCU_HDG"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT HEADING LOCK DIR",
+          "unit": "degrees"
+        }
+      }
+    ],
+    "autopilot.altitude": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "FSL_FCU_ALT"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT ALTITUDE LOCK VAR",
+          "unit": "feet"
+        }
+      }
+    ],
+    "autopilot.speed": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "FSL_FCU_SPD"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT AIRSPEED HOLD VAR",
+          "unit": "knots"
+        }
+      }
+    ],
+    "autopilot.vs": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "FSL_FCU_VS"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT VERTICAL HOLD VAR",
+          "unit": "feet/minute"
+        }
+      }
+    ],
+    "apu.switchOn": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "VC_OVHD_APU_Master_Button"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "APU SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
     "controls.gearDown": {
       "reduce": "and",
       "bindings": [
-        { "sim": "simconnect", "source": { "kind": "lvar", "name": "FSLA320_gear_nose" }, "transform": [{ "op": "gte", "value": 1900 }] },
-        { "sim": "simconnect", "source": { "kind": "lvar", "name": "FSLA320_gear_left" }, "transform": [{ "op": "gte", "value": 1900 }] },
-        { "sim": "simconnect", "source": { "kind": "lvar", "name": "FSLA320_gear_right" }, "transform": [{ "op": "gte", "value": 1900 }] },
-        { "sim": "simconnect", "source": { "kind": "simvar", "name": "GEAR HANDLE POSITION", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "GEAR CENTER POSITION",
+            "unit": "Percent"
+          },
+          "transform": [
+            {
+              "op": "gte",
+              "value": 99
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "GEAR LEFT POSITION",
+            "unit": "Percent"
+          },
+          "transform": [
+            {
+              "op": "gte",
+              "value": 99
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "GEAR RIGHT POSITION",
+            "unit": "Percent"
+          },
+          "transform": [
+            {
+              "op": "gte",
+              "value": 99
+            }
+          ]
+        }
       ]
     }
   }

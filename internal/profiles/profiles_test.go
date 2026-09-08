@@ -3,6 +3,7 @@ package profiles
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"airspace-acars/internal/domain"
@@ -422,7 +423,7 @@ func TestFenixA320ResolvesFamilyAndVariant(t *testing.T) {
 		bindings[b.Point] = b
 	}
 
-	// Without the WASM bridge every local variable falls back to a simvar.
+	// An adapter that cannot read local variables falls back to the simvars.
 	require.Contains(t, bindings, "autopilot.master")
 	assert.Equal(t, SourceSimVar, bindings["autopilot.master"].Sources[0].Kind)
 	for _, b := range plan.Bindings {
@@ -443,7 +444,7 @@ func TestFenixA320ResolvesFamilyAndVariant(t *testing.T) {
 			master = b
 		}
 	}
-	require.Len(t, master.Sources, 3)
+	require.Len(t, master.Sources, 2, "the stock fallback does not vote alongside the aircraft's own channels")
 	assert.Equal(t, ReduceOr, master.Reduce)
 	assert.Equal(t, "I_FCU_AP1", master.Sources[0].Name)
 	assert.Equal(t, "I_FCU_AP2", master.Sources[1].Name)
@@ -519,4 +520,235 @@ func TestPointsCatalogueCoversTheFlightDataStruct(t *testing.T) {
 		_, ok := Lookup(id)
 		assert.True(t, ok, "missing data point %q", id)
 	}
+}
+
+// TestShippedProfilesSelectTheRightAircraft walks the built-in set with titles
+// in the shape each add-on reports, and checks that the expected profiles match
+// and — just as importantly — that neighbouring ones do not.
+func TestShippedProfilesSelectTheRightAircraft(t *testing.T) {
+	r := NewRegistry()
+
+	cases := []struct {
+		title     string
+		acType    string
+		simulator string
+		want      []string
+		reject    []string
+	}{
+		{title: "FlyByWire A32NX", acType: "A20N", simulator: SimSimConnect, want: []string{"fbw-a32nx"}},
+		{title: "FlyByWire A380X", acType: "A388", simulator: SimSimConnect, reject: []string{"fbw-a32nx"}},
+		{title: "Fenix A320 IAE Lufthansa", simulator: SimSimConnect, want: []string{"fenix-a32x", "fenix-a320"}, reject: []string{"fbw-a32nx", "fslabs-a32x"}},
+		{title: "FSLabs A321-NEO LEAP", simulator: SimSimConnect, want: []string{"fslabs-a32x", "fslabs-a321neo"}, reject: []string{"fenix-a32x"}},
+		{title: "PMDG 737-800 KLM", acType: "B738", simulator: SimSimConnect, want: []string{"pmdg-737"}, reject: []string{"pmdg-777", "ifly-737max", "salty-747"}},
+		{title: "PMDG 777-300ER British Airways", acType: "B77W", simulator: SimSimConnect, want: []string{"pmdg-777"}, reject: []string{"pmdg-737"}},
+		{title: "iFly 737 MAX 8", acType: "B38M", simulator: SimSimConnect, want: []string{"ifly-737max"}, reject: []string{"pmdg-737"}},
+		{title: "iniBuilds A350-900 Qatar", simulator: SimSimConnect, want: []string{"inibuilds-a350"}, reject: []string{"inibuilds-a300", "inibuilds-a310"}},
+		{title: "iniBuilds A310-300 Air Transat", simulator: SimSimConnect, want: []string{"inibuilds-a310"}, reject: []string{"inibuilds-a350"}},
+		{title: "TFDi Design MD-11 Lufthansa Cargo", simulator: SimSimConnect, want: []string{"tfdi-md11"}, reject: []string{"leonardo-md82"}},
+		{title: "Leonardo MaddogX MD-82 Alitalia", simulator: SimSimConnect, want: []string{"leonardo-md82"}, reject: []string{"tfdi-md11"}},
+		{title: "Aerosoft CRJ 900 Lufthansa Regional", simulator: SimSimConnect, want: []string{"aerosoft-crj"}},
+		{title: "Salty 747-8i Lufthansa", simulator: SimSimConnect, want: []string{"salty-747"}},
+		{title: "Just Flight BAe 146-300 Flybe", simulator: SimSimConnect, want: []string{"justflight-bae146"}},
+		{title: "ATR 72-600 Aer Lingus Regional", simulator: SimSimConnect, want: []string{"msfs-atr72"}},
+		{title: "Boeing 737-800X Zibo mod", acType: "B738", simulator: SimXPlane, want: []string{"zibo-b738", "xplane-com-833"}, reject: []string{"pmdg-737"}},
+	}
+
+	supported := map[string][]SourceKind{
+		SimSimConnect: {SourceSimVar, SourceLVar},
+		SimXPlane:     {SourceDataRef},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.title, func(t *testing.T) {
+			plan := r.Resolve(Context{
+				AircraftName: tc.title,
+				AircraftType: tc.acType,
+				Simulator:    tc.simulator,
+				EngineCount:  2,
+			}, supported[tc.simulator])
+
+			for _, want := range tc.want {
+				assert.Contains(t, plan.ProfileIDs(), want)
+			}
+			for _, reject := range tc.reject {
+				assert.NotContains(t, plan.ProfileIDs(), reject)
+			}
+		})
+	}
+}
+
+// TestShippedProfilesDegradeToTheStockVariables is the safety net for the
+// aircraft profiles that read local variables: an adapter that can only read
+// simulation variables — an older simulator build, or X-Plane — must still end
+// up with every data point bound to something it can actually read.
+func TestShippedProfilesDegradeToTheStockVariables(t *testing.T) {
+	r := NewRegistry()
+
+	for _, prof := range r.All() {
+		t.Run(prof.ID, func(t *testing.T) {
+			for _, sim := range []struct {
+				name      string
+				supported []SourceKind
+			}{
+				{SimSimConnect, []SourceKind{SourceSimVar}},
+				{SimXPlane, []SourceKind{SourceDataRef}},
+			} {
+				forced, err := r.ResolveForced(prof.ID, Context{Simulator: sim.name}, sim.supported)
+				require.NoError(t, err)
+				for _, b := range forced.Bindings {
+					for _, src := range b.Sources {
+						assert.Contains(t, append(sim.supported, SourceConst), src.Kind,
+							"%s on %s: point %q resolved to an unreadable source", prof.ID, sim.name, b.Point)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestPMDG737FallsBackAndCombines checks the shape of a profile that lists both
+// generations of PMDG variable naming: with local variables readable every
+// candidate feeds the reduce, and without them only the stock simvar is left.
+func TestPMDG737FallsBackAndCombines(t *testing.T) {
+	r := NewRegistry()
+	ctx := Context{AircraftName: "PMDG 737-800 KLM", AircraftType: "B738", Simulator: SimSimConnect, EngineCount: 2}
+
+	find := func(plan *Plan, point string) (ResolvedBinding, bool) {
+		for _, b := range plan.Bindings {
+			if b.Point == point {
+				return b, true
+			}
+		}
+		return ResolvedBinding{}, false
+	}
+
+	simOnly := r.Resolve(ctx, []SourceKind{SourceSimVar})
+	master, ok := find(simOnly, "autopilot.master")
+	require.True(t, ok)
+	require.Len(t, master.Sources, 1)
+	assert.Equal(t, "AUTOPILOT MASTER", master.Sources[0].Name)
+
+	withLVars := r.Resolve(ctx, []SourceKind{SourceSimVar, SourceLVar})
+	master, ok = find(withLVars, "autopilot.master")
+	require.True(t, ok)
+	assert.Equal(t, ReduceOr, master.Reduce)
+	assert.Len(t, master.Sources, 4, "both PMDG generations, and only those")
+	for _, src := range master.Sources {
+		assert.Equal(t, SourceLVar, src.Kind,
+			"a reduce combines one tier; the stock variable is the fallback, not a vote")
+	}
+
+	// Either MCP channel engages the autopilot, and a blank V/S window reads zero.
+	fd := &domain.FlightData{}
+	withLVars.Apply(fd, map[string]float64{
+		"lvar:ngx_MCP_CMDA:":     0,
+		"lvar:ngx_MCP_CMDB:":     1,
+		"lvar:ngx_MCP_VSwindow:": -20000,
+	})
+	assert.True(t, fd.Autopilot.Master)
+	assert.Zero(t, fd.Autopilot.VS)
+}
+
+// TestGeneratedProfilesOnlyBindAircraftVariables guards the invariant that
+// makes the weekly refresh safe to merge on sight: a generated draft may only
+// bind something the adapter does not already read. Binding a stock variable
+// would either do nothing or, worse, quietly replace a correct reading with a
+// mis-mapped one.
+func TestGeneratedProfilesOnlyBindAircraftVariables(t *testing.T) {
+	for _, prof := range NewRegistry().All() {
+		if !prof.Generated {
+			continue
+		}
+		t.Run(prof.ID, func(t *testing.T) {
+			assert.Less(t, prof.Priority, 100,
+				"a draft must never outrank a profile someone confirmed in the simulator")
+
+			for point, entry := range prof.Mash {
+				require.NotEmpty(t, entry.Bindings)
+				primary := entry.Bindings[0]
+				switch primary.Source.Kind {
+				case SourceLVar:
+					// An add-on's own variable: exactly what a draft is for.
+				case SourceDataRef:
+					assert.False(t, strings.HasPrefix(primary.Source.Name, "sim/"),
+						"%s: %q reads the stock dataref %q, which the adapter already collects",
+						prof.ID, point, primary.Source.Name)
+				default:
+					t.Errorf("%s: %q is fed by %q, which is not an aircraft variable",
+						prof.ID, point, primary.Source.Kind)
+				}
+			}
+
+			// The fallback is what makes an unverified draft harmless.
+			for point, entry := range prof.Mash {
+				last := entry.Bindings[len(entry.Bindings)-1]
+				assert.NotEqual(t, SourceLVar, last.Source.Kind,
+					"%s: %q has no stock fallback behind its aircraft variables", prof.ID, point)
+			}
+		})
+	}
+}
+
+// TestReduceCombinesOneTierOnly documents why a fallback must not vote: the
+// aircraft says the autopilot is off, and a stale stock variable saying it is
+// on must not be able to override that.
+func TestReduceCombinesOneTierOnly(t *testing.T) {
+	prof := mustParse(t, `{
+		"id": "tiers", "name": "Tiers",
+		"mash": {
+			"autopilot.master": {
+				"reduce": "or",
+				"bindings": [
+					{"source": {"kind": "lvar", "name": "AP1"}, "transform": [{"op": "bool"}]},
+					{"source": {"kind": "lvar", "name": "AP2"}, "transform": [{"op": "bool"}]},
+					{"source": {"kind": "simvar", "name": "AUTOPILOT MASTER", "unit": "Bool"}, "transform": [{"op": "bool"}]}
+				]
+			}
+		}
+	}`)
+
+	withLVars := Resolve([]*Profile{prof}, Context{Simulator: SimSimConnect}, []SourceKind{SourceSimVar, SourceLVar})
+	require.Len(t, withLVars.Bindings[0].Sources, 2)
+
+	fd := &domain.FlightData{}
+	withLVars.Apply(fd, map[string]float64{
+		"lvar:AP1:": 0, "lvar:AP2:": 0,
+		"simvar:AUTOPILOT MASTER:Bool": 1,
+	})
+	assert.False(t, fd.Autopilot.Master, "the aircraft's own channels decide, not the fallback")
+
+	// With local variables unreadable the stock variable becomes the only tier.
+	simOnly := Resolve([]*Profile{prof}, Context{Simulator: SimSimConnect}, []SourceKind{SourceSimVar})
+	require.Len(t, simOnly.Bindings[0].Sources, 1)
+	fd = &domain.FlightData{}
+	simOnly.Apply(fd, map[string]float64{"simvar:AUTOPILOT MASTER:Bool": 1})
+	assert.True(t, fd.Autopilot.Master)
+}
+
+// TestReduceAndNeedsEveryReading covers the failure mode SimConnect's habit of
+// creating a missing local variable would otherwise produce: two of three gear
+// greens reporting must not be enough to call the gear down.
+func TestReduceAndNeedsEveryReading(t *testing.T) {
+	prof := mustParse(t, `{
+		"id": "greens", "name": "Greens",
+		"mash": {
+			"controls.gearDown": {
+				"reduce": "and",
+				"bindings": [
+					{"source": {"kind": "lvar", "name": "GEAR_N"}, "transform": [{"op": "gt", "value": 0}]},
+					{"source": {"kind": "lvar", "name": "GEAR_L"}, "transform": [{"op": "gt", "value": 0}]},
+					{"source": {"kind": "lvar", "name": "GEAR_R"}, "transform": [{"op": "gt", "value": 0}]}
+				]
+			}
+		}
+	}`)
+	plan := Resolve([]*Profile{prof}, Context{Simulator: SimSimConnect}, []SourceKind{SourceLVar})
+
+	fd := &domain.FlightData{}
+	fd.Controls.GearDown = true // what the adapter read for itself
+	plan.Apply(fd, map[string]float64{"lvar:GEAR_N:": 1, "lvar:GEAR_L:": 1})
+	assert.True(t, fd.Controls.GearDown, "an absent third green is unknown, not false")
+
+	plan.Apply(fd, map[string]float64{"lvar:GEAR_N:": 1, "lvar:GEAR_L:": 1, "lvar:GEAR_R:": 0})
+	assert.False(t, fd.Controls.GearDown, "once every green reports, the answer is theirs")
 }

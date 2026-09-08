@@ -1,0 +1,112 @@
+{
+  "id": "salty-747",
+  "name": "Salty 747-8i",
+  "description": "Salty Simulations 747-8i on MSFS. Reads the LNAV and approach modes from the Salty autopilot variables.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "747"
+      },
+      {
+        "any": [
+          {
+            "field": "aircraftName",
+            "op": "contains",
+            "value": "salty"
+          },
+          {
+            "field": "aircraftName",
+            "op": "contains",
+            "value": "747-8"
+          }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.navLock": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "AP_LNAV_ACTIVE"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT NAV1 LOCK",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.approachHold": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "AP_APP_ARMED"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "AP_LOC_ARMED"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT APPROACH HOLD",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "aircraft.type": {
+      "source": {
+        "kind": "const",
+        "value": "B748"
+      }
+    }
+  }
+}

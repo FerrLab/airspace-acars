@@ -113,8 +113,20 @@ accepted:
 
 Without `reduce`, the bindings are **candidates**: the first one whose `sim`
 scope matches and whose source kind the active adapter can read is used, and the
-rest are the fallback chain. With `reduce`, every usable binding is read and the
-values are combined: `or`, `and`, `max`, `min`, `sum`.
+rest are the fallback chain. With `reduce`, the usable bindings **of the same
+kind as the first one** are read and combined: `or`, `and`, `max`, `min`, `sum`.
+
+The kind restriction is what keeps a reduce honest. A binding list is written in
+tiers — the aircraft's own variables first, the stock variable last as a
+fallback — and "engaged is AP1 or AP2" is a statement about the aircraft's two
+channels, not about the stock variable that stands in when neither can be read.
+Letting the fallback vote would allow it to outvote the aircraft, which is the
+opposite of what a fallback is for. When the aircraft's variables cannot be
+read at all, the fallback becomes the only tier and is used on its own.
+
+`and` additionally requires every one of its sources to have reported. A source
+that has not arrived is unknown, not false: two of three gear greens is not
+enough to call the gear down.
 
 A binding is:
 
@@ -136,14 +148,22 @@ A binding is:
 `const` is how a profile corrects an add-on's reported ICAO type — the Fenix
 A321neo reports `A21N` whatever the title says.
 
-**Local variables are not readable yet.** SimConnect cannot read `L:` vars on
-its own; that needs a WASM bridge inside the simulator, which is not wired up.
-Until it is, a binding with `"kind": "lvar"` is skipped and the next candidate
-is used, which is why every shipped `lvar` binding is followed by the stock
-simulation variable. When the bridge lands, those profiles start using the
-local variables with no change to the files. A data point where every candidate
-was unusable is listed in the plan's `skipped`, and the adapter's own reading is
-left in place.
+**Local variables need no module in the simulator.** Since Sim Update 12,
+SimConnect resolves `L:` variables itself when the datum name carries the `L:`
+prefix, so the MSFS adapter reads them alongside simulation variables. On an
+adapter that cannot — an older simulator build — a binding with
+`"kind": "lvar"` is skipped and the next candidate is used, which is why every
+shipped `lvar` binding is followed by the stock simulation variable. A data
+point where every candidate was unusable is listed in the plan's `skipped`, and
+the adapter's own reading is left in place.
+
+There is one trap. SimConnect **creates** a local variable that does not exist
+rather than rejecting it, so a name that is wrong — a typo, or a variable from a
+different version of the add-on — reads a permanent zero instead of failing. The
+MSFS adapter therefore withholds a local variable until it has been seen
+non-zero once: until it proves it is real, the data point keeps whatever the
+adapter read for it by its own route. A binding that never fires is a name to
+check, not a silent wrong reading.
 
 ### Transforms
 
@@ -284,6 +304,114 @@ every engine's `exists` flag at once.
 4. Every snapshot handed to the rest of the application has the plan applied on
    top of the adapter's own readings. A data point whose variable has not
    arrived yet keeps the adapter's value, so a profile can never blank a field.
+
+## Shipped profiles
+
+Confirmed against the aircraft's own files or the community variable database,
+and hand-written:
+
+| ID | Aircraft | Simulator | Priority | Points |
+|---|---|---|---|---|
+| `aerosoft-crj` | Aerosoft CRJ 550/700/900/1000 | MSFS | 100 | 3 |
+| `fbw-a32nx` | FlyByWire A32NX | MSFS | 100 | 9 |
+| `fenix-a318` | Fenix A318 | MSFS | 110 | 1 |
+| `fenix-a319` | Fenix A319 | MSFS | 110 | 1 |
+| `fenix-a320` | Fenix A320 | MSFS | 110 | 1 |
+| `fenix-a321` | Fenix A321 | MSFS | 110 | 1 |
+| `fenix-a321neo` | Fenix A321neo | MSFS | 120 | 1 |
+| `fenix-a32x` | Fenix A318/A319/A320/A321 | MSFS | 100 | 10 |
+| `fslabs-a321` | FSLabs A321 | MSFS | 110 | 1 |
+| `fslabs-a321neo` | FSLabs A321neo | MSFS | 120 | 1 |
+| `fslabs-a32x` | FSLabs A319/A320/A321 | MSFS | 100 | 9 |
+| `ifly-737max` | iFly 737 MAX | MSFS | 100 | 3 |
+| `inibuilds-a300` | iniBuilds A300 | MSFS | 100 | 1 |
+| `inibuilds-a310` | iniBuilds A310 | MSFS | 100 | 2 |
+| `inibuilds-a350` | iniBuilds A350 | MSFS | 100 | 4 |
+| `justflight-bae146` | Just Flight BAe 146 / Avro RJ | MSFS | 100 | 2 |
+| `leonardo-md82` | Leonardo MaddogX MD-82 | MSFS | 100 | 5 |
+| `msfs-atr72` | ATR 42-600 / 72-600 | MSFS | 100 | 2 |
+| `pmdg-737` | PMDG 737 | MSFS | 100 | 11 |
+| `pmdg-777` | PMDG 777 | MSFS | 100 | 7 |
+| `salty-747` | Salty 747-8i | MSFS | 100 | 3 |
+| `tfdi-md11` | TFDi MD-11 | MSFS | 100 | 4 |
+| `xplane-com-833` | X-Plane 8.33 kHz radios | X-Plane | 10 | 2 |
+| `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 5 |
+
+### Generated drafts
+
+Drafted by `cmd/hubhop gen` from the MobiFlight HubHop community database and
+marked `"x-generated": true`. Nobody has flown them yet, so the selector and the
+bindings are a starting point rather than a fact:
+
+| ID | Aircraft | Simulator | Priority | Points |
+|---|---|---|---|---|
+| `aerosoft-a340-600` | Aerosoft A340-600 | MSFS | 50 | 5 |
+| `blacksquare-duke` | Black Square Duke | MSFS | 50 | 1 |
+| `blacksquare-tbm850` | Black Square TBM850 | MSFS | 50 | 1 |
+| `dcdesigns-concorde` | DC Designs Concorde | MSFS | 50 | 1 |
+| `fbw-a380x` | Fly By Wire A380X | MSFS | 50 | 2 |
+| `flightfactor-b767` | Flight Factor B767 | X-Plane | 50 | 4 |
+| `headwind-a330-900neo` | Headwind Simulations A330-900neo | MSFS | 50 | 1 |
+| `inibuilds-a320` | IniBuilds A320 | MSFS | 50 | 4 |
+| `inibuilds-a330` | IniBuilds A330 | MSFS | 50 | 1 |
+| `ixeg-b737-300` | IXEG B737-300 | X-Plane | 50 | 3 |
+| `mgharib-hondajet-ha420` | MGharib HondaJet HA420 | MSFS | 50 | 1 |
+| `xcrafts-e-jets` | X-Crafts E-Jets | X-Plane | 50 | 1 |
+
+A draft is deliberately cheap to be wrong about. It sits at priority 50, below
+every hand-written profile, and the generator only lets it bind a variable the
+add-on adds — never a stock one the adapter already reads — with the stock
+variable always behind it as the fallback. Two tests hold that line: one fails
+if a draft's primary source is a stock variable, another if a draft outranks a
+confirmed profile.
+
+**Adopting a draft.** Correct it, then delete its `x-generated` line. The
+generator skips profiles without the marker, so your correction survives every
+future refresh. Until then the weekly job rewrites drafts in place.
+
+The one part a generated draft cannot get right on its own is the selector:
+HubHop records the developer, and a livery title does not always carry the
+developer's name. `hubhop scan` prints the real titles — check them before
+trusting a draft to match.
+
+## Keeping profiles current
+
+`.github/workflows/aircraft-profiles.yml` re-runs the generator every Monday and
+opens a pull request when HubHop has gained something. It validates the result
+first: a pull request opened with `GITHUB_TOKEN` does not start another workflow
+run, so the profile tests run inside the job rather than on the pull request.
+
+## Finding variables for a new aircraft
+
+`cmd/hubhop` is the authoring aid. It queries HubHop live and scans the
+simulator's own files; it writes nothing into the repository.
+
+```bash
+# What does the add-on publish? (readable variables only, unless -all)
+go run ./cmd/hubhop search -sim msfs -aircraft "PMDG.*B737" -match "autopilot|gear"
+go run ./cmd/hubhop search -sim xplane -aircraft Zibo -match "cmd_a|lnav|gear"
+
+# What is actually installed, and what titles do the liveries carry?
+go run ./cmd/hubhop scan "C:\Users\you\AppData\Roaming\Microsoft Flight Simulator 2024\Packages\Community"
+```
+
+`scan` reports, per package, the titles and ICAO type from `aircraft.cfg` — the
+strings a selector has to match — plus the local variables the model behaviour
+files reference, ordered by how often they appear. It is the way to cover an
+add-on HubHop does not.
+
+Two things to check before shipping a binding:
+
+- **Is it readable?** HubHop marks entries `Input` or `Output`; only `Output`
+  (and X-Plane's `InputOutput`) can be read back. `search` filters to those.
+- **What is the scale?** An annunciator may be a boolean, a brightness value, or
+  a multi-position switch. Where the range is not documented, prefer a threshold
+  (`gt`, `gte`) over assuming `0`/`1`, and say so in the profile's `notes`.
+
+A binding whose mapping you cannot confirm is better left out: the adapter's
+default reading is already correct for most aircraft, and a wrong override is
+worse than no override. That is why the shipped profiles do not re-bind the
+beacon — the ACARS starts a flight off it.
 
 ## Settings
 
