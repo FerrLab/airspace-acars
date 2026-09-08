@@ -3,6 +3,7 @@ package profiles
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"airspace-acars/internal/domain"
@@ -642,4 +643,44 @@ func TestPMDG737FallsBackAndCombines(t *testing.T) {
 	})
 	assert.True(t, fd.Autopilot.Master)
 	assert.Zero(t, fd.Autopilot.VS)
+}
+
+// TestGeneratedProfilesOnlyBindAircraftVariables guards the invariant that
+// makes the weekly refresh safe to merge on sight: a generated draft may only
+// bind something the adapter does not already read. Binding a stock variable
+// would either do nothing or, worse, quietly replace a correct reading with a
+// mis-mapped one.
+func TestGeneratedProfilesOnlyBindAircraftVariables(t *testing.T) {
+	for _, prof := range NewRegistry().All() {
+		if !prof.Generated {
+			continue
+		}
+		t.Run(prof.ID, func(t *testing.T) {
+			assert.Less(t, prof.Priority, 100,
+				"a draft must never outrank a profile someone confirmed in the simulator")
+
+			for point, entry := range prof.Mash {
+				require.NotEmpty(t, entry.Bindings)
+				primary := entry.Bindings[0]
+				switch primary.Source.Kind {
+				case SourceLVar:
+					// An add-on's own variable: exactly what a draft is for.
+				case SourceDataRef:
+					assert.False(t, strings.HasPrefix(primary.Source.Name, "sim/"),
+						"%s: %q reads the stock dataref %q, which the adapter already collects",
+						prof.ID, point, primary.Source.Name)
+				default:
+					t.Errorf("%s: %q is fed by %q, which is not an aircraft variable",
+						prof.ID, point, primary.Source.Kind)
+				}
+			}
+
+			// The fallback is what makes an unverified draft harmless.
+			for point, entry := range prof.Mash {
+				last := entry.Bindings[len(entry.Bindings)-1]
+				assert.NotEqual(t, SourceLVar, last.Source.Kind,
+					"%s: %q has no stock fallback behind its aircraft variables", prof.ID, point)
+			}
+		})
+	}
 }

@@ -54,6 +54,8 @@ func main() {
 		search(os.Args[2:])
 	case "scan":
 		scan(os.Args[2:])
+	case "gen":
+		gen(os.Args[2:])
 	default:
 		usage()
 	}
@@ -63,6 +65,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage:
   hubhop search [-sim msfs|xplane] [-aircraft REGEX] [-match REGEX] [-all]
   hubhop scan   DIRECTORY [-lvars N]   (the directory may come before or after the flags)
+  hubhop gen    [-sim msfs|xplane] [-out DIR] [-min-points N] [-dry-run]
 `)
 	os.Exit(2)
 }

@@ -44,6 +44,7 @@ type Info struct {
 	Disabled    bool   `json:"disabled"`
 	Origin      string `json:"origin"`
 	Points      int    `json:"points"`
+	Generated   bool   `json:"generated"`
 }
 
 // Registry holds the loaded profiles: the built-in set plus anything the user
@@ -195,6 +196,7 @@ func (r *Registry) List() []Info {
 			Disabled:    prof.Disabled,
 			Origin:      prof.Origin,
 			Points:      len(prof.Mash),
+			Generated:   prof.Generated,
 		})
 	}
 	return out

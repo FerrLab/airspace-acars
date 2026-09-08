@@ -287,6 +287,9 @@ every engine's `exists` flag at once.
 
 ## Shipped profiles
 
+Confirmed against the aircraft's own files or the community variable database,
+and hand-written:
+
 | ID | Aircraft | Simulator | Priority | Points |
 |---|---|---|---|---|
 | `aerosoft-crj` | Aerosoft CRJ 550/700/900/1000 | MSFS | 100 | 3 |
@@ -314,12 +317,49 @@ every engine's `exists` flag at once.
 | `xplane-com-833` | X-Plane 8.33 kHz radios | X-Plane | 10 | 2 |
 | `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 5 |
 
-The Fenix and FSLabs variable names were read out of the aircraft's own model
-behaviour files; the rest were taken from the MobiFlight HubHop community
-database and cross-checked against it. HubHop's database is not redistributed
-here — each profile is hand-written from what the tool below prints, and every
-binding that reads a local variable is followed by the stock simulation variable
-so nothing regresses while the WASM bridge is missing.
+### Generated drafts
+
+Drafted by `cmd/hubhop gen` from the MobiFlight HubHop community database and
+marked `"x-generated": true`. Nobody has flown them yet, so the selector and the
+bindings are a starting point rather than a fact:
+
+| ID | Aircraft | Simulator | Priority | Points |
+|---|---|---|---|---|
+| `aerosoft-a340-600` | Aerosoft A340-600 | MSFS | 50 | 5 |
+| `blacksquare-duke` | Black Square Duke | MSFS | 50 | 1 |
+| `blacksquare-tbm850` | Black Square TBM850 | MSFS | 50 | 1 |
+| `dcdesigns-concorde` | DC Designs Concorde | MSFS | 50 | 1 |
+| `fbw-a380x` | Fly By Wire A380X | MSFS | 50 | 2 |
+| `flightfactor-b767` | Flight Factor B767 | X-Plane | 50 | 4 |
+| `headwind-a330-900neo` | Headwind Simulations A330-900neo | MSFS | 50 | 1 |
+| `inibuilds-a320` | IniBuilds A320 | MSFS | 50 | 4 |
+| `inibuilds-a330` | IniBuilds A330 | MSFS | 50 | 1 |
+| `ixeg-b737-300` | IXEG B737-300 | X-Plane | 50 | 3 |
+| `mgharib-hondajet-ha420` | MGharib HondaJet HA420 | MSFS | 50 | 1 |
+| `xcrafts-e-jets` | X-Crafts E-Jets | X-Plane | 50 | 1 |
+
+A draft is deliberately cheap to be wrong about. It sits at priority 50, below
+every hand-written profile, and the generator only lets it bind a variable the
+add-on adds — never a stock one the adapter already reads — with the stock
+variable always behind it as the fallback. Two tests hold that line: one fails
+if a draft's primary source is a stock variable, another if a draft outranks a
+confirmed profile.
+
+**Adopting a draft.** Correct it, then delete its `x-generated` line. The
+generator skips profiles without the marker, so your correction survives every
+future refresh. Until then the weekly job rewrites drafts in place.
+
+The one part a generated draft cannot get right on its own is the selector:
+HubHop records the developer, and a livery title does not always carry the
+developer's name. `hubhop scan` prints the real titles — check them before
+trusting a draft to match.
+
+## Keeping profiles current
+
+`.github/workflows/aircraft-profiles.yml` re-runs the generator every Monday and
+opens a pull request when HubHop has gained something. It validates the result
+first: a pull request opened with `GITHUB_TOKEN` does not start another workflow
+run, so the profile tests run inside the job rather than on the pull request.
 
 ## Finding variables for a new aircraft
 
