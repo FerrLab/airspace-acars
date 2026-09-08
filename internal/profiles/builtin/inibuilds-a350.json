@@ -1,0 +1,151 @@
+{
+  "id": "inibuilds-a350",
+  "name": "iniBuilds A350",
+  "description": "iniBuilds A350 on MSFS. Reads the autopilot engagement, the FCU modes and the APU master from the iniBuilds variables.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "ini\\s*-?builds?|inisim"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "a\\s*-?350"
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "INI_ap1_on"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "INI_ap2_on"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.navLock": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "INI_MCU_LOC_LIGHT"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT NAV1 LOCK",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.approachHold": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "INI_MCU_LAND_LIGHT"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT APPROACH HOLD",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "apu.switchOn": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "INI_APU_MASTER_SWITCH"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "APU SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ]
+  }
+}

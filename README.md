@@ -8,7 +8,7 @@ Built with [Wails v3](https://wails.io) (Go + React).
 
 - **Flight tracking** — Adaptive position reporting with automatic frequency adjustment based on flight phase
 - **Simulator support** — MSFS 2020 (SimConnect) and X-Plane 11/12 (UDP) with auto-detection
-- **Aircraft profiles** — Per-add-on JSON profiles that re-bind individual data points (Fenix, FSLabs, PMDG, FlyByWire, Zibo) — see [docs/aircraft-profiles.md](docs/aircraft-profiles.md)
+- **Aircraft profiles** — Per-add-on JSON profiles that re-bind individual data points (Fenix, FSLabs, PMDG, FlyByWire, iniBuilds, TFDi, Aerosoft, iFly, Zibo and more) — see [docs/aircraft-profiles.md](docs/aircraft-profiles.md)
 - **Multi-tenant auth** — Connect to multiple virtual airline networks via device code authentication
 - **In-app chat** — Pilot messaging and communication
 - **Audio alerts** — Cabin audio and instruction playback
@@ -61,6 +61,7 @@ Output: `bin/airspace-acars-temp.exe`
 ├── db.go                    # SQLite initialization
 │
 ├── internal/profiles/       # Aircraft profiles: matchers, mashers, built-in JSON
+├── cmd/hubhop/              # Profile authoring aid: HubHop search, Community folder scan
 │
 ├── frontend/                # React + TypeScript + Tailwind
 │   ├── src/

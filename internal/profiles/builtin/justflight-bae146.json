@@ -1,0 +1,77 @@
+{
+  "id": "justflight-bae146",
+  "name": "Just Flight BAe 146 / Avro RJ",
+  "description": "Just Flight BAe 146 and Avro RJ on MSFS. Reads the mode control panel annunciators from the aircraft's variables.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "146|avro\\s*rj"
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "MCP_Mode_AP_iL"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT MASTER",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.navLock": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "MCP_Mode_LNAV_iL"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT NAV1 LOCK",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ]
+  }
+}

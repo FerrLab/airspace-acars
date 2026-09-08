@@ -1,0 +1,119 @@
+{
+  "id": "ifly-737max",
+  "name": "iFly 737 MAX",
+  "description": "iFly 737 MAX 8 on MSFS. Reads CMD A/B and LNAV from the iFly annunciators, and the selected altitude from the third autopilot altitude slot the aircraft actually drives.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. AUTOPILOT ALTITUDE LOCK VAR:3 is a stock simulation variable, so the selected altitude is corrected today without the WASM bridge.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "ifly"
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "VC_CMD_A_SW_LIGHT_VAL"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "VC_CMD_B_SW_LIGHT_VAL"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.navLock": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "VC_LNAV_SW_LIGHT_VAL"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "VC_VOR_LOC_SW_LIGHT_VAL"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT NAV1 LOCK",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.altitude": {
+      "sim": "simconnect",
+      "source": {
+        "kind": "simvar",
+        "name": "AUTOPILOT ALTITUDE LOCK VAR:3",
+        "unit": "feet"
+      }
+    }
+  }
+}

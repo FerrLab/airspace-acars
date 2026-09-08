@@ -1,36 +1,133 @@
 {
   "id": "zibo-b738",
   "name": "Zibo 737-800",
-  "description": "Zibo modified 737-800 on X-Plane. The Zibo autopilot runs on its own datarefs, so CMD A, LNAV and the approach mode are read from laminar/B738 rather than from the generic X-Plane autopilot datarefs.",
-  "notes": "Matches on the aircraft description reported by X-Plane, which the ACARS reads character by character from acf_descrip.",
+  "description": "Zibo modified 737-800 on X-Plane. The Zibo autopilot and gear indications run on their own datarefs, so CMD A/B, LNAV, the approach mode and the three green lights are read from laminar/B738 rather than from the generic X-Plane datarefs.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). X-Plane datarefs are read directly, so this profile is active today. Matching uses the aircraft description X-Plane reports, which the ACARS reads character by character from acf_descrip.",
   "priority": 100,
   "match": {
     "all": [
-      { "field": "simulator", "op": "equals", "value": "xplane" },
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "xplane"
+      },
       {
         "any": [
-          { "field": "aircraftName", "op": "contains", "value": "737-800" },
-          { "field": "aircraftType", "op": "equals", "value": "B738" }
+          {
+            "field": "aircraftName",
+            "op": "contains",
+            "value": "737-800"
+          },
+          {
+            "field": "aircraftType",
+            "op": "equals",
+            "value": "B738"
+          }
         ]
       }
     ]
   },
   "mash": {
     "autopilot.master": {
-      "sim": "xplane",
-      "source": { "kind": "dataref", "name": "laminar/B738/autopilot/cmd_a_status" },
-      "transform": [{ "op": "bool" }]
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "xplane",
+          "source": {
+            "kind": "dataref",
+            "name": "laminar/B738/autopilot/cmd_a_status"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "xplane",
+          "source": {
+            "kind": "dataref",
+            "name": "laminar/B738/autopilot/cmd_b_status"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
     },
     "autopilot.navLock": {
       "sim": "xplane",
-      "source": { "kind": "dataref", "name": "laminar/B738/autopilot/lnav_status" },
-      "transform": [{ "op": "bool" }]
+      "source": {
+        "kind": "dataref",
+        "name": "laminar/B738/autopilot/lnav_status"
+      },
+      "transform": [
+        {
+          "op": "bool"
+        }
+      ]
     },
     "autopilot.approachHold": {
       "sim": "xplane",
-      "source": { "kind": "dataref", "name": "laminar/B738/autopilot/app_status" },
-      "transform": [{ "op": "gte", "value": 1 }]
+      "source": {
+        "kind": "dataref",
+        "name": "laminar/B738/autopilot/app_status"
+      },
+      "transform": [
+        {
+          "op": "gte",
+          "value": 1
+        }
+      ]
     },
-    "aircraft.type": { "source": { "kind": "const", "value": "B738" } }
+    "controls.gearDown": {
+      "reduce": "and",
+      "bindings": [
+        {
+          "sim": "xplane",
+          "source": {
+            "kind": "dataref",
+            "name": "laminar/B738/annunciator/nose_gear_safe"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "xplane",
+          "source": {
+            "kind": "dataref",
+            "name": "laminar/B738/annunciator/left_gear_safe"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "xplane",
+          "source": {
+            "kind": "dataref",
+            "name": "laminar/B738/annunciator/right_gear_safe"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "aircraft.type": {
+      "source": {
+        "kind": "const",
+        "value": "B738"
+      }
+    }
   }
 }

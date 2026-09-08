@@ -1,0 +1,107 @@
+{
+  "id": "leonardo-md82",
+  "name": "Leonardo MaddogX MD-82",
+  "description": "Leonardo MaddogX MD-82 on MSFS. Reads the autopilot engagement and the selections from the Maddog variables.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "maddog|md\\s*-?8[0-9]"
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "CM1_fma_adv11"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT MASTER",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.heading": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "md_ipc_ap_hdg"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT HEADING LOCK DIR",
+          "unit": "degrees"
+        }
+      }
+    ],
+    "autopilot.altitude": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "md_ipc_ap_alt"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT ALTITUDE LOCK VAR",
+          "unit": "feet"
+        }
+      }
+    ],
+    "autopilot.vs": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "md_ipc_ap_vs"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT VERTICAL HOLD VAR",
+          "unit": "feet/minute"
+        }
+      }
+    ],
+    "aircraft.type": {
+      "source": {
+        "kind": "const",
+        "value": "MD82"
+      }
+    }
+  }
+}

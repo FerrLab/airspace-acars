@@ -285,6 +285,74 @@ every engine's `exists` flag at once.
    top of the adapter's own readings. A data point whose variable has not
    arrived yet keeps the adapter's value, so a profile can never blank a field.
 
+## Shipped profiles
+
+| ID | Aircraft | Simulator | Priority | Points |
+|---|---|---|---|---|
+| `aerosoft-crj` | Aerosoft CRJ 550/700/900/1000 | MSFS | 100 | 3 |
+| `fbw-a32nx` | FlyByWire A32NX | MSFS | 100 | 9 |
+| `fenix-a318` | Fenix A318 | MSFS | 110 | 1 |
+| `fenix-a319` | Fenix A319 | MSFS | 110 | 1 |
+| `fenix-a320` | Fenix A320 | MSFS | 110 | 1 |
+| `fenix-a321` | Fenix A321 | MSFS | 110 | 1 |
+| `fenix-a321neo` | Fenix A321neo | MSFS | 120 | 1 |
+| `fenix-a32x` | Fenix A318/A319/A320/A321 | MSFS | 100 | 10 |
+| `fslabs-a321` | FSLabs A321 | MSFS | 110 | 1 |
+| `fslabs-a321neo` | FSLabs A321neo | MSFS | 120 | 1 |
+| `fslabs-a32x` | FSLabs A319/A320/A321 | MSFS | 100 | 9 |
+| `ifly-737max` | iFly 737 MAX | MSFS | 100 | 3 |
+| `inibuilds-a300` | iniBuilds A300 | MSFS | 100 | 1 |
+| `inibuilds-a310` | iniBuilds A310 | MSFS | 100 | 2 |
+| `inibuilds-a350` | iniBuilds A350 | MSFS | 100 | 4 |
+| `justflight-bae146` | Just Flight BAe 146 / Avro RJ | MSFS | 100 | 2 |
+| `leonardo-md82` | Leonardo MaddogX MD-82 | MSFS | 100 | 5 |
+| `msfs-atr72` | ATR 42-600 / 72-600 | MSFS | 100 | 2 |
+| `pmdg-737` | PMDG 737 | MSFS | 100 | 11 |
+| `pmdg-777` | PMDG 777 | MSFS | 100 | 7 |
+| `salty-747` | Salty 747-8i | MSFS | 100 | 3 |
+| `tfdi-md11` | TFDi MD-11 | MSFS | 100 | 4 |
+| `xplane-com-833` | X-Plane 8.33 kHz radios | X-Plane | 10 | 2 |
+| `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 5 |
+
+The Fenix and FSLabs variable names were read out of the aircraft's own model
+behaviour files; the rest were taken from the MobiFlight HubHop community
+database and cross-checked against it. HubHop's database is not redistributed
+here — each profile is hand-written from what the tool below prints, and every
+binding that reads a local variable is followed by the stock simulation variable
+so nothing regresses while the WASM bridge is missing.
+
+## Finding variables for a new aircraft
+
+`cmd/hubhop` is the authoring aid. It queries HubHop live and scans the
+simulator's own files; it writes nothing into the repository.
+
+```bash
+# What does the add-on publish? (readable variables only, unless -all)
+go run ./cmd/hubhop search -sim msfs -aircraft "PMDG.*B737" -match "autopilot|gear"
+go run ./cmd/hubhop search -sim xplane -aircraft Zibo -match "cmd_a|lnav|gear"
+
+# What is actually installed, and what titles do the liveries carry?
+go run ./cmd/hubhop scan "C:\Users\you\AppData\Roaming\Microsoft Flight Simulator 2024\Packages\Community"
+```
+
+`scan` reports, per package, the titles and ICAO type from `aircraft.cfg` — the
+strings a selector has to match — plus the local variables the model behaviour
+files reference, ordered by how often they appear. It is the way to cover an
+add-on HubHop does not.
+
+Two things to check before shipping a binding:
+
+- **Is it readable?** HubHop marks entries `Input` or `Output`; only `Output`
+  (and X-Plane's `InputOutput`) can be read back. `search` filters to those.
+- **What is the scale?** An annunciator may be a boolean, a brightness value, or
+  a multi-position switch. Where the range is not documented, prefer a threshold
+  (`gt`, `gte`) over assuming `0`/`1`, and say so in the profile's `notes`.
+
+A binding whose mapping you cannot confirm is better left out: the adapter's
+default reading is already correct for most aircraft, and a wrong override is
+worse than no override. That is why the shipped profiles do not re-bind the
+beacon — the ACARS starts a flight off it.
+
 ## Settings
 
 `aircraftProfile` in `settings.json`:

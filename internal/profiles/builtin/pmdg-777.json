@@ -1,8 +1,8 @@
 {
-  "id": "pmdg-737",
-  "name": "PMDG 737",
-  "description": "PMDG 737-600/700/800/900 on MSFS. Takes the autopilot state and the MCP selections from the PMDG variables, the gear from the three green indications, and the flap position from the surface angle rather than the handle.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. PMDG publishes the MCP through the ngx_ variables and the annunciators through switch_*_73X; both sets are listed so the profile survives either naming. The V/S window reads -20000 when it is blank, which is mapped to zero.",
+  "id": "pmdg-777",
+  "name": "PMDG 777",
+  "description": "PMDG 777-300ER/200 on MSFS. Reads the autopilot engagement and the MCP selections from the PMDG variables.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. The V/S window reads -20000 when it is blank, which is mapped to zero.",
   "priority": 100,
   "match": {
     "all": [
@@ -21,12 +21,12 @@
           {
             "field": "aircraftName",
             "op": "contains",
-            "value": "737"
+            "value": "777"
           },
           {
             "field": "aircraftType",
             "op": "matches",
-            "value": "^B73[6-9]$"
+            "value": "^B77[0-9W]$"
           }
         ]
       }
@@ -40,31 +40,7 @@
           "sim": "simconnect",
           "source": {
             "kind": "lvar",
-            "name": "ngx_MCP_CMDA"
-          },
-          "transform": [
-            {
-              "op": "bool"
-            }
-          ]
-        },
-        {
-          "sim": "simconnect",
-          "source": {
-            "kind": "lvar",
-            "name": "ngx_MCP_CMDB"
-          },
-          "transform": [
-            {
-              "op": "bool"
-            }
-          ]
-        },
-        {
-          "sim": "simconnect",
-          "source": {
-            "kind": "lvar",
-            "name": "switch_4021_73X"
+            "name": "switch_2031_a"
           },
           "transform": [
             {
@@ -77,7 +53,7 @@
           "sim": "simconnect",
           "source": {
             "kind": "lvar",
-            "name": "switch_4031_73X"
+            "name": "switch_2291_a"
           },
           "transform": [
             {
@@ -108,11 +84,12 @@
           "sim": "simconnect",
           "source": {
             "kind": "lvar",
-            "name": "ngx_MCP_LNav"
+            "name": "switch_2111_a"
           },
           "transform": [
             {
-              "op": "bool"
+              "op": "gt",
+              "value": 0
             }
           ]
         },
@@ -120,12 +97,11 @@
           "sim": "simconnect",
           "source": {
             "kind": "lvar",
-            "name": "switch_3971_73X"
+            "name": "ngx_MCP_Loc"
           },
           "transform": [
             {
-              "op": "gt",
-              "value": 0
+              "op": "bool"
             }
           ]
         },
@@ -163,7 +139,7 @@
           "sim": "simconnect",
           "source": {
             "kind": "lvar",
-            "name": "switch_3931_73X"
+            "name": "switch_2281_a"
           },
           "transform": [
             {
@@ -243,7 +219,7 @@
         "sim": "simconnect",
         "source": {
           "kind": "lvar",
-          "name": "ngx_MCP_VSwindow"
+          "name": "ngx_VSwindow"
         },
         "transform": [
           {
@@ -262,106 +238,6 @@
           "unit": "feet/minute"
         }
       }
-    ],
-    "controls.gearDown": {
-      "reduce": "and",
-      "bindings": [
-        {
-          "sim": "simconnect",
-          "source": {
-            "kind": "lvar",
-            "name": "switch_450_73X"
-          },
-          "transform": [
-            {
-              "op": "gt",
-              "value": 0
-            }
-          ]
-        },
-        {
-          "sim": "simconnect",
-          "source": {
-            "kind": "lvar",
-            "name": "switch_453_73X"
-          },
-          "transform": [
-            {
-              "op": "gt",
-              "value": 0
-            }
-          ]
-        },
-        {
-          "sim": "simconnect",
-          "source": {
-            "kind": "lvar",
-            "name": "switch_454_73X"
-          },
-          "transform": [
-            {
-              "op": "gt",
-              "value": 0
-            }
-          ]
-        },
-        {
-          "sim": "simconnect",
-          "source": {
-            "kind": "simvar",
-            "name": "GEAR HANDLE POSITION",
-            "unit": "Bool"
-          },
-          "transform": [
-            {
-              "op": "bool"
-            }
-          ]
-        }
-      ]
-    },
-    "controls.flaps": {
-      "sim": "simconnect",
-      "source": {
-        "kind": "simvar",
-        "name": "TRAILING EDGE FLAPS LEFT PERCENT",
-        "unit": "Percent"
-      },
-      "transform": [
-        {
-          "op": "clamp",
-          "min": 0,
-          "max": 100
-        }
-      ]
-    },
-    "radios.com1": {
-      "sim": "simconnect",
-      "source": {
-        "kind": "simvar",
-        "name": "COM ACTIVE FREQUENCY:1",
-        "unit": "MHz"
-      },
-      "transform": [
-        {
-          "op": "round",
-          "value": 3
-        }
-      ]
-    },
-    "radios.com2": {
-      "sim": "simconnect",
-      "source": {
-        "kind": "simvar",
-        "name": "COM ACTIVE FREQUENCY:2",
-        "unit": "MHz"
-      },
-      "transform": [
-        {
-          "op": "round",
-          "value": 3
-        }
-      ]
-    }
+    ]
   }
 }

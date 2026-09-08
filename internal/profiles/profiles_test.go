@@ -520,3 +520,126 @@ func TestPointsCatalogueCoversTheFlightDataStruct(t *testing.T) {
 		assert.True(t, ok, "missing data point %q", id)
 	}
 }
+
+// TestShippedProfilesSelectTheRightAircraft walks the built-in set with titles
+// in the shape each add-on reports, and checks that the expected profiles match
+// and — just as importantly — that neighbouring ones do not.
+func TestShippedProfilesSelectTheRightAircraft(t *testing.T) {
+	r := NewRegistry()
+
+	cases := []struct {
+		title     string
+		acType    string
+		simulator string
+		want      []string
+		reject    []string
+	}{
+		{title: "FlyByWire A32NX", acType: "A20N", simulator: SimSimConnect, want: []string{"fbw-a32nx"}},
+		{title: "FlyByWire A380X", acType: "A388", simulator: SimSimConnect, reject: []string{"fbw-a32nx"}},
+		{title: "Fenix A320 IAE Lufthansa", simulator: SimSimConnect, want: []string{"fenix-a32x", "fenix-a320"}, reject: []string{"fbw-a32nx", "fslabs-a32x"}},
+		{title: "FSLabs A321-NEO LEAP", simulator: SimSimConnect, want: []string{"fslabs-a32x", "fslabs-a321neo"}, reject: []string{"fenix-a32x"}},
+		{title: "PMDG 737-800 KLM", acType: "B738", simulator: SimSimConnect, want: []string{"pmdg-737"}, reject: []string{"pmdg-777", "ifly-737max", "salty-747"}},
+		{title: "PMDG 777-300ER British Airways", acType: "B77W", simulator: SimSimConnect, want: []string{"pmdg-777"}, reject: []string{"pmdg-737"}},
+		{title: "iFly 737 MAX 8", acType: "B38M", simulator: SimSimConnect, want: []string{"ifly-737max"}, reject: []string{"pmdg-737"}},
+		{title: "iniBuilds A350-900 Qatar", simulator: SimSimConnect, want: []string{"inibuilds-a350"}, reject: []string{"inibuilds-a300", "inibuilds-a310"}},
+		{title: "iniBuilds A310-300 Air Transat", simulator: SimSimConnect, want: []string{"inibuilds-a310"}, reject: []string{"inibuilds-a350"}},
+		{title: "TFDi Design MD-11 Lufthansa Cargo", simulator: SimSimConnect, want: []string{"tfdi-md11"}, reject: []string{"leonardo-md82"}},
+		{title: "Leonardo MaddogX MD-82 Alitalia", simulator: SimSimConnect, want: []string{"leonardo-md82"}, reject: []string{"tfdi-md11"}},
+		{title: "Aerosoft CRJ 900 Lufthansa Regional", simulator: SimSimConnect, want: []string{"aerosoft-crj"}},
+		{title: "Salty 747-8i Lufthansa", simulator: SimSimConnect, want: []string{"salty-747"}},
+		{title: "Just Flight BAe 146-300 Flybe", simulator: SimSimConnect, want: []string{"justflight-bae146"}},
+		{title: "ATR 72-600 Aer Lingus Regional", simulator: SimSimConnect, want: []string{"msfs-atr72"}},
+		{title: "Boeing 737-800X Zibo mod", acType: "B738", simulator: SimXPlane, want: []string{"zibo-b738", "xplane-com-833"}, reject: []string{"pmdg-737"}},
+	}
+
+	supported := map[string][]SourceKind{
+		SimSimConnect: {SourceSimVar, SourceLVar},
+		SimXPlane:     {SourceDataRef},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.title, func(t *testing.T) {
+			plan := r.Resolve(Context{
+				AircraftName: tc.title,
+				AircraftType: tc.acType,
+				Simulator:    tc.simulator,
+				EngineCount:  2,
+			}, supported[tc.simulator])
+
+			for _, want := range tc.want {
+				assert.Contains(t, plan.ProfileIDs(), want)
+			}
+			for _, reject := range tc.reject {
+				assert.NotContains(t, plan.ProfileIDs(), reject)
+			}
+		})
+	}
+}
+
+// TestShippedProfilesDegradeToTheStockVariables is the safety net for the
+// aircraft profiles that read local variables: until the WASM bridge exists the
+// adapter can only read simvars, and no data point may be left resolving to a
+// variable the adapter cannot read.
+func TestShippedProfilesDegradeToTheStockVariables(t *testing.T) {
+	r := NewRegistry()
+
+	for _, prof := range r.All() {
+		t.Run(prof.ID, func(t *testing.T) {
+			for _, sim := range []struct {
+				name      string
+				supported []SourceKind
+			}{
+				{SimSimConnect, []SourceKind{SourceSimVar}},
+				{SimXPlane, []SourceKind{SourceDataRef}},
+			} {
+				forced, err := r.ResolveForced(prof.ID, Context{Simulator: sim.name}, sim.supported)
+				require.NoError(t, err)
+				for _, b := range forced.Bindings {
+					for _, src := range b.Sources {
+						assert.Contains(t, append(sim.supported, SourceConst), src.Kind,
+							"%s on %s: point %q resolved to an unreadable source", prof.ID, sim.name, b.Point)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestPMDG737FallsBackAndCombines checks the shape of a profile that lists both
+// generations of PMDG variable naming: with local variables readable every
+// candidate feeds the reduce, and without them only the stock simvar is left.
+func TestPMDG737FallsBackAndCombines(t *testing.T) {
+	r := NewRegistry()
+	ctx := Context{AircraftName: "PMDG 737-800 KLM", AircraftType: "B738", Simulator: SimSimConnect, EngineCount: 2}
+
+	find := func(plan *Plan, point string) (ResolvedBinding, bool) {
+		for _, b := range plan.Bindings {
+			if b.Point == point {
+				return b, true
+			}
+		}
+		return ResolvedBinding{}, false
+	}
+
+	simOnly := r.Resolve(ctx, []SourceKind{SourceSimVar})
+	master, ok := find(simOnly, "autopilot.master")
+	require.True(t, ok)
+	require.Len(t, master.Sources, 1)
+	assert.Equal(t, "AUTOPILOT MASTER", master.Sources[0].Name)
+
+	withLVars := r.Resolve(ctx, []SourceKind{SourceSimVar, SourceLVar})
+	master, ok = find(withLVars, "autopilot.master")
+	require.True(t, ok)
+	assert.Equal(t, ReduceOr, master.Reduce)
+	assert.Len(t, master.Sources, 5, "both PMDG generations plus the stock fallback")
+
+	// Either MCP channel engages the autopilot, and a blank V/S window reads zero.
+	fd := &domain.FlightData{}
+	withLVars.Apply(fd, map[string]float64{
+		"lvar:ngx_MCP_CMDA:":     0,
+		"lvar:ngx_MCP_CMDB:":     1,
+		"lvar:ngx_MCP_VSwindow:": -20000,
+	})
+	assert.True(t, fd.Autopilot.Master)
+	assert.Zero(t, fd.Autopilot.VS)
+}

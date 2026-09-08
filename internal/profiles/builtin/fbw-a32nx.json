@@ -1,41 +1,276 @@
 {
   "id": "fbw-a32nx",
   "name": "FlyByWire A32NX",
-  "description": "FlyByWire A32NX / A380X family on MSFS. Reads the autopilot and APU state from the aircraft's own local variables instead of the stock simulation variables, which the fly-by-wire systems do not always drive.",
-  "notes": "Local variables are read through the WASM bridge. Until that bridge is available the simvar fallback listed after each L: var is used, so this profile is safe to run today.",
+  "description": "FlyByWire A32NX on MSFS. The fly-by-wire systems publish their own state, so the autopilot, the APU and the flap handle are read from the aircraft's local variables rather than from the stock simulation variables it does not always drive.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. A32NX_APU_N is an ARINC 429 word rather than a plain number, so the APU speed is taken from A32NX_APU_N_RAW. The selector deliberately does not match on the FlyByWire name alone: the A380X shares it and is a different type.",
   "priority": 100,
   "match": {
     "all": [
-      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
       {
         "any": [
-          { "field": "aircraftName", "op": "contains", "value": "A32NX" },
-          { "field": "aircraftName", "op": "contains", "value": "FlyByWire" }
+          {
+            "field": "aircraftName",
+            "op": "contains",
+            "value": "a32nx"
+          },
+          {
+            "all": [
+              {
+                "field": "aircraftName",
+                "op": "matches",
+                "value": "flybywire|fbw"
+              },
+              {
+                "field": "aircraftName",
+                "op": "matches",
+                "value": "a\\s*-?3(19|20|21)"
+              }
+            ]
+          }
         ]
       }
     ]
   },
   "mash": {
-    "autopilot.master": [
-      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_AUTOPILOT_1_ACTIVE" }, "transform": [{ "op": "bool" }] },
-      { "sim": "simconnect", "source": { "kind": "simvar", "name": "AUTOPILOT MASTER", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
-    ],
-    "autopilot.speed": [
-      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_AUTOPILOT_SPEED_SELECTED" } },
-      { "sim": "simconnect", "source": { "kind": "simvar", "name": "AUTOPILOT AIRSPEED HOLD VAR", "unit": "knots" } }
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "A32NX_AUTOPILOT_ACTIVE"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "A32NX_AUTOPILOT_1_ACTIVE"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "A32NX_AUTOPILOT_2_ACTIVE"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.approachHold": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_FCU_APPR_MODE_ACTIVE"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT APPROACH HOLD",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
     ],
     "autopilot.navLock": [
-      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_FCU_LOC_MODE_ACTIVE" }, "transform": [{ "op": "bool" }] },
-      { "sim": "simconnect", "source": { "kind": "simvar", "name": "AUTOPILOT NAV1 LOCK", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_FCU_LOC_MODE_ACTIVE"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT NAV1 LOCK",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.speed": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_AUTOPILOT_SPEED_SELECTED"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT AIRSPEED HOLD VAR",
+          "unit": "knots"
+        }
+      }
+    ],
+    "autopilot.vs": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_AUTOPILOT_VS_SELECTED"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT VERTICAL HOLD VAR",
+          "unit": "feet/minute"
+        }
+      }
+    ],
+    "controls.flaps": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_FLAPS_HANDLE_INDEX"
+        },
+        "transform": [
+          {
+            "op": "map",
+            "map": {
+              "0": 0,
+              "1": 25,
+              "2": 50,
+              "3": 75,
+              "4": 100
+            },
+            "default": 0
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "FLAPS HANDLE PERCENT",
+          "unit": "Percent Over 100"
+        },
+        "transform": [
+          {
+            "op": "scale",
+            "value": 100
+          }
+        ]
+      }
     ],
     "apu.rpmPercent": [
-      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_APU_N" }, "transform": [{ "op": "clamp", "min": 0, "max": 100 }] },
-      { "sim": "simconnect", "source": { "kind": "simvar", "name": "APU PCT RPM", "unit": "Percent" } }
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_APU_N_RAW"
+        },
+        "transform": [
+          {
+            "op": "clamp",
+            "min": 0,
+            "max": 100
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "APU PCT RPM",
+          "unit": "Percent"
+        }
+      }
     ],
     "apu.switchOn": [
-      { "sim": "simconnect", "source": { "kind": "lvar", "name": "A32NX_OVHD_APU_MASTER_SW_PB_IS_ON" }, "transform": [{ "op": "bool" }] },
-      { "sim": "simconnect", "source": { "kind": "simvar", "name": "APU SWITCH", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_OVHD_APU_MASTER_SW_PB_IS_ON"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "APU SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
     ],
-    "aircraft.type": { "source": { "kind": "const", "value": "A20N" } }
+    "aircraft.type": {
+      "source": {
+        "kind": "const",
+        "value": "A20N"
+      }
+    }
   }
 }
