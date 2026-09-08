@@ -2,7 +2,7 @@
   "id": "pmdg-737",
   "name": "PMDG 737",
   "description": "PMDG 737-600/700/800/900 on MSFS. Takes the autopilot state and the MCP selections from the PMDG variables, the gear from the three green indications, and the flap position from the surface angle rather than the handle.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. PMDG publishes the MCP through the ngx_ variables and the annunciators through switch_*_73X; both sets are listed so the profile survives either naming. The V/S window reads -20000 when it is blank, which is mapped to zero.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. PMDG publishes the MCP through the ngx_ variables and the annunciators through switch_*_73X; both sets are listed so the profile survives either naming, and a name the aircraft does not define is withheld rather than read as zero. The V/S window reads -20000 when it is blank, which is mapped to zero.",
   "priority": 100,
   "match": {
     "all": [

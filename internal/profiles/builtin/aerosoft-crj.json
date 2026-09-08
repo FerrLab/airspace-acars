@@ -2,7 +2,7 @@
   "id": "aerosoft-crj",
   "name": "Aerosoft CRJ 550/700/900/1000",
   "description": "Aerosoft CRJ on MSFS. Reads the flight control panel modes, the beacon and the gear from the CRJ variables.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds.",
   "priority": 100,
   "match": {
     "all": [

@@ -2,7 +2,7 @@
   "id": "fbw-a32nx",
   "name": "FlyByWire A32NX",
   "description": "FlyByWire A32NX on MSFS. The fly-by-wire systems publish their own state, so the autopilot, the APU and the flap handle are read from the aircraft's local variables rather than from the stock simulation variables it does not always drive.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. A32NX_APU_N is an ARINC 429 word rather than a plain number, so the APU speed is taken from A32NX_APU_N_RAW. The selector deliberately does not match on the FlyByWire name alone: the A380X shares it and is a different type.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. A32NX_APU_N is an ARINC 429 word rather than a plain number, so the APU speed is taken from A32NX_APU_N_RAW. The selector deliberately does not match on the FlyByWire name alone: the A380X shares it and is a different type.",
   "priority": 100,
   "match": {
     "all": [

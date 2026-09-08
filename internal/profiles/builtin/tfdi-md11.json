@@ -2,7 +2,7 @@
   "id": "tfdi-md11",
   "name": "TFDi MD-11",
   "description": "TFDi Design MD-11 on MSFS. Reads the flight guidance and the APU from the MD11 state variables.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. MD11_AFS_STATE is 0 off, 1 AP1, 2 AP2, 3 both; MD11_APU_STATE is 0 off, 1 starting, 2 running, 3 shutting down.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. MD11_AFS_STATE is 0 off, 1 AP1, 2 AP2, 3 both; MD11_APU_STATE is 0 off, 1 starting, 2 running, 3 shutting down.",
   "priority": 100,
   "match": {
     "all": [

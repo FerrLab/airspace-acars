@@ -423,7 +423,7 @@ func TestFenixA320ResolvesFamilyAndVariant(t *testing.T) {
 		bindings[b.Point] = b
 	}
 
-	// Without the WASM bridge every local variable falls back to a simvar.
+	// An adapter that cannot read local variables falls back to the simvars.
 	require.Contains(t, bindings, "autopilot.master")
 	assert.Equal(t, SourceSimVar, bindings["autopilot.master"].Sources[0].Kind)
 	for _, b := range plan.Bindings {
@@ -444,7 +444,7 @@ func TestFenixA320ResolvesFamilyAndVariant(t *testing.T) {
 			master = b
 		}
 	}
-	require.Len(t, master.Sources, 3)
+	require.Len(t, master.Sources, 2, "the stock fallback does not vote alongside the aircraft's own channels")
 	assert.Equal(t, ReduceOr, master.Reduce)
 	assert.Equal(t, "I_FCU_AP1", master.Sources[0].Name)
 	assert.Equal(t, "I_FCU_AP2", master.Sources[1].Name)
@@ -578,9 +578,9 @@ func TestShippedProfilesSelectTheRightAircraft(t *testing.T) {
 }
 
 // TestShippedProfilesDegradeToTheStockVariables is the safety net for the
-// aircraft profiles that read local variables: until the WASM bridge exists the
-// adapter can only read simvars, and no data point may be left resolving to a
-// variable the adapter cannot read.
+// aircraft profiles that read local variables: an adapter that can only read
+// simulation variables — an older simulator build, or X-Plane — must still end
+// up with every data point bound to something it can actually read.
 func TestShippedProfilesDegradeToTheStockVariables(t *testing.T) {
 	r := NewRegistry()
 
@@ -632,7 +632,11 @@ func TestPMDG737FallsBackAndCombines(t *testing.T) {
 	master, ok = find(withLVars, "autopilot.master")
 	require.True(t, ok)
 	assert.Equal(t, ReduceOr, master.Reduce)
-	assert.Len(t, master.Sources, 5, "both PMDG generations plus the stock fallback")
+	assert.Len(t, master.Sources, 4, "both PMDG generations, and only those")
+	for _, src := range master.Sources {
+		assert.Equal(t, SourceLVar, src.Kind,
+			"a reduce combines one tier; the stock variable is the fallback, not a vote")
+	}
 
 	// Either MCP channel engages the autopilot, and a blank V/S window reads zero.
 	fd := &domain.FlightData{}
@@ -683,4 +687,68 @@ func TestGeneratedProfilesOnlyBindAircraftVariables(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestReduceCombinesOneTierOnly documents why a fallback must not vote: the
+// aircraft says the autopilot is off, and a stale stock variable saying it is
+// on must not be able to override that.
+func TestReduceCombinesOneTierOnly(t *testing.T) {
+	prof := mustParse(t, `{
+		"id": "tiers", "name": "Tiers",
+		"mash": {
+			"autopilot.master": {
+				"reduce": "or",
+				"bindings": [
+					{"source": {"kind": "lvar", "name": "AP1"}, "transform": [{"op": "bool"}]},
+					{"source": {"kind": "lvar", "name": "AP2"}, "transform": [{"op": "bool"}]},
+					{"source": {"kind": "simvar", "name": "AUTOPILOT MASTER", "unit": "Bool"}, "transform": [{"op": "bool"}]}
+				]
+			}
+		}
+	}`)
+
+	withLVars := Resolve([]*Profile{prof}, Context{Simulator: SimSimConnect}, []SourceKind{SourceSimVar, SourceLVar})
+	require.Len(t, withLVars.Bindings[0].Sources, 2)
+
+	fd := &domain.FlightData{}
+	withLVars.Apply(fd, map[string]float64{
+		"lvar:AP1:": 0, "lvar:AP2:": 0,
+		"simvar:AUTOPILOT MASTER:Bool": 1,
+	})
+	assert.False(t, fd.Autopilot.Master, "the aircraft's own channels decide, not the fallback")
+
+	// With local variables unreadable the stock variable becomes the only tier.
+	simOnly := Resolve([]*Profile{prof}, Context{Simulator: SimSimConnect}, []SourceKind{SourceSimVar})
+	require.Len(t, simOnly.Bindings[0].Sources, 1)
+	fd = &domain.FlightData{}
+	simOnly.Apply(fd, map[string]float64{"simvar:AUTOPILOT MASTER:Bool": 1})
+	assert.True(t, fd.Autopilot.Master)
+}
+
+// TestReduceAndNeedsEveryReading covers the failure mode SimConnect's habit of
+// creating a missing local variable would otherwise produce: two of three gear
+// greens reporting must not be enough to call the gear down.
+func TestReduceAndNeedsEveryReading(t *testing.T) {
+	prof := mustParse(t, `{
+		"id": "greens", "name": "Greens",
+		"mash": {
+			"controls.gearDown": {
+				"reduce": "and",
+				"bindings": [
+					{"source": {"kind": "lvar", "name": "GEAR_N"}, "transform": [{"op": "gt", "value": 0}]},
+					{"source": {"kind": "lvar", "name": "GEAR_L"}, "transform": [{"op": "gt", "value": 0}]},
+					{"source": {"kind": "lvar", "name": "GEAR_R"}, "transform": [{"op": "gt", "value": 0}]}
+				]
+			}
+		}
+	}`)
+	plan := Resolve([]*Profile{prof}, Context{Simulator: SimSimConnect}, []SourceKind{SourceLVar})
+
+	fd := &domain.FlightData{}
+	fd.Controls.GearDown = true // what the adapter read for itself
+	plan.Apply(fd, map[string]float64{"lvar:GEAR_N:": 1, "lvar:GEAR_L:": 1})
+	assert.True(t, fd.Controls.GearDown, "an absent third green is unknown, not false")
+
+	plan.Apply(fd, map[string]float64{"lvar:GEAR_N:": 1, "lvar:GEAR_L:": 1, "lvar:GEAR_R:": 0})
+	assert.False(t, fd.Controls.GearDown, "once every green reports, the answer is theirs")
 }

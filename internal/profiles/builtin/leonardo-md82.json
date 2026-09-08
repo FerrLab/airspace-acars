@@ -2,7 +2,7 @@
   "id": "leonardo-md82",
   "name": "Leonardo MaddogX MD-82",
   "description": "Leonardo MaddogX MD-82 on MSFS. Reads the autopilot engagement and the selections from the Maddog variables.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds.",
   "priority": 100,
   "match": {
     "all": [

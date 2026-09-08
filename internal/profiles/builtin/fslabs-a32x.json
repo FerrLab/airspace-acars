@@ -2,7 +2,7 @@
   "id": "fslabs-a32x",
   "name": "FSLabs A319/A320/A321",
   "description": "FSLabs A32X family on MSFS. Reads the FCU selections and the autopilot engagement from the aircraft's own variables, and the gear from the actual gear position rather than the handle.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. The FCU annunciators are brightness values rather than booleans, so they are compared against a mid-scale threshold. The gear bindings are stock simulation variables and work today: FSLabs drives GEAR LEFT/RIGHT/CENTER POSITION, which reaches 100 percent only when the leg is down and locked.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The FCU annunciators are brightness values rather than booleans, so they are compared against a mid-scale threshold. The gear bindings are stock simulation variables: FSLabs drives GEAR LEFT/RIGHT/CENTER POSITION, which reaches 100 percent only when the leg is down and locked.",
   "priority": 100,
   "match": {
     "all": [

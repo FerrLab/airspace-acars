@@ -106,6 +106,7 @@ func (p *Plan) Apply(fd *domain.FlightData, values map[string]float64) {
 		}
 
 		readings := make([]float64, 0, len(b.Sources))
+		missing := false
 		for _, src := range b.Sources {
 			if src.Kind == SourceConst {
 				if src.Value == nil {
@@ -121,6 +122,7 @@ func (p *Plan) Apply(fd *domain.FlightData, values map[string]float64) {
 			}
 			raw, ok := values[src.Key]
 			if !ok {
+				missing = true
 				continue
 			}
 			readings = append(readings, applySteps(src.Transform, raw))
@@ -129,6 +131,13 @@ func (p *Plan) Apply(fd *domain.FlightData, values map[string]float64) {
 			}
 		}
 		if len(readings) == 0 {
+			continue
+		}
+		// "and" is only true when it has heard from everything it is anding.
+		// A source that has not reported is unknown, not false — reporting
+		// gear up because one of three greens never arrived would be worse
+		// than leaving the adapter's own reading in place.
+		if b.Reduce == ReduceAnd && missing {
 			continue
 		}
 		point.Set(fd, Value{Num: reduce(b.Reduce, readings)})
@@ -273,7 +282,15 @@ func Resolve(all []*Profile, ctx Context, supported []SourceKind) *Plan {
 }
 
 // pick returns the bindings usable on this simulator: the first one when the
-// entry has no reduce operator, every one of them when it has.
+// entry has no reduce operator, and when it has one, every binding of the same
+// kind as the first usable binding.
+//
+// The kind restriction is what keeps a reduce meaningful. A binding list is
+// written as tiers — the aircraft's own variables first, the stock variable
+// last as a fallback — and "autopilot engaged is AP1 or AP2" is a statement
+// about the aircraft's two channels, not about the stock variable that stands
+// in when neither can be read. Combining across tiers would let the fallback
+// outvote the aircraft, which is the opposite of what the fallback is for.
 func pick(entry MashEntry, simulator string, supports map[SourceKind]bool) []ResolvedSource {
 	var out []ResolvedSource
 	for _, b := range entry.Bindings {
@@ -281,6 +298,9 @@ func pick(entry MashEntry, simulator string, supports map[SourceKind]bool) []Res
 			continue
 		}
 		if !supports[b.Source.Kind] {
+			continue
+		}
+		if entry.Reduce != ReduceFirst && len(out) > 0 && out[0].Kind != b.Source.Kind {
 			continue
 		}
 		out = append(out, ResolvedSource{

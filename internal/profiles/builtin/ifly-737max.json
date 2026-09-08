@@ -2,7 +2,7 @@
   "id": "ifly-737max",
   "name": "iFly 737 MAX",
   "description": "iFly 737 MAX 8 on MSFS. Reads CMD A/B and LNAV from the iFly annunciators, and the selected altitude from the third autopilot altitude slot the aircraft actually drives.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). Local variables need the WASM bridge; every binding that uses one falls back to the stock simulation variable, which is what runs today. AUTOPILOT ALTITUDE LOCK VAR:3 is a stock simulation variable, so the selected altitude is corrected today without the WASM bridge.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. AUTOPILOT ALTITUDE LOCK VAR:3 is a stock simulation variable, so the selected altitude is corrected even on a simulator build that cannot read local variables.",
   "priority": 100,
   "match": {
     "all": [

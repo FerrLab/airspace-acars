@@ -51,6 +51,7 @@ type Adapter struct {
 	extraDefineID  sim.DWORD
 	extraRequestID sim.DWORD
 	extraKeys      []string
+	unproven       map[string]bool
 	extraCount     int
 	extraValues    map[string]float64
 	requestSeq     int
@@ -450,6 +451,7 @@ func (s *Adapter) run(errCh chan<- error) {
 		s.extraDefined = false
 		s.extraCount = 0
 		s.extraKeys = nil
+		s.unproven = nil
 		s.extraValues = nil
 		s.mu.Unlock()
 	}()

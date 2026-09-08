@@ -2,7 +2,7 @@
   "id": "fenix-a32x",
   "name": "Fenix A318/A319/A320/A321",
   "description": "Fenix Simulations A32X family on MSFS. The Fenix systems run on their own local variables, so the FCU selections, the autopilot engagement and the overhead switches are read from those rather than from the stock simulation variables the aircraft does not always drive.",
-  "notes": "Variable names come from the Fenix Cockpit_Behavior.xml: I_* are indicator (lit) states, S_* are switch positions, E_* are encoders. Every binding falls back to the stock simulation variable, which is what runs until the WASM bridge for L: vars is in place. The variant profiles (fenix-a318 and friends) sit on top of this one and only set the ICAO type. The beacon and strobe switches are left on the stock simulation variables: the Fenix overhead values are multi-position and the beacon drives the ACARS' automatic flight start, so it is not worth re-binding on an unverified mapping.",
+  "notes": "Variable names come from the Fenix Cockpit_Behavior.xml: I_* are indicator (lit) states, S_* are switch positions, E_* are encoders. SimConnect reads local variables directly since Sim Update 12; the stock simulation variable stays behind each binding as the fallback for older simulator builds. The variant profiles (fenix-a318 and friends) sit on top of this one and only set the ICAO type. The beacon and strobe switches are left on the stock simulation variables: the Fenix overhead values are multi-position and the beacon drives the ACARS' automatic flight start, so it is not worth re-binding on an unverified mapping.",
   "priority": 100,
   "match": {
     "all": [

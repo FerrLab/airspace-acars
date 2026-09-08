@@ -33,9 +33,10 @@ type SourceKind string
 const (
 	// SourceSimVar is an MSFS SimConnect simulation variable ("A:" var).
 	SourceSimVar SourceKind = "simvar"
-	// SourceLVar is an MSFS local (panel) variable ("L:" var). Reading these
-	// requires a WASM bridge in the simulator; adapters that cannot read them
-	// report the kind as unsupported and the next candidate binding is used.
+	// SourceLVar is an MSFS local (panel) variable ("L:" var). SimConnect
+	// resolves these itself since Sim Update 12; on an adapter that cannot
+	// read them the kind is reported as unsupported and the next candidate
+	// binding is used instead.
 	SourceLVar SourceKind = "lvar"
 	// SourceDataRef is an X-Plane dataref.
 	SourceDataRef SourceKind = "dataref"

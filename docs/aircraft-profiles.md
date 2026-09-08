@@ -113,8 +113,20 @@ accepted:
 
 Without `reduce`, the bindings are **candidates**: the first one whose `sim`
 scope matches and whose source kind the active adapter can read is used, and the
-rest are the fallback chain. With `reduce`, every usable binding is read and the
-values are combined: `or`, `and`, `max`, `min`, `sum`.
+rest are the fallback chain. With `reduce`, the usable bindings **of the same
+kind as the first one** are read and combined: `or`, `and`, `max`, `min`, `sum`.
+
+The kind restriction is what keeps a reduce honest. A binding list is written in
+tiers — the aircraft's own variables first, the stock variable last as a
+fallback — and "engaged is AP1 or AP2" is a statement about the aircraft's two
+channels, not about the stock variable that stands in when neither can be read.
+Letting the fallback vote would allow it to outvote the aircraft, which is the
+opposite of what a fallback is for. When the aircraft's variables cannot be
+read at all, the fallback becomes the only tier and is used on its own.
+
+`and` additionally requires every one of its sources to have reported. A source
+that has not arrived is unknown, not false: two of three gear greens is not
+enough to call the gear down.
 
 A binding is:
 
@@ -136,14 +148,22 @@ A binding is:
 `const` is how a profile corrects an add-on's reported ICAO type — the Fenix
 A321neo reports `A21N` whatever the title says.
 
-**Local variables are not readable yet.** SimConnect cannot read `L:` vars on
-its own; that needs a WASM bridge inside the simulator, which is not wired up.
-Until it is, a binding with `"kind": "lvar"` is skipped and the next candidate
-is used, which is why every shipped `lvar` binding is followed by the stock
-simulation variable. When the bridge lands, those profiles start using the
-local variables with no change to the files. A data point where every candidate
-was unusable is listed in the plan's `skipped`, and the adapter's own reading is
-left in place.
+**Local variables need no module in the simulator.** Since Sim Update 12,
+SimConnect resolves `L:` variables itself when the datum name carries the `L:`
+prefix, so the MSFS adapter reads them alongside simulation variables. On an
+adapter that cannot — an older simulator build — a binding with
+`"kind": "lvar"` is skipped and the next candidate is used, which is why every
+shipped `lvar` binding is followed by the stock simulation variable. A data
+point where every candidate was unusable is listed in the plan's `skipped`, and
+the adapter's own reading is left in place.
+
+There is one trap. SimConnect **creates** a local variable that does not exist
+rather than rejecting it, so a name that is wrong — a typo, or a variable from a
+different version of the add-on — reads a permanent zero instead of failing. The
+MSFS adapter therefore withholds a local variable until it has been seen
+non-zero once: until it proves it is real, the data point keeps whatever the
+adapter read for it by its own route. A binding that never fires is a name to
+check, not a silent wrong reading.
 
 ### Transforms
 

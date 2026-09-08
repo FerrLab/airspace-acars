@@ -14,12 +14,21 @@ import (
 // the adapter's built-in report.
 const requestIDBase = 100
 
-// SupportedSources reports the binding kinds this adapter can read. Local
-// panel variables ("L:" vars) need a WASM bridge inside the simulator, which
-// is not wired up yet, so a profile binding that asks for one falls through to
-// its next candidate — usually the stock simulation variable.
+// SupportedSources reports the binding kinds this adapter can read. Since Sim
+// Update 12, SimConnect resolves local panel variables itself when the datum
+// name is prefixed with "L:", so no module inside the simulator is needed.
 func (s *Adapter) SupportedSources() []profiles.SourceKind {
-	return []profiles.SourceKind{profiles.SourceSimVar}
+	return []profiles.SourceKind{profiles.SourceSimVar, profiles.SourceLVar}
+}
+
+// datumName is the name to register with SimConnect for a plan variable.
+// Simulation variables go in as they are; local variables carry the "L:"
+// prefix that tells SimConnect to resolve them against the panel system.
+func datumName(v profiles.Var) string {
+	if v.Kind == profiles.SourceLVar {
+		return "L:" + v.Name
+	}
+	return v.Name
 }
 
 // RawIdentity reports the aircraft as SimConnect describes it, before any
@@ -63,7 +72,7 @@ func (s *Adapter) installPendingPlan(sc *sim.SimConnect) {
 
 	vars := make([]profiles.Var, 0)
 	for _, v := range plan.Vars() {
-		if v.Kind == profiles.SourceSimVar {
+		if v.Kind == profiles.SourceSimVar || v.Kind == profiles.SourceLVar {
 			vars = append(vars, v)
 		}
 	}
@@ -74,6 +83,7 @@ func (s *Adapter) installPendingPlan(sc *sim.SimConnect) {
 		s.extraDefined = false
 		s.extraCount = 0
 		s.extraKeys = nil
+		s.unproven = nil
 		s.extraValues = map[string]float64{}
 		s.mu.Unlock()
 		slog.Info("aircraft profile applied",
@@ -86,12 +96,18 @@ func (s *Adapter) installPendingPlan(sc *sim.SimConnect) {
 
 	defineID := sc.AllocDefineID()
 	keys := make([]string, 0, len(vars))
+	unproven := map[string]bool{}
+	lvars := 0
 	for _, v := range vars {
-		if err := sc.AddToDataDefinition(defineID, v.Name, v.Unit, sim.DATATYPE_FLOAT64); err != nil {
-			slog.Warn("profile variable rejected by SimConnect", "name", v.Name, "unit", v.Unit, "error", err)
+		if err := sc.AddToDataDefinition(defineID, datumName(v), v.Unit, sim.DATATYPE_FLOAT64); err != nil {
+			slog.Warn("profile variable rejected by SimConnect", "name", datumName(v), "unit", v.Unit, "error", err)
 			continue
 		}
 		keys = append(keys, v.Key)
+		if v.Kind == profiles.SourceLVar {
+			unproven[v.Key] = true
+			lvars++
+		}
 	}
 
 	s.mu.Lock()
@@ -101,13 +117,15 @@ func (s *Adapter) installPendingPlan(sc *sim.SimConnect) {
 	s.extraRequestID = s.nextRequestID()
 	s.extraKeys = keys
 	s.extraCount = len(keys)
+	s.unproven = unproven
 	s.extraValues = map[string]float64{}
 	s.mu.Unlock()
 
 	slog.Info("aircraft profile applied",
 		"adapter", s.Name(),
 		"profiles", plan.ProfileIDs(),
-		"simvars", len(keys),
+		"simvars", len(keys)-lvars,
+		"lvars", lvars,
 		"points", len(plan.Bindings))
 }
 
@@ -140,6 +158,19 @@ func (s *Adapter) readExtras(ppData unsafe.Pointer, hdr *sim.RecvSimobjectDataBy
 		s.extraValues = map[string]float64{}
 	}
 	for i, key := range s.extraKeys[:count] {
+		// SimConnect creates a local variable that does not exist rather than
+		// rejecting it, so a name that is wrong — a typo, or a variable from a
+		// different version of the add-on — reads a permanent zero instead of
+		// failing. A local variable is therefore withheld until it has been
+		// seen non-zero once: until it proves it is real the data point keeps
+		// whatever the adapter read for it by its own route.
+		if s.unproven[key] {
+			if readings[i] == 0 {
+				continue
+			}
+			delete(s.unproven, key)
+			slog.Debug("profile local variable is live", "key", key)
+		}
 		s.extraValues[key] = readings[i]
 	}
 }
