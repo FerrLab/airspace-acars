@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	procOpen                        *syscall.LazyProc
-	procClose                       *syscall.LazyProc
-	procAddToDataDefinition         *syscall.LazyProc
-	procGetNextDispatch             *syscall.LazyProc
-	procRequestDataOnSimObjectType  *syscall.LazyProc
+	procOpen                       *syscall.LazyProc
+	procClose                      *syscall.LazyProc
+	procAddToDataDefinition        *syscall.LazyProc
+	procGetNextDispatch            *syscall.LazyProc
+	procRequestDataOnSimObjectType *syscall.LazyProc
+	procClearDataDefinition        *syscall.LazyProc
 )
 
 // SimConnect wraps a handle to the SimConnect session.
@@ -38,6 +39,7 @@ func New(name string, dllPath string) (*SimConnect, error) {
 		procAddToDataDefinition = mod.NewProc("SimConnect_AddToDataDefinition")
 		procGetNextDispatch = mod.NewProc("SimConnect_GetNextDispatch")
 		procRequestDataOnSimObjectType = mod.NewProc("SimConnect_RequestDataOnSimObjectType")
+		procClearDataDefinition = mod.NewProc("SimConnect_ClearDataDefinition")
 	}
 
 	s := &SimConnect{
@@ -119,6 +121,25 @@ func (s *SimConnect) RegisterDataDefinition(a interface{}) error {
 	}
 
 	return nil
+}
+
+// ClearDataDefinition removes every variable from a data definition so the
+// definition can be rebuilt with a different set of variables.
+func (s *SimConnect) ClearDataDefinition(defineID DWORD) error {
+	r1, _, err := procClearDataDefinition.Call(uintptr(s.handle), uintptr(defineID))
+	if int32(r1) < 0 {
+		return fmt.Errorf("SimConnect_ClearDataDefinition: %d %s", int32(r1), err)
+	}
+	return nil
+}
+
+// AllocDefineID reserves a data definition ID that no struct is bound to. It
+// backs definitions built at runtime, such as the variables an aircraft
+// profile asks for.
+func (s *SimConnect) AllocDefineID() DWORD {
+	id := s.DefineMap["_last"]
+	s.DefineMap["_last"] = id + 1
+	return id
 }
 
 // GetDefineID returns the define ID for the given struct type,

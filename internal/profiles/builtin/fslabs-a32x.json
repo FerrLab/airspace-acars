@@ -1,0 +1,24 @@
+{
+  "id": "fslabs-a32x",
+  "name": "FSLabs A319/A320/A321",
+  "description": "FSLabs A32X family on MSFS. Reads the landing gear from the aircraft's own animation variables, which follow the actual gear rather than the handle.",
+  "notes": "Taken from the FSLabs interior model behaviour file, which carries the cockpit and animation variables (FSLA320_gear_* run 0 fully up to 2000 fully down). That file does not expose the systems state — FCU selections and autopilot engagement are not in it — so those data points stay on the stock simulation variables until the FSLabs systems variable list is wired in.",
+  "priority": 100,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      { "field": "aircraftName", "op": "matches", "value": "fs\\s*-?labs?" }
+    ]
+  },
+  "mash": {
+    "controls.gearDown": {
+      "reduce": "and",
+      "bindings": [
+        { "sim": "simconnect", "source": { "kind": "lvar", "name": "FSLA320_gear_nose" }, "transform": [{ "op": "gte", "value": 1900 }] },
+        { "sim": "simconnect", "source": { "kind": "lvar", "name": "FSLA320_gear_left" }, "transform": [{ "op": "gte", "value": 1900 }] },
+        { "sim": "simconnect", "source": { "kind": "lvar", "name": "FSLA320_gear_right" }, "transform": [{ "op": "gte", "value": 1900 }] },
+        { "sim": "simconnect", "source": { "kind": "simvar", "name": "GEAR HANDLE POSITION", "unit": "Bool" }, "transform": [{ "op": "bool" }] }
+      ]
+    }
+  }
+}

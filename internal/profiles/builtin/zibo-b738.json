@@ -1,0 +1,36 @@
+{
+  "id": "zibo-b738",
+  "name": "Zibo 737-800",
+  "description": "Zibo modified 737-800 on X-Plane. The Zibo autopilot runs on its own datarefs, so CMD A, LNAV and the approach mode are read from laminar/B738 rather than from the generic X-Plane autopilot datarefs.",
+  "notes": "Matches on the aircraft description reported by X-Plane, which the ACARS reads character by character from acf_descrip.",
+  "priority": 100,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "xplane" },
+      {
+        "any": [
+          { "field": "aircraftName", "op": "contains", "value": "737-800" },
+          { "field": "aircraftType", "op": "equals", "value": "B738" }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": {
+      "sim": "xplane",
+      "source": { "kind": "dataref", "name": "laminar/B738/autopilot/cmd_a_status" },
+      "transform": [{ "op": "bool" }]
+    },
+    "autopilot.navLock": {
+      "sim": "xplane",
+      "source": { "kind": "dataref", "name": "laminar/B738/autopilot/lnav_status" },
+      "transform": [{ "op": "bool" }]
+    },
+    "autopilot.approachHold": {
+      "sim": "xplane",
+      "source": { "kind": "dataref", "name": "laminar/B738/autopilot/app_status" },
+      "transform": [{ "op": "gte", "value": 1 }]
+    },
+    "aircraft.type": { "source": { "kind": "const", "value": "B738" } }
+  }
+}

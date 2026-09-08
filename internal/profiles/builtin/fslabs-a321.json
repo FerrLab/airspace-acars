@@ -1,0 +1,16 @@
+{
+  "id": "fslabs-a321",
+  "name": "FSLabs A321",
+  "description": "Reports the ICAO type A321 for the FSLabs A321 ceo. The neo variant profile overrides this one.",
+  "priority": 110,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      { "field": "aircraftName", "op": "matches", "value": "fs\\s*-?labs?" },
+      { "field": "aircraftName", "op": "matches", "value": "a\\s*-?321" }
+    ]
+  },
+  "mash": {
+    "aircraft.type": { "source": { "kind": "const", "value": "A321" } }
+  }
+}
