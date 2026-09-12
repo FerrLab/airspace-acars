@@ -13,6 +13,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@sentry/react": "^10.74.0",
     "@tailwindcss/vite": "^4.2.0",
     "@wailsio/runtime": "latest",
     "class-variance-authority": "^0.7.1",

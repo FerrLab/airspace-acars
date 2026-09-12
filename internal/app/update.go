@@ -14,12 +14,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/creativeprojects/go-selfupdate"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
-
-var updateTracer = observability.Tracer("update")
 
 // GetCurrentVersion returns the app version.
 func (a *App) GetCurrentVersion() string {
@@ -82,14 +77,13 @@ func (a *App) newUpdater() (*selfupdate.Updater, error) {
 
 // CheckForUpdate checks GitHub for a newer version.
 func (a *App) CheckForUpdate() (*domain.UpdateInfo, error) {
-	_, span := updateTracer.Start(context.Background(), "update.check",
-		trace.WithAttributes(attribute.String("update.current_version", domain.Version)))
-	defer span.End()
+	_, span := observability.Start(context.Background(), "update.check",
+		"update.current_version", domain.Version)
+	defer span.Finish()
 
 	updater, err := a.newUpdater()
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, err
 	}
 
@@ -105,12 +99,12 @@ func (a *App) CheckForUpdate() (*domain.UpdateInfo, error) {
 		betaVersion, err := a.findLatestBetaVersion(ctx)
 		if err != nil {
 			slog.Warn("update check skipped (could not list beta releases)", "error", err)
-			span.SetAttributes(attribute.Bool("update.skipped", true))
+			span.Set("update.skipped", true)
 			return info, nil
 		}
 		if betaVersion == "" {
 			slog.Info("no beta releases found")
-			span.SetAttributes(attribute.Bool("update.available", info.UpdateAvailable))
+			span.Set("update.available", info.UpdateAvailable)
 			return info, nil
 		}
 
@@ -118,7 +112,7 @@ func (a *App) CheckForUpdate() (*domain.UpdateInfo, error) {
 		if err != nil || !found {
 			if err != nil {
 				slog.Warn("update check skipped (could not detect beta version)", "error", err)
-				span.SetAttributes(attribute.Bool("update.skipped", true))
+				span.Set("update.skipped", true)
 			}
 			return info, nil
 		}
@@ -133,7 +127,7 @@ func (a *App) CheckForUpdate() (*domain.UpdateInfo, error) {
 		latest, found, err := updater.DetectLatest(ctx, slug)
 		if err != nil {
 			slog.Warn("update check skipped (could not detect latest version)", "error", err)
-			span.SetAttributes(attribute.Bool("update.skipped", true))
+			span.Set("update.skipped", true)
 			return info, nil
 		}
 		if found {
@@ -147,7 +141,7 @@ func (a *App) CheckForUpdate() (*domain.UpdateInfo, error) {
 	}
 
 	slog.Info("update check complete", "current", domain.Version, "latest", info.LatestVersion, "available", info.UpdateAvailable)
-	span.SetAttributes(attribute.Bool("update.available", info.UpdateAvailable))
+	span.Set("update.available", info.UpdateAvailable)
 	return info, nil
 }
 
