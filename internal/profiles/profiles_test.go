@@ -752,3 +752,52 @@ func TestReduceAndNeedsEveryReading(t *testing.T) {
 	plan.Apply(fd, map[string]float64{"lvar:GEAR_N:": 1, "lvar:GEAR_L:": 1, "lvar:GEAR_R:": 0})
 	assert.False(t, fd.Controls.GearDown, "once every green reports, the answer is theirs")
 }
+
+// A nil plan is the ordinary outcome for an aircraft nobody has written a
+// profile for — the log from the field showed it on a stock 737-800. It
+// reaches the adapters, which log what they installed, so every accessor has
+// to tolerate one. Reading p.Bindings directly instead of calling PointCount
+// crashed the ACARS to desktop a few milliseconds after connecting, on every
+// unprofiled aircraft.
+func TestNilPlanIsSafeToInspect(t *testing.T) {
+	var plan *Plan
+
+	if got := plan.PointCount(); got != 0 {
+		t.Errorf("PointCount() = %d, want 0", got)
+	}
+	if got := plan.Vars(); got != nil {
+		t.Errorf("Vars() = %v, want nil", got)
+	}
+	if got := plan.ProfileIDs(); got != nil {
+		t.Errorf("ProfileIDs() = %v, want nil", got)
+	}
+	if got := plan.Describe(); got != "none" {
+		t.Errorf("Describe() = %q, want %q", got, "none")
+	}
+	if !plan.Empty() {
+		t.Error("Empty() = false, want true")
+	}
+
+	// Apply is the hot path: it runs on every dispatch, nil plan or not.
+	plan.Apply(&domain.FlightData{}, map[string]float64{})
+}
+
+// An unprofiled aircraft must resolve to a plan the app treats as nil, which
+// is what routes it into the adapters' "nothing to install" branch.
+func TestUnprofiledAircraftResolvesEmpty(t *testing.T) {
+	// The identity from the field report, verbatim.
+	ctx := Context{
+		AircraftName: "737-800 PAX BW TC",
+		AircraftType: "ATCCOM.AC_MODEL B738.0.text",
+		Simulator:    SimSimConnect,
+		EngineCount:  2,
+	}
+
+	plan := NewRegistry().Resolve(ctx, []SourceKind{SourceSimVar, SourceLVar})
+	if !plan.Empty() {
+		t.Fatalf("expected no match for %q, got %v", ctx.AircraftName, plan.ProfileIDs())
+	}
+	if got := plan.PointCount(); got != 0 {
+		t.Errorf("PointCount() = %d, want 0", got)
+	}
+}

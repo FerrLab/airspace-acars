@@ -201,8 +201,18 @@ func (s *Span) Set(kv ...any) {
 
 // Fail marks the operation as failed and reports the error. It replaces the
 // RecordError plus SetStatus pair the OpenTelemetry code used to write.
+//
+// A network failure is routed to Expected instead. Every layer reports through
+// here — the API adapter, the app calls that wrap its errors, the auth poll
+// with its own client — so a single dropped connection otherwise arrives as
+// two or three separate events, none of them actionable. Deciding it once,
+// here, keeps the rest of the code writing plain span.Fail(err).
 func (s *Span) Fail(err error) {
 	if err == nil {
+		return
+	}
+	if Transient(err) {
+		s.Expected(err)
 		return
 	}
 	if s != nil && s.span != nil {

@@ -13,6 +13,7 @@ import (
 	simconnectadapter "airspace-acars/internal/adapters/simconnect"
 	"airspace-acars/internal/adapters/storage"
 	wailsadapter "airspace-acars/internal/adapters/wails"
+	"airspace-acars/internal/adapters/winaudio"
 	"airspace-acars/internal/adapters/xplane"
 	"airspace-acars/internal/app"
 	"airspace-acars/internal/domain"
@@ -188,6 +189,15 @@ func main() {
 
 	// --- Start background services ---
 	appInstance.StartDiscordLoop()
+
+	// Keep the Windows volume mixer showing the ACARS rather than the
+	// webview that actually plays its audio. No-op on other platforms.
+	audioLabelCtx, stopAudioLabelling := context.WithCancel(context.Background())
+	defer stopAudioLabelling()
+	go func() {
+		defer observability.Recover()
+		winaudio.Start(audioLabelCtx, "Airspace ACARS")
+	}()
 
 	go func() {
 		defer observability.Recover()

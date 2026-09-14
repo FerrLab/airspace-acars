@@ -13,6 +13,10 @@ import (
 	"airspace-acars/observability"
 )
 
+// retryDelay is the pause before a retried request. Long enough for a stale
+// pooled connection to be discarded, short enough that nobody notices.
+const retryDelay = 250 * time.Millisecond
+
 // Adapter is the Airspace HTTP API client.
 type Adapter struct {
 	mu         sync.RWMutex
@@ -70,29 +74,70 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 		return nil, 0, err
 	}
 
-	var bodyReader io.Reader
+	var payload []byte
 	if body != nil {
-		jsonBytes, err := json.Marshal(body)
+		var err error
+		payload, err = json.Marshal(body)
 		if err != nil {
 			err = fmt.Errorf("marshal body: %w", err)
 			span.Fail(err)
 			return nil, 0, err
 		}
-		bodyReader = bytes.NewReader(jsonBytes)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, bodyReader)
-	if err != nil {
-		err = fmt.Errorf("create request: %w", err)
-		span.Fail(err)
-		return nil, 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	// Built per attempt: a request body is read once, so a retry needs its
+	// own reader over the same bytes.
+	newRequest := func() (*http.Request, error) {
+		var bodyReader io.Reader
+		if payload != nil {
+			bodyReader = bytes.NewReader(payload)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, baseURL+path, bodyReader)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return req, nil
 	}
 
-	resp, err := a.httpClient.Do(req)
+	// The tenant sits behind a CDN that closes idle keep-alive connections on
+	// its own schedule, so the first request after a quiet spell can go out
+	// on a socket that is already gone. One retry on a fresh connection turns
+	// that into a hiccup instead of an error the pilot sees.
+	//
+	// Only idempotent methods are retried. A POST that failed while reading
+	// the response may well have been processed, and the ACARS must not risk
+	// filing anything twice — position reports have an outbox that replays
+	// them properly.
+	attempts := 1
+	if method == http.MethodGet || method == http.MethodHead {
+		attempts = 2
+	}
+
+	var resp *http.Response
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		var req *http.Request
+		if req, err = newRequest(); err != nil {
+			err = fmt.Errorf("create request: %w", err)
+			span.Fail(err)
+			return nil, 0, err
+		}
+
+		if resp, err = a.httpClient.Do(req); err == nil {
+			break
+		}
+		if attempt == attempts || !observability.Transient(err) {
+			break
+		}
+		observability.Note("retrying after a dropped connection",
+			"http.method", method, "http.path", path)
+		time.Sleep(retryDelay)
+	}
+
 	if err != nil {
 		err = fmt.Errorf("do request: %w", err)
 		span.Fail(err)

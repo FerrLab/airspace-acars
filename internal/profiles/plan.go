@@ -68,6 +68,18 @@ func (p *Plan) Vars() []Var {
 	return p.vars
 }
 
+// PointCount returns how many data points the plan mashes.
+//
+// A nil plan is the ordinary "no profile matched" case, not an error, so every
+// accessor here tolerates one — reading p.Bindings directly instead of calling
+// this crashed the ACARS on any aircraft without a profile.
+func (p *Plan) PointCount() int {
+	if p == nil {
+		return 0
+	}
+	return len(p.Bindings)
+}
+
 // ProfileIDs returns the IDs of the profiles that contributed, in apply order.
 func (p *Plan) ProfileIDs() []string {
 	if p == nil {
