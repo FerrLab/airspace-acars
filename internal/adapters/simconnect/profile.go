@@ -90,7 +90,7 @@ func (s *Adapter) installPendingPlan(sc *sim.SimConnect) {
 			"adapter", s.Name(),
 			"profiles", plan.ProfileIDs(),
 			"simvars", 0,
-			"points", len(plan.Bindings))
+			"points", plan.PointCount())
 		return
 	}
 
@@ -126,7 +126,7 @@ func (s *Adapter) installPendingPlan(sc *sim.SimConnect) {
 		"profiles", plan.ProfileIDs(),
 		"simvars", len(keys)-lvars,
 		"lvars", lvars,
-		"points", len(plan.Bindings))
+		"points", plan.PointCount())
 }
 
 // nextRequestID hands out a fresh request ID for each definition so replies to
