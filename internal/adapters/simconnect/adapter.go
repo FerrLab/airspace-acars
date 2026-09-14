@@ -471,7 +471,7 @@ func (s *Adapter) run(errCh chan<- error) {
 				sc.RequestDataOnSimObjectType(extraRequestID, extraDefineID, 0, sim.SIMOBJECT_TYPE_USER)
 			}
 		default:
-			ppData, r1, _ := sc.GetNextDispatch()
+			ppData, r1 := sc.GetNextDispatch()
 			if r1 < 0 {
 				time.Sleep(5 * time.Millisecond)
 				continue

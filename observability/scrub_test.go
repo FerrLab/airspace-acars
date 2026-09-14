@@ -244,3 +244,27 @@ func TestLogBridgeSkipsWhatWasAlreadyReported(t *testing.T) {
 	plain.Add("error", errors.New("no simulator"))
 	assert.False(t, isReported(plain))
 }
+
+// The first eight hours of live reporting produced 762 events for "no discord
+// pipe found" and almost nothing else. A probe that comes back negative is an
+// answer, not a fault, and must not become an event.
+func TestExpectedMarksTheSpanWithoutReporting(t *testing.T) {
+	_, span := Start(t.Context(), "discord.connect")
+	require.NotNil(t, span)
+
+	span.Expected(errors.New("no discord pipe found"))
+	span.Expected(nil) // must be a no-op
+	span.Finish()
+
+	// With reporting off these are no-ops; the point of the test is that the
+	// call is safe and distinct from Fail, which does capture.
+	assert.False(t, Enabled())
+}
+
+func TestExpectedAndFailAreDifferentDecisions(t *testing.T) {
+	// Fail reports, Expected does not. They are separate methods precisely so
+	// a call site has to choose, rather than every failure becoming an event.
+	span := &Span{}
+	span.Fail(errors.New("boom"))      // safe with no client
+	span.Expected(errors.New("quiet")) // safe with no client
+}
