@@ -10,34 +10,20 @@ import (
 
 	"airspace-acars/internal/domain"
 	"airspace-acars/observability"
-
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
-)
-
-var (
-	simTracer               = observability.Tracer("sim")
-	simMeter                = observability.Meter("sim")
-	simReconnectAttempts, _ = simMeter.Int64Counter("sim.reconnect_attempts",
-		metric.WithDescription("Simulator reconnection attempts"))
-	simStalenessDetected, _ = simMeter.Int64Counter("sim.staleness_detected",
-		metric.WithDescription("Stale simulator connection events"))
 )
 
 const (
-	stalenessThreshold   = 10 * time.Second
-	reconnectBaseDelay   = 5 * time.Second
-	reconnectMaxBackoff  = 60 * time.Second
-	autoConnectInterval  = 30 * time.Second
+	stalenessThreshold  = 10 * time.Second
+	reconnectBaseDelay  = 5 * time.Second
+	reconnectMaxBackoff = 60 * time.Second
+	autoConnectInterval = 30 * time.Second
 )
 
 // ConnectSim connects to a flight simulator. simType can be "auto", "simconnect", or "xplane".
 func (a *App) ConnectSim(simType string) (string, error) {
-	_, span := simTracer.Start(context.Background(), "sim.connect",
-		trace.WithAttributes(attribute.String("sim.type", simType)))
-	defer span.End()
+	_, span := observability.Start(context.Background(), "sim.connect",
+		"sim.type", simType)
+	defer span.Finish()
 
 	a.simMu.Lock()
 	a.userDisconnected = false
@@ -58,8 +44,7 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		if connector == nil {
 			a.simMu.Unlock()
 			err := fmt.Errorf("SimConnect not available on this platform")
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			span.Fail(err)
 			return "", err
 		}
 	default: // "auto"
@@ -77,14 +62,13 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		}
 	}
 
-	span.SetAttributes(attribute.String("sim.adapter", connector.Name()))
+	span.Set("sim.adapter", connector.Name())
 
 	if !connected {
 		if err := connector.Connect(); err != nil {
 			a.simMu.Unlock()
 			err = fmt.Errorf("connect to %s: %w", connector.Name(), err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			span.Fail(err)
 			return "", err
 		}
 	}
@@ -109,8 +93,7 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		case <-deadline:
 			a.DisconnectSim()
 			err := fmt.Errorf("no data received from %s — is the simulator running?", connector.Name())
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			span.Fail(err)
 			return "", err
 		case <-tick.C:
 			a.simMu.Lock()
@@ -126,13 +109,13 @@ func (a *App) ConnectSim(simType string) (string, error) {
 
 // DisconnectSim disconnects from the simulator.
 func (a *App) DisconnectSim() {
-	_, span := simTracer.Start(context.Background(), "sim.disconnect")
-	defer span.End()
+	_, span := observability.Start(context.Background(), "sim.disconnect")
+	defer span.Finish()
 
 	a.simMu.Lock()
 	defer a.simMu.Unlock()
 
-	span.SetAttributes(attribute.String("sim.adapter", a.adapterName))
+	span.Set("sim.adapter", a.adapterName)
 
 	a.stopDataStreamLocked()
 
@@ -197,6 +180,8 @@ func (a *App) stopDataStreamLocked() {
 }
 
 func (a *App) dataStreamLoop() {
+	defer observability.Recover()
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -277,18 +262,16 @@ func (a *App) dataStreamLoop() {
 				a.simMu.Unlock()
 
 				a.UI.EmitEvent("connection-state", "")
-				simStalenessDetected.Add(context.Background(), 1,
-					metric.WithAttributes(attribute.String("adapter", adapterName)))
+				observability.Count("sim.staleness_detected", "adapter", adapterName)
 				slog.Warn("simulator connection stale, reconnecting",
 					"adapter", adapterName,
 					"lastData", connector.LastReceived(),
 					"attempt", attempt)
 
 				err := a.reconnectSim()
-				simReconnectAttempts.Add(context.Background(), 1,
-					metric.WithAttributes(
-						attribute.String("adapter", adapterName),
-						attribute.Bool("success", err == nil)))
+				observability.Count("sim.reconnect_attempts",
+					"adapter", adapterName,
+					"success", err == nil)
 				if err != nil {
 					a.simMu.Lock()
 					a.reconnectAttempts++
@@ -309,6 +292,8 @@ func (a *App) dataStreamLoop() {
 // AutoConnectLoop tries to connect to the simulator every 30 seconds when not connected.
 // It should be called as a goroutine. The first attempt happens immediately.
 func (a *App) AutoConnectLoop() {
+	defer observability.Recover()
+
 	settings := a.GetSettings()
 	if adapter, err := a.ConnectSim(settings.SimType); err != nil {
 		slog.Debug("auto-connect: initial attempt failed", "error", err)
@@ -343,9 +328,9 @@ func (a *App) reconnectSim() error {
 	name := a.adapterName
 	a.simMu.Unlock()
 
-	_, span := simTracer.Start(context.Background(), "sim.reconnect",
-		trace.WithAttributes(attribute.String("sim.adapter", name)))
-	defer span.End()
+	_, span := observability.Start(context.Background(), "sim.reconnect",
+		"sim.adapter", name)
+	defer span.Finish()
 
 	if old != nil {
 		old.Disconnect()
@@ -357,23 +342,20 @@ func (a *App) reconnectSim() error {
 		connector = a.NewSimConnectAdapter()
 		if connector == nil {
 			err := fmt.Errorf("SimConnect not available")
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			span.Fail(err)
 			return err
 		}
 	case "X-Plane":
 		connector = a.NewXPlaneAdapter("127.0.0.1", 49000)
 	default:
 		err := fmt.Errorf("unknown adapter: %s", name)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 
 	if err := connector.Connect(); err != nil {
 		err = fmt.Errorf("reconnect %s: %w", name, err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 
@@ -418,6 +400,8 @@ func (a *App) checkAutoFlight(data *domain.FlightData) {
 
 // tryAutoStartFlight fetches the booking and starts the flight automatically.
 func (a *App) tryAutoStartFlight() {
+	defer observability.Recover()
+
 	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
 	if err != nil {
 		slog.Debug("auto-start: failed to fetch booking", "error", err)
@@ -468,4 +452,3 @@ func (a *App) tryAutoStartFlight() {
 		slog.Info("auto-start: flight started", "callsign", callsign, "dep", departure, "arr", arrival)
 	}
 }
-

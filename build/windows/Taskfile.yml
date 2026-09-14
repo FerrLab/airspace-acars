@@ -48,8 +48,11 @@ tasks:
       - cmd: rm -f *.syso
         platforms: [linux, darwin]
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if .EXTRA_TAGS}}-tags {{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X airspace-acars/internal/domain.Version={{.VERSION}}"{{end}}'
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if .EXTRA_TAGS}}-tags {{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X airspace-acars/internal/domain.Version={{.VERSION}} -X airspace-acars/observability.DSN={{.SENTRY_DSN}}"{{end}}'
       VERSION: '{{.VERSION | default "dev"}}'
+      # Empty unless SENTRY_DSN is exported, which leaves reporting switched
+      # off in a local build. AIRSPACE_SENTRY_DSN overrides it at runtime.
+      SENTRY_DSN: '{{.SENTRY_DSN | default ""}}'
     env:
       GOOS: windows
       CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'

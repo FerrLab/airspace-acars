@@ -14,6 +14,7 @@ Built with [Wails v3](https://wails.io) (Go + React).
 - **Audio alerts** — Cabin audio and instruction playback
 - **Auto-update** — OTA updates via GitHub Releases with beta channel support
 - **Offline recording** — Local SQLite database for flight data persistence
+- **Error reporting** — Crashes and failures report to Sentry, scrubbed of tokens and anything identifying the pilot's machine; off unless a DSN is built in — see [docs/observability.md](docs/observability.md)
 
 ## Requirements
 

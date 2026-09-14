@@ -11,20 +11,6 @@ import (
 	"time"
 
 	"airspace-acars/observability"
-
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
-)
-
-var (
-	authTracer          = observability.Tracer("auth")
-	authMeter           = observability.Meter("auth")
-	apiRequestsTotal, _ = authMeter.Int64Counter("api.requests_total",
-		metric.WithDescription("Total outgoing API requests"))
-	apiRequestDuration, _ = authMeter.Float64Histogram("api.request_duration_ms",
-		metric.WithDescription("API request duration in milliseconds"))
 )
 
 // Adapter is the Airspace HTTP API client.
@@ -68,14 +54,10 @@ func (a *Adapter) Token() string {
 
 // DoRequest makes an authenticated HTTP request to baseURL + path.
 func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int, error) {
-	ctx, span := authTracer.Start(context.Background(), "auth.do_request",
-		trace.WithAttributes(
-			attribute.String("http.method", method),
-			attribute.String("http.path", path),
-		))
-	defer span.End()
-
-	start := time.Now()
+	ctx, span := observability.Start(context.Background(), "auth.do_request",
+		"http.method", method,
+		"http.path", path)
+	defer span.Finish()
 
 	a.mu.RLock()
 	baseURL := a.baseURL
@@ -84,8 +66,7 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 
 	if baseURL == "" {
 		err := fmt.Errorf("no tenant selected")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, 0, err
 	}
 
@@ -94,8 +75,7 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 		jsonBytes, err := json.Marshal(body)
 		if err != nil {
 			err = fmt.Errorf("marshal body: %w", err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			span.Fail(err)
 			return nil, 0, err
 		}
 		bodyReader = bytes.NewReader(jsonBytes)
@@ -104,8 +84,7 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, bodyReader)
 	if err != nil {
 		err = fmt.Errorf("create request: %w", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -116,21 +95,8 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		err = fmt.Errorf("do request: %w", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		durationMs := float64(time.Since(start).Milliseconds())
-		apiRequestDuration.Record(ctx, durationMs,
-			metric.WithAttributes(
-				attribute.String("http.method", method),
-				attribute.String("http.path", path),
-				attribute.String("status", "error"),
-			))
-		apiRequestsTotal.Add(ctx, 1,
-			metric.WithAttributes(
-				attribute.String("http.method", method),
-				attribute.String("http.path", path),
-				attribute.String("status", "error"),
-			))
+		span.Fail(err)
+		observability.Count("api.requests_total", "http.method", method, "http.path", path, "status", "error")
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
@@ -138,39 +104,14 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		err = fmt.Errorf("read response: %w", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		durationMs := float64(time.Since(start).Milliseconds())
-		apiRequestDuration.Record(ctx, durationMs,
-			metric.WithAttributes(
-				attribute.String("http.method", method),
-				attribute.String("http.path", path),
-				attribute.String("status", "error"),
-			))
-		apiRequestsTotal.Add(ctx, 1,
-			metric.WithAttributes(
-				attribute.String("http.method", method),
-				attribute.String("http.path", path),
-				attribute.String("status", "error"),
-			))
+		span.Fail(err)
+		observability.Count("api.requests_total", "http.method", method, "http.path", path, "status", "error")
 		return nil, resp.StatusCode, err
 	}
 
 	statusStr := fmt.Sprintf("%d", resp.StatusCode)
-	span.SetAttributes(attribute.String("http.status_code", statusStr))
-	durationMs := float64(time.Since(start).Milliseconds())
-	apiRequestDuration.Record(ctx, durationMs,
-		metric.WithAttributes(
-			attribute.String("http.method", method),
-			attribute.String("http.path", path),
-			attribute.String("status", statusStr),
-		))
-	apiRequestsTotal.Add(ctx, 1,
-		metric.WithAttributes(
-			attribute.String("http.method", method),
-			attribute.String("http.path", path),
-			attribute.String("status", statusStr),
-		))
+	span.Set("http.status_code", statusStr)
+	observability.Count("api.requests_total", "http.method", method, "http.path", path, "status", statusStr)
 
 	return respBody, resp.StatusCode, nil
 }

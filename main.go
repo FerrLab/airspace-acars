@@ -190,6 +190,7 @@ func main() {
 	appInstance.StartDiscordLoop()
 
 	go func() {
+		defer observability.Recover()
 		time.Sleep(time.Second)
 
 		appInstance.AutoUpdate()

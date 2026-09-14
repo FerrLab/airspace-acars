@@ -1,6 +1,7 @@
 package app
 
 import (
+	"airspace-acars/observability"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -96,6 +97,8 @@ func (a *App) StartDiscordLoop() {
 }
 
 func (a *App) discordRunLoop() {
+	defer observability.Recover()
+
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 

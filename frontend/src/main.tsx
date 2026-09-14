@@ -5,10 +5,20 @@ import { AuthProvider } from "@/context/auth-context";
 import { ThemeProvider } from "@/context/theme-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import i18n from "@/lib/i18n";
+import { initSentry, captureError } from "@/lib/sentry";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { SettingsService } from "../bindings/airspace-acars";
 import "./index.css";
 
 async function boot() {
+  initSentry();
+
+  // A promise rejected with nobody listening is usually a Wails call that
+  // failed; it would otherwise vanish into the console.
+  window.addEventListener("unhandledrejection", (event) => {
+    captureError(event.reason ?? new Error("unhandled rejection"));
+  });
+
   try {
     const settings = await SettingsService.GetSettings();
     if (settings.language) {
@@ -20,13 +30,15 @@ async function boot() {
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <ThemeProvider>
-        <AuthProvider>
-          <TooltipProvider>
-            <App />
-          </TooltipProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <AuthProvider>
+            <TooltipProvider>
+              <App />
+            </TooltipProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
     </React.StrictMode>
   );
 }

@@ -12,15 +12,14 @@ import (
 	"airspace-acars/observability"
 
 	"github.com/pkg/browser"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
-
-var authTracer = observability.Tracer("auth")
 
 // SetToken stores the bearer token for API requests.
 func (a *App) SetToken(token string) {
 	a.Airspace.SetToken(token)
+	if token == "" {
+		observability.ClearPilot()
+	}
 }
 
 // FetchTenants lists available tenants from the API base URL.
@@ -79,14 +78,13 @@ func (a *App) RequestDeviceCode() (*domain.DeviceCodeResponse, error) {
 
 // PollForToken polls the token endpoint during device-code auth flow.
 func (a *App) PollForToken(authorizationToken string) (*domain.TokenResponse, error) {
-	_, span := authTracer.Start(context.Background(), "auth.poll_for_token")
-	defer span.End()
+	_, span := observability.Start(context.Background(), "auth.poll_for_token")
+	defer span.Finish()
 
 	baseURL := a.Airspace.BaseURL()
 	if baseURL == "" {
 		err := fmt.Errorf("no tenant selected")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, err
 	}
 
@@ -104,8 +102,7 @@ func (a *App) PollForToken(authorizationToken string) (*domain.TokenResponse, er
 	)
 	if err != nil {
 		err = fmt.Errorf("poll token: %w", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -113,8 +110,7 @@ func (a *App) PollForToken(authorizationToken string) (*domain.TokenResponse, er
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		err = fmt.Errorf("read response: %w", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, err
 	}
 
@@ -122,14 +118,13 @@ func (a *App) PollForToken(authorizationToken string) (*domain.TokenResponse, er
 	if resp.StatusCode == http.StatusOK {
 		if err := json.Unmarshal(body, &tr); err != nil {
 			err = fmt.Errorf("parse response: %w", err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			span.Fail(err)
 			return nil, err
 		}
 	}
 	tr.Status = resp.StatusCode
 
-	span.SetAttributes(attribute.String("oauth.status", fmt.Sprintf("%d", resp.StatusCode)))
+	span.Set("oauth.status", fmt.Sprintf("%d", resp.StatusCode))
 	return &tr, nil
 }
 

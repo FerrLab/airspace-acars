@@ -14,11 +14,7 @@ import (
 
 	"airspace-acars/internal/domain"
 	"airspace-acars/observability"
-
-	"go.opentelemetry.io/otel/codes"
 )
-
-var audioTracer = observability.Tracer("audio")
 
 // InitAudioCache sets up the audio cache directory.
 func (a *App) InitAudioCache() {
@@ -28,13 +24,12 @@ func (a *App) InitAudioCache() {
 
 // FetchSoundInstructions retrieves audio instructions from the API and pre-downloads files.
 func (a *App) FetchSoundInstructions() ([]domain.SoundInstruction, error) {
-	_, span := audioTracer.Start(context.Background(), "audio.fetch_instructions")
-	defer span.End()
+	_, span := observability.Start(context.Background(), "audio.fetch_instructions")
+	defer span.Finish()
 
 	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/sound", nil)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, err
 	}
 
@@ -42,8 +37,7 @@ func (a *App) FetchSoundInstructions() ([]domain.SoundInstruction, error) {
 		Instructions []domain.SoundInstruction `json:"instructions"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return nil, fmt.Errorf("parse sound instructions: %w", err)
 	}
 
