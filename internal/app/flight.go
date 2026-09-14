@@ -10,41 +10,6 @@ import (
 
 	"airspace-acars/internal/domain"
 	"airspace-acars/observability"
-
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
-)
-
-var (
-	flightTracer = observability.Tracer("flight")
-	flightMeter  = observability.Meter("flight")
-)
-
-var (
-	posReportsSent, _   = flightMeter.Int64Counter("position.reports_sent",
-		metric.WithDescription("Successfully sent position reports"))
-	posReportsQueued, _ = flightMeter.Int64Counter("position.reports_queued",
-		metric.WithDescription("Position reports queued due to failure"))
-	posReportsFailed, _ = flightMeter.Int64Counter("position.reports_failed",
-		metric.WithDescription("Position reports that failed to send"))
-	posQueueDepth, _    = flightMeter.Int64Histogram("position.queue_depth",
-		metric.WithDescription("Position report queue depth at each tick"))
-	posFlushTotal, _    = flightMeter.Int64Counter("position.flush_total",
-		metric.WithDescription("Flush attempts on flight end"))
-	posHighResQueued, _ = flightMeter.Int64Counter("position.highres_queued",
-		metric.WithDescription("High-resolution reports queued during flare"))
-	posHighResDepth, _  = flightMeter.Int64Histogram("position.highres_depth",
-		metric.WithDescription("High-resolution queue depth at each drain"))
-	posOutboxEnqueued, _ = flightMeter.Int64Counter("position.outbox_enqueued",
-		metric.WithDescription("Position reports persisted to the SQLite outbox"))
-	posOutboxDepth, _    = flightMeter.Int64Histogram("position.outbox_depth",
-		metric.WithDescription("Outbox row count sampled at each drain pass"))
-	finishDrainDur, _    = flightMeter.Float64Histogram("flight.finish_drain_duration_sec",
-		metric.WithDescription("Seconds from FinishFlight call to /api/v2/acars/finish success"))
-	finishCanceledTotal, _ = flightMeter.Int64Counter("flight.finish_canceled_total",
-		metric.WithDescription("Number of times CancelFinish was invoked"))
 )
 
 const (
@@ -121,37 +86,55 @@ func (a *App) GetPilot() (map[string]interface{}, error) {
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("parse pilot: %w", err)
 	}
+
+	// Tag reports with the pilot so a recurring fault can be followed across a
+	// session. Only the network's own identifier goes out — never the name or
+	// the email address this response also carries.
+	observability.SetPilot(a.Airspace.BaseURL(), pilotIdentifier(result))
+
 	return result, nil
+}
+
+// pilotIdentifier picks the opaque id out of a pilot payload, preferring the
+// numeric id and falling back to the callsign, which identifies the pilot on
+// the network without naming the person behind it.
+func pilotIdentifier(pilot map[string]interface{}) string {
+	for _, key := range []string{"id", "pilot_id", "callsign"} {
+		switch v := pilot[key].(type) {
+		case string:
+			if v != "" {
+				return v
+			}
+		case float64:
+			return strconv.FormatInt(int64(v), 10)
+		}
+	}
+	return ""
 }
 
 // StartFlight begins a new flight tracking session.
 func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error {
-	_, span := flightTracer.Start(context.Background(), "flight.start",
-		trace.WithAttributes(
-			attribute.String("flight.callsign", callsign),
-			attribute.String("flight.departure", departure),
-			attribute.String("flight.arrival", arrival),
-			attribute.String("flight.booking_id", bookingID),
-		))
-	defer span.End()
+	_, span := observability.Start(context.Background(), "flight.start",
+		"flight.callsign", callsign,
+		"flight.departure", departure,
+		"flight.arrival", arrival,
+		"flight.booking_id", bookingID)
+	defer span.Finish()
 
 	fd, err := a.GetFlightDataNow()
 	if err != nil {
 		err = fmt.Errorf("simulator not connected")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 	if !fd.Sensors.OnGround {
 		err = fmt.Errorf("aircraft must be on the ground to start a flight")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 	if fd.Attitude.GS >= 1.0 {
 		err = fmt.Errorf("aircraft must be stationary to start a flight")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 
@@ -160,8 +143,7 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 
 	if a.state == "active" {
 		err = fmt.Errorf("flight already active")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 
@@ -175,14 +157,12 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 	_, status, err := a.Airspace.DoRequest("POST", "/api/v2/acars/start", payload)
 	if err != nil {
 		err = fmt.Errorf("start flight: %w", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 	if status >= 400 {
 		err = fmt.Errorf("start flight: server returned %d", status)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 
@@ -209,13 +189,13 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 
 // StopFlight cancels the active flight.
 func (a *App) StopFlight() error {
-	_, span := flightTracer.Start(context.Background(), "flight.stop")
-	defer span.End()
+	_, span := observability.Start(context.Background(), "flight.stop")
+	defer span.Finish()
 
 	a.flightMu.Lock()
 	defer a.flightMu.Unlock()
 
-	span.SetAttributes(attribute.String("flight.callsign", a.callsign))
+	span.Set("flight.callsign", a.callsign)
 
 	if a.state != "active" {
 		return fmt.Errorf("no active flight")
@@ -240,21 +220,17 @@ func (a *App) StopFlight() error {
 // drain. Returns immediately. The frontend listens for flight-finish-*
 // events to render progress and the terminal state.
 func (a *App) FinishFlight() error {
-	_, span := flightTracer.Start(context.Background(), "flight.finish")
-	defer span.End()
+	_, span := observability.Start(context.Background(), "flight.finish")
+	defer span.Finish()
 
 	a.flightMu.Lock()
 
-	span.SetAttributes(
-		attribute.String("flight.callsign", a.callsign),
-		attribute.Float64("flight.duration_sec", time.Since(a.startTime).Seconds()),
-	)
+	span.Set("flight.callsign", a.callsign, "flight.duration_sec", time.Since(a.startTime).Seconds())
 
 	if a.state != "active" {
 		a.flightMu.Unlock()
 		err := fmt.Errorf("no active flight")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 
@@ -262,8 +238,7 @@ func (a *App) FinishFlight() error {
 		a.flightMu.Unlock()
 		remaining := (minFlightDuration - elapsed).Round(time.Second)
 		err := fmt.Errorf("flight too short to finish, please wait %s", remaining)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Fail(err)
 		return err
 	}
 
@@ -297,6 +272,7 @@ func (a *App) FinishFlight() error {
 // transient errors forever (exponential backoff capped at finishDrainBackoffMax).
 // If cancelCh is closed, the loop exits and reverts state to "active".
 func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, cancelCh chan struct{}) {
+	defer observability.Recover()
 	started := time.Now()
 	backoff := 2 * time.Second
 
@@ -359,7 +335,7 @@ func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, ca
 			a.UI.EmitEvent("flight-finish-complete", map[string]interface{}{
 				"duration_sec": time.Since(started).Seconds(),
 			})
-			finishDrainDur.Record(context.Background(), time.Since(started).Seconds())
+			observability.Gauge("flight.finish_drain_duration_sec", time.Since(started).Seconds())
 			slog.Info("flight finished cleanly",
 				"booking_id", bookingID,
 				"callsign", callsign,
@@ -368,11 +344,11 @@ func (a *App) finishDrainLoop(bookingID, callsign, departure, arrival string, ca
 		}
 
 		a.UI.EmitEvent("flight-finish-progress", map[string]interface{}{"pending": count})
-		posOutboxDepth.Record(context.Background(), int64(count))
+		observability.Gauge("position.outbox_depth", float64(count))
 
 		sent, _, err := a.drainOutbox(bookingID, 4) // 4 batches = 1000 rows per pass
 		if sent > 0 {
-			posReportsSent.Add(context.Background(), int64(sent))
+			observability.Add("position.reports_sent", int64(sent))
 			backoff = 2 * time.Second
 		}
 		if err != nil {
@@ -417,7 +393,7 @@ func (a *App) CancelFinish() error {
 	if ch != nil {
 		close(ch)
 	}
-	finishCanceledTotal.Add(context.Background(), 1)
+	observability.Count("flight.finish_canceled_total")
 	return nil
 }
 
@@ -435,22 +411,17 @@ func (a *App) endFlight() {
 }
 
 func (a *App) doRequestWithRetry(method, path string, body interface{}) ([]byte, int, error) {
-	_, span := flightTracer.Start(context.Background(), "flight.request_with_retry",
-		trace.WithAttributes(
-			attribute.String("http.method", method),
-			attribute.String("http.path", path),
-		))
-	defer span.End()
+	_, span := observability.Start(context.Background(), "flight.request_with_retry",
+		"http.method", method,
+		"http.path", path)
+	defer span.Finish()
 
 	var lastErr error
 	backoff := 2 * time.Second
 	for attempt := range retryAttempts {
 		respBody, status, err := a.Airspace.DoRequest(method, path, body)
 		if err == nil {
-			span.SetAttributes(
-				attribute.Int("retry.attempt", attempt+1),
-				attribute.String("retry.final_status", "success"),
-			)
+			span.Set("retry.attempt", attempt+1, "retry.final_status", "success")
 			return respBody, status, nil
 		}
 		lastErr = err
@@ -460,12 +431,8 @@ func (a *App) doRequestWithRetry(method, path string, body interface{}) ([]byte,
 			backoff *= 2
 		}
 	}
-	span.SetAttributes(
-		attribute.Int("retry.attempt", retryAttempts),
-		attribute.String("retry.final_status", "failed"),
-	)
-	span.RecordError(lastErr)
-	span.SetStatus(codes.Error, lastErr.Error())
+	span.Set("retry.attempt", retryAttempts, "retry.final_status", "failed")
+	span.Fail(lastErr)
 	return nil, 0, fmt.Errorf("all %d attempts failed: %w", retryAttempts, lastErr)
 }
 
@@ -696,6 +663,7 @@ func intervalName(d time.Duration) string {
 }
 
 func (a *App) positionLoop(stopCh chan struct{}) {
+	defer observability.Recover()
 	ticker := time.NewTicker(posIntervalLow)
 	defer ticker.Stop()
 
@@ -732,8 +700,8 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				slog.Warn("position: enqueue to outbox failed", "error", err, "reason", reason)
 				continue
 			}
-			posReportsQueued.Add(context.Background(), 1)
-			posOutboxEnqueued.Add(context.Background(), 1)
+			observability.Count("position.reports_queued")
+			observability.Count("position.outbox_enqueued")
 		}
 	}
 
@@ -757,7 +725,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 			}
 			if len(highResQueue) < maxHighResReports {
 				highResQueue = append(highResQueue, a.buildPositionReport(fd))
-				posHighResQueued.Add(context.Background(), 1)
+				observability.Count("position.highres_queued")
 			}
 
 		case <-ticker.C:
@@ -845,21 +813,21 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 						slog.Warn("outbox drain failed", "error", derr, "remaining", remaining)
 					}
 				} else if sent > 0 {
-					posReportsSent.Add(context.Background(), int64(sent))
+					observability.Add("position.reports_sent", int64(sent))
 					slog.Info("outbox drained", "sent", sent, "remaining", remaining)
 				}
 			}
 
 			// High-res queue drain — batched; on failure persist to outbox.
 			if len(highResQueue) > 0 {
-				posHighResDepth.Record(context.Background(), int64(len(highResQueue)))
+				observability.Gauge("position.highres_depth", float64(len(highResQueue)))
 				shipped, err := a.sendPositionBatches(highResQueue)
 				if shipped > 0 {
-					posReportsSent.Add(context.Background(), int64(shipped))
+					observability.Add("position.reports_sent", int64(shipped))
 				}
 				if err != nil {
 					unsent := highResQueue[shipped:]
-					posReportsFailed.Add(context.Background(), int64(len(unsent)))
+					observability.Add("position.reports_failed", int64(len(unsent)))
 					persistQueue(unsent, "highres-drain-failed")
 					highResQueue = nil
 				} else {
@@ -877,8 +845,8 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 						raw, mErr := json.Marshal(report)
 						if mErr == nil {
 							if eErr := a.DB.EnqueuePosition(bookingID, raw); eErr == nil {
-								posReportsQueued.Add(context.Background(), 1)
-								posOutboxEnqueued.Add(context.Background(), 1)
+								observability.Count("position.reports_queued")
+								observability.Count("position.outbox_enqueued")
 							}
 						}
 					}
@@ -888,7 +856,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 						slog.Warn("server still unreachable", "failures", consecutiveFailures)
 					}
 				} else {
-					posReportsSent.Add(context.Background(), 1)
+					observability.Count("position.reports_sent")
 					if consecutiveFailures > 0 {
 						slog.Info("server connection restored", "had_failures", consecutiveFailures)
 					}

@@ -1,0 +1,277 @@
+{
+  "id": "fenix-a32x",
+  "name": "Fenix A318/A319/A320/A321",
+  "description": "Fenix Simulations A32X family on MSFS. The Fenix systems run on their own local variables, so the FCU selections, the autopilot engagement and the overhead switches are read from those rather than from the stock simulation variables the aircraft does not always drive.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com) and confirmed in the simulator. SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The FCU selections come from N_FCU_* \u2014 the numbers in the windows. The S_FCU_* variables are the switch positions (which mode the knob is in) and were read as values in an earlier version of this profile, which reported a heading of 1 and an altitude of 0. Two caveats remain, neither expressible as a binding: N_FCU_VS carries the FPA times 1000 when the FCU is in FPA rather than V/S mode, and N_FCU_SPEED is a Mach number rather than knots when the speed window is in Mach. The beacon and strobe switches are left on the stock simulation variables: the Fenix overhead values are multi-position and the beacon drives the ACARS' automatic flight start, so it is not worth re-binding on an unverified mapping.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "contains",
+        "value": "fenix"
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "I_FCU_AP1"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "I_FCU_AP2"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.approachHold": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "I_FCU_APPR"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT APPROACH HOLD",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.navLock": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "I_FCU_LOC"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT NAV1 LOCK",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "autopilot.heading": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "N_FCU_HEADING"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT HEADING LOCK DIR",
+          "unit": "degrees"
+        }
+      }
+    ],
+    "autopilot.altitude": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "N_FCU_ALTITUDE"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT ALTITUDE LOCK VAR",
+          "unit": "feet"
+        }
+      }
+    ],
+    "autopilot.speed": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "N_FCU_SPEED"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT AIRSPEED HOLD VAR",
+          "unit": "knots"
+        }
+      }
+    ],
+    "autopilot.vs": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "N_FCU_VS"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT VERTICAL HOLD VAR",
+          "unit": "feet/minute"
+        }
+      }
+    ],
+    "controls.flaps": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "S_FC_FLAPS"
+        },
+        "transform": [
+          {
+            "op": "map",
+            "map": {
+              "0": 0,
+              "1": 25,
+              "2": 50,
+              "3": 75,
+              "4": 100
+            },
+            "default": 0
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "FLAPS HANDLE PERCENT",
+          "unit": "Percent Over 100"
+        },
+        "transform": [
+          {
+            "op": "scale",
+            "value": 100
+          }
+        ]
+      }
+    ],
+    "controls.gearDown": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "S_MIP_GEAR"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "GEAR HANDLE POSITION",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "apu.switchOn": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "S_OH_ELEC_APU_MASTER"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "APU SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ]
+  }
+}

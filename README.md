@@ -8,11 +8,13 @@ Built with [Wails v3](https://wails.io) (Go + React).
 
 - **Flight tracking** — Adaptive position reporting with automatic frequency adjustment based on flight phase
 - **Simulator support** — MSFS 2020 (SimConnect) and X-Plane 11/12 (UDP) with auto-detection
+- **Aircraft profiles** — Per-add-on JSON profiles that re-bind individual data points; 36 aircraft covered (Fenix, FSLabs, PMDG, FlyByWire, iniBuilds, TFDi, Aerosoft, iFly, Zibo, IXEG, FlightFactor and more), refreshed weekly from the community variable database — see [docs/aircraft-profiles.md](docs/aircraft-profiles.md)
 - **Multi-tenant auth** — Connect to multiple virtual airline networks via device code authentication
 - **In-app chat** — Pilot messaging and communication
 - **Audio alerts** — Cabin audio and instruction playback
 - **Auto-update** — OTA updates via GitHub Releases with beta channel support
 - **Offline recording** — Local SQLite database for flight data persistence
+- **Error reporting** — Crashes and failures report to Sentry, scrubbed of tokens and anything identifying the pilot's machine; off unless a DSN is built in — see [docs/observability.md](docs/observability.md)
 
 ## Requirements
 
@@ -58,6 +60,9 @@ Output: `bin/airspace-acars-temp.exe`
 ├── sim_connector.go         # Simulator adapter interface
 ├── xplane_adapter.go        # X-Plane UDP adapter
 ├── db.go                    # SQLite initialization
+│
+├── internal/profiles/       # Aircraft profiles: matchers, mashers, built-in JSON
+├── cmd/hubhop/              # Profile tooling: HubHop search, Community folder scan, draft generation
 │
 ├── frontend/                # React + TypeScript + Tailwind
 │   ├── src/

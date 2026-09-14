@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"airspace-acars/internal/domain"
+	"airspace-acars/internal/profiles"
 )
 
 var xplaneDatarefs = []string{
@@ -102,6 +103,17 @@ type Adapter struct {
 	data         domain.FlightData
 	lastReceived time.Time
 	stop         chan struct{}
+
+	// Aircraft identity, reassembled character by character from the string
+	// datarefs (see profile.go).
+	icaoChars    [icaoChars]byte
+	descripChars [descripChars]byte
+
+	// Active aircraft profile and the extra dataref readings it needs.
+	plan        *profiles.Plan
+	extraByIdx  map[int]string
+	extraValues map[string]float64
+	extraRefs   []subscribedRef
 }
 
 // NewAdapter creates a new X-Plane adapter.
@@ -138,6 +150,11 @@ func (x *Adapter) Connect() error {
 		}
 	}
 
+	x.subscribeIdentity()
+	if err := x.subscribeExtras(x.plan); err != nil {
+		slog.Warn("failed to subscribe profile datarefs", "error", err)
+	}
+
 	x.stop = make(chan struct{})
 	go x.listenLoop()
 
@@ -158,6 +175,8 @@ func (x *Adapter) Disconnect() error {
 		for i, dref := range xplaneDatarefs {
 			x.subscribeRREF(i, 0, dref)
 		}
+		x.unsubscribeIdentity()
+		x.unsubscribeExtras()
 		x.conn.Close()
 		x.conn = nil
 	}
@@ -176,6 +195,7 @@ func (x *Adapter) GetFlightData() (*domain.FlightData, error) {
 	}
 
 	data := x.data
+	x.plan.Apply(&data, x.extraValues)
 	return &data, nil
 }
 
@@ -242,174 +262,180 @@ func (x *Adapter) listenLoop() {
 			offset += 8
 
 			x.mu.Lock()
-			switch idx {
-			case 0:
-				x.data.Position.Latitude = float64(val)
-			case 1:
-				x.data.Position.Longitude = float64(val)
-			case 2:
-				x.data.Position.Altitude = float64(val) * 3.28084
-			case 3:
-				x.data.Position.AltitudeAGL = float64(val) * 3.28084
-			case 4:
-				x.data.Attitude.Pitch = float64(val)
-			case 5:
-				x.data.Attitude.Roll = float64(val)
-			case 6:
-				x.data.Attitude.HeadingTrue = float64(val)
-			case 7:
-				x.data.Attitude.HeadingMag = float64(val)
-			case 8:
-				x.data.Attitude.VS = float64(val)
-			case 9:
-				x.data.Attitude.IAS = float64(val)
-			case 10:
-				x.data.Attitude.TAS = float64(val) * 1.94384
-			case 11:
-				x.data.Attitude.GS = float64(val) * 1.94384
-			case 12:
-				x.data.Engines[0].Running = val != 0
-			case 13:
-				x.data.Engines[0].N1 = float64(val)
-			case 14:
-				x.data.Engines[0].N2 = float64(val)
-			case 15:
-				x.data.Engines[0].ThrottlePos = float64(val) * 100
-			case 16:
-				x.data.Engines[0].MixturePos = float64(val) * 100
-			case 17:
-				x.data.Engines[0].PropPos = float64(val) * 100
-			case 18:
-				x.data.Sensors.OnGround = val != 0
-			case 19:
-				x.data.Sensors.StallWarning = val != 0
-			case 20:
-				x.data.Sensors.OverspeedWarning = val != 0
-			case 21:
-				x.data.Sensors.SimulationRate = float64(val)
-			case 22:
-				x.data.Radios.Com1 = float64(val) / 100
-			case 23:
-				x.data.Radios.Com2 = float64(val) / 100
-			case 24:
-				x.data.Radios.Nav1 = float64(val) / 100
-			case 25:
-				x.data.Radios.Nav2 = float64(val) / 100
-			case 26:
-				x.data.Radios.Nav1OBS = float64(val)
-			case 27:
-				x.data.Radios.Nav2OBS = float64(val)
-			case 28:
-				x.data.Radios.XpdrCode = float64(val)
-			case 29:
-				x.data.Radios.XpdrState = domain.TransponderStateString(float64(val))
-			case 30:
-				x.data.Autopilot.Master = val != 0
-			case 31:
-				x.data.Autopilot.Heading = float64(val)
-			case 32:
-				x.data.Autopilot.Altitude = float64(val)
-			case 33:
-				x.data.Autopilot.VS = float64(val)
-			case 34:
-				x.data.Autopilot.Speed = float64(val)
-			case 35:
-				x.data.Autopilot.ApproachHold = val != 0
-			case 36:
-				x.data.Autopilot.NavLock = val != 0
-			case 37:
-				x.data.Altimeter = float64(val)
-			case 38:
-				x.data.Lights.Beacon = val != 0
-			case 39:
-				x.data.Lights.Strobe = val != 0
-			case 40:
-				x.data.Lights.Landing = val != 0
-			case 41:
-				x.data.Controls.Elevator = float64(val)
-			case 42:
-				x.data.Controls.Aileron = float64(val)
-			case 43:
-				x.data.Controls.Rudder = float64(val)
-			case 44:
-				x.data.Controls.Flaps = float64(val) * 100
-			case 45:
-				x.data.Controls.Spoilers = float64(val) * 100
-			case 46:
-				x.data.Controls.GearDown = val != 0
-			case 47:
-				x.data.SimTime.ZuluTime = float64(val)
-			case 48:
-				day, month, year := dayOfYearToDate(int(val))
-				x.data.SimTime.ZuluDay = float64(day)
-				x.data.SimTime.ZuluMonth = float64(month)
-				x.data.SimTime.ZuluYear = float64(year)
-			case 49:
-				x.data.SimTime.LocalTime = float64(val)
-			case 50:
-				x.data.Attitude.GForce = float64(val)
-			case 51:
-				x.data.Engines[1].Running = val != 0
-			case 52:
-				x.data.Engines[1].N1 = float64(val)
-			case 53:
-				x.data.Engines[1].N2 = float64(val)
-			case 54:
-				x.data.Engines[1].ThrottlePos = float64(val) * 100
-			case 55:
-				x.data.Engines[1].MixturePos = float64(val) * 100
-			case 56:
-				x.data.Engines[1].PropPos = float64(val) * 100
-			case 57:
-				x.data.Engines[2].Running = val != 0
-			case 58:
-				x.data.Engines[2].N1 = float64(val)
-			case 59:
-				x.data.Engines[2].N2 = float64(val)
-			case 60:
-				x.data.Engines[2].ThrottlePos = float64(val) * 100
-			case 61:
-				x.data.Engines[2].MixturePos = float64(val) * 100
-			case 62:
-				x.data.Engines[2].PropPos = float64(val) * 100
-			case 63:
-				x.data.Engines[3].Running = val != 0
-			case 64:
-				x.data.Engines[3].N1 = float64(val)
-			case 65:
-				x.data.Engines[3].N2 = float64(val)
-			case 66:
-				x.data.Engines[3].ThrottlePos = float64(val) * 100
-			case 67:
-				x.data.Engines[3].MixturePos = float64(val) * 100
-			case 68:
-				x.data.Engines[3].PropPos = float64(val) * 100
-			case 69:
-				x.data.Weight.TotalWeight = float64(val) * 2.20462
-			case 70:
-				x.data.Weight.FuelWeight = float64(val) * 2.20462
-			case 71:
-				n := int(val)
-				x.data.Engines[0].Exists = n >= 1
-				x.data.Engines[1].Exists = n >= 2
-				x.data.Engines[2].Exists = n >= 3
-				x.data.Engines[3].Exists = n >= 4
-			case 72:
-				x.data.WindDirection = float64(val)
-			case 73:
-				x.data.WindSpeed = float64(val)
-			case 74:
-				x.data.QNH = float64(val) * 33.8639
-			case 75:
-				x.data.Sensors.Paused = val != 0
-			case 76:
-				x.data.Sensors.Crashed = val != 0
-			}
+			x.handleReading(idx, float64(val))
 			x.mu.Unlock()
 		}
 
 		x.mu.Lock()
 		x.lastReceived = time.Now()
 		x.mu.Unlock()
+	}
+}
+
+// applyDefaultRef stores a reading from the adapter's built-in dataref table.
+// Callers hold x.mu.
+func (x *Adapter) applyDefaultRef(idx int, val float64) {
+	switch idx {
+	case 0:
+		x.data.Position.Latitude = float64(val)
+	case 1:
+		x.data.Position.Longitude = float64(val)
+	case 2:
+		x.data.Position.Altitude = float64(val) * 3.28084
+	case 3:
+		x.data.Position.AltitudeAGL = float64(val) * 3.28084
+	case 4:
+		x.data.Attitude.Pitch = float64(val)
+	case 5:
+		x.data.Attitude.Roll = float64(val)
+	case 6:
+		x.data.Attitude.HeadingTrue = float64(val)
+	case 7:
+		x.data.Attitude.HeadingMag = float64(val)
+	case 8:
+		x.data.Attitude.VS = float64(val)
+	case 9:
+		x.data.Attitude.IAS = float64(val)
+	case 10:
+		x.data.Attitude.TAS = float64(val) * 1.94384
+	case 11:
+		x.data.Attitude.GS = float64(val) * 1.94384
+	case 12:
+		x.data.Engines[0].Running = val != 0
+	case 13:
+		x.data.Engines[0].N1 = float64(val)
+	case 14:
+		x.data.Engines[0].N2 = float64(val)
+	case 15:
+		x.data.Engines[0].ThrottlePos = float64(val) * 100
+	case 16:
+		x.data.Engines[0].MixturePos = float64(val) * 100
+	case 17:
+		x.data.Engines[0].PropPos = float64(val) * 100
+	case 18:
+		x.data.Sensors.OnGround = val != 0
+	case 19:
+		x.data.Sensors.StallWarning = val != 0
+	case 20:
+		x.data.Sensors.OverspeedWarning = val != 0
+	case 21:
+		x.data.Sensors.SimulationRate = float64(val)
+	case 22:
+		x.data.Radios.Com1 = float64(val) / 100
+	case 23:
+		x.data.Radios.Com2 = float64(val) / 100
+	case 24:
+		x.data.Radios.Nav1 = float64(val) / 100
+	case 25:
+		x.data.Radios.Nav2 = float64(val) / 100
+	case 26:
+		x.data.Radios.Nav1OBS = float64(val)
+	case 27:
+		x.data.Radios.Nav2OBS = float64(val)
+	case 28:
+		x.data.Radios.XpdrCode = float64(val)
+	case 29:
+		x.data.Radios.XpdrState = domain.TransponderStateString(float64(val))
+	case 30:
+		x.data.Autopilot.Master = val != 0
+	case 31:
+		x.data.Autopilot.Heading = float64(val)
+	case 32:
+		x.data.Autopilot.Altitude = float64(val)
+	case 33:
+		x.data.Autopilot.VS = float64(val)
+	case 34:
+		x.data.Autopilot.Speed = float64(val)
+	case 35:
+		x.data.Autopilot.ApproachHold = val != 0
+	case 36:
+		x.data.Autopilot.NavLock = val != 0
+	case 37:
+		x.data.Altimeter = float64(val)
+	case 38:
+		x.data.Lights.Beacon = val != 0
+	case 39:
+		x.data.Lights.Strobe = val != 0
+	case 40:
+		x.data.Lights.Landing = val != 0
+	case 41:
+		x.data.Controls.Elevator = float64(val)
+	case 42:
+		x.data.Controls.Aileron = float64(val)
+	case 43:
+		x.data.Controls.Rudder = float64(val)
+	case 44:
+		x.data.Controls.Flaps = float64(val) * 100
+	case 45:
+		x.data.Controls.Spoilers = float64(val) * 100
+	case 46:
+		x.data.Controls.GearDown = val != 0
+	case 47:
+		x.data.SimTime.ZuluTime = float64(val)
+	case 48:
+		day, month, year := dayOfYearToDate(int(val))
+		x.data.SimTime.ZuluDay = float64(day)
+		x.data.SimTime.ZuluMonth = float64(month)
+		x.data.SimTime.ZuluYear = float64(year)
+	case 49:
+		x.data.SimTime.LocalTime = float64(val)
+	case 50:
+		x.data.Attitude.GForce = float64(val)
+	case 51:
+		x.data.Engines[1].Running = val != 0
+	case 52:
+		x.data.Engines[1].N1 = float64(val)
+	case 53:
+		x.data.Engines[1].N2 = float64(val)
+	case 54:
+		x.data.Engines[1].ThrottlePos = float64(val) * 100
+	case 55:
+		x.data.Engines[1].MixturePos = float64(val) * 100
+	case 56:
+		x.data.Engines[1].PropPos = float64(val) * 100
+	case 57:
+		x.data.Engines[2].Running = val != 0
+	case 58:
+		x.data.Engines[2].N1 = float64(val)
+	case 59:
+		x.data.Engines[2].N2 = float64(val)
+	case 60:
+		x.data.Engines[2].ThrottlePos = float64(val) * 100
+	case 61:
+		x.data.Engines[2].MixturePos = float64(val) * 100
+	case 62:
+		x.data.Engines[2].PropPos = float64(val) * 100
+	case 63:
+		x.data.Engines[3].Running = val != 0
+	case 64:
+		x.data.Engines[3].N1 = float64(val)
+	case 65:
+		x.data.Engines[3].N2 = float64(val)
+	case 66:
+		x.data.Engines[3].ThrottlePos = float64(val) * 100
+	case 67:
+		x.data.Engines[3].MixturePos = float64(val) * 100
+	case 68:
+		x.data.Engines[3].PropPos = float64(val) * 100
+	case 69:
+		x.data.Weight.TotalWeight = float64(val) * 2.20462
+	case 70:
+		x.data.Weight.FuelWeight = float64(val) * 2.20462
+	case 71:
+		n := int(val)
+		x.data.Engines[0].Exists = n >= 1
+		x.data.Engines[1].Exists = n >= 2
+		x.data.Engines[2].Exists = n >= 3
+		x.data.Engines[3].Exists = n >= 4
+	case 72:
+		x.data.WindDirection = float64(val)
+	case 73:
+		x.data.WindSpeed = float64(val)
+	case 74:
+		x.data.QNH = float64(val) * 33.8639
+	case 75:
+		x.data.Sensors.Paused = val != 0
+	case 76:
+		x.data.Sensors.Crashed = val != 0
 	}
 }

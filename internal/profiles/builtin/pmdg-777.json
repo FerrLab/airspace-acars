@@ -1,0 +1,243 @@
+{
+  "id": "pmdg-777",
+  "name": "PMDG 777",
+  "description": "PMDG 777-300ER/200 on MSFS. Reads the autopilot engagement and the MCP selections from the PMDG variables.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The V/S window reads -20000 when it is blank, which is mapped to zero.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "pmdg"
+      },
+      {
+        "any": [
+          {
+            "field": "aircraftName",
+            "op": "contains",
+            "value": "777"
+          },
+          {
+            "field": "aircraftType",
+            "op": "matches",
+            "value": "^B77[0-9W]$"
+          }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_2031_a"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_2291_a"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.navLock": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_2111_a"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "ngx_MCP_Loc"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT NAV1 LOCK",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.approachHold": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "ngx_MCP_App"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_2281_a"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT APPROACH HOLD",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.heading": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_HDGwindow"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT HEADING LOCK DIR",
+          "unit": "degrees"
+        }
+      }
+    ],
+    "autopilot.altitude": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_ALTwindow"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT ALTITUDE LOCK VAR",
+          "unit": "feet"
+        }
+      }
+    ],
+    "autopilot.speed": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_SPDwindow"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT AIRSPEED HOLD VAR",
+          "unit": "knots"
+        }
+      }
+    ],
+    "autopilot.vs": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_VSwindow"
+        },
+        "transform": [
+          {
+            "op": "map",
+            "map": {
+              "-20000": 0
+            }
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT VERTICAL HOLD VAR",
+          "unit": "feet/minute"
+        }
+      }
+    ]
+  }
+}

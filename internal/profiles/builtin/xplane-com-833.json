@@ -1,0 +1,19 @@
+{
+  "id": "xplane-com-833",
+  "name": "X-Plane 8.33 kHz radios",
+  "description": "Reads the COM frequencies from the 8.33 kHz channel datarefs, which carry the full channel in kHz. The 25 kHz datarefs the adapter uses by default round 8.33 spacing channels to the nearest 25 kHz.",
+  "priority": 10,
+  "match": { "field": "simulator", "op": "equals", "value": "xplane" },
+  "mash": {
+    "radios.com1": {
+      "sim": "xplane",
+      "source": { "kind": "dataref", "name": "sim/cockpit2/radios/actuators/com1_frequency_hz_833" },
+      "transform": [{ "op": "divide", "value": 1000 }, { "op": "round", "value": 3 }]
+    },
+    "radios.com2": {
+      "sim": "xplane",
+      "source": { "kind": "dataref", "name": "sim/cockpit2/radios/actuators/com2_frequency_hz_833" },
+      "transform": [{ "op": "divide", "value": 1000 }, { "op": "round", "value": 3 }]
+    }
+  }
+}

@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	procOpen                        *syscall.LazyProc
-	procClose                       *syscall.LazyProc
-	procAddToDataDefinition         *syscall.LazyProc
-	procGetNextDispatch             *syscall.LazyProc
-	procRequestDataOnSimObjectType  *syscall.LazyProc
+	procOpen                       *syscall.LazyProc
+	procClose                      *syscall.LazyProc
+	procAddToDataDefinition        *syscall.LazyProc
+	procGetNextDispatch            *syscall.LazyProc
+	procRequestDataOnSimObjectType *syscall.LazyProc
+	procClearDataDefinition        *syscall.LazyProc
 )
 
 // SimConnect wraps a handle to the SimConnect session.
@@ -38,6 +39,7 @@ func New(name string, dllPath string) (*SimConnect, error) {
 		procAddToDataDefinition = mod.NewProc("SimConnect_AddToDataDefinition")
 		procGetNextDispatch = mod.NewProc("SimConnect_GetNextDispatch")
 		procRequestDataOnSimObjectType = mod.NewProc("SimConnect_RequestDataOnSimObjectType")
+		procClearDataDefinition = mod.NewProc("SimConnect_ClearDataDefinition")
 	}
 
 	s := &SimConnect{
@@ -51,9 +53,9 @@ func New(name string, dllPath string) (*SimConnect, error) {
 		uintptr(unsafe.Pointer(namePtr)),
 		0, 0, 0, 0,
 	}
-	r1, _, err := procOpen.Call(args...)
+	r1, _, _ := procOpen.Call(args...)
 	if int32(r1) < 0 {
-		return nil, fmt.Errorf("SimConnect_Open: %d %s", int32(r1), err)
+		return nil, hresultError("SimConnect_Open", r1)
 	}
 
 	return s, nil
@@ -61,9 +63,9 @@ func New(name string, dllPath string) (*SimConnect, error) {
 
 // Close closes the SimConnect session.
 func (s *SimConnect) Close() error {
-	r1, _, err := procClose.Call(uintptr(s.handle))
+	r1, _, _ := procClose.Call(uintptr(s.handle))
 	if int32(r1) < 0 {
-		return fmt.Errorf("SimConnect_Close: %d %s", int32(r1), err)
+		return hresultError("SimConnect_Close", r1)
 	}
 	return nil
 }
@@ -72,7 +74,7 @@ func (s *SimConnect) Close() error {
 func (s *SimConnect) AddToDataDefinition(defineID DWORD, name, unit string, dataType DWORD) error {
 	namePtr, _ := syscall.BytePtrFromString(name)
 	unitPtr, _ := syscall.BytePtrFromString(unit)
-	r1, _, err := procAddToDataDefinition.Call(
+	r1, _, _ := procAddToDataDefinition.Call(
 		uintptr(s.handle),
 		uintptr(defineID),
 		uintptr(unsafe.Pointer(namePtr)),
@@ -82,7 +84,7 @@ func (s *SimConnect) AddToDataDefinition(defineID DWORD, name, unit string, data
 		0xffffffff, // datum id — UNUSED
 	)
 	if int32(r1) < 0 {
-		return fmt.Errorf("SimConnect_AddToDataDefinition %s: %d %s", name, int32(r1), err)
+		return fmt.Errorf("SimConnect_AddToDataDefinition %s: %w", name, hresultError("call", r1))
 	}
 	return nil
 }
@@ -121,6 +123,25 @@ func (s *SimConnect) RegisterDataDefinition(a interface{}) error {
 	return nil
 }
 
+// ClearDataDefinition removes every variable from a data definition so the
+// definition can be rebuilt with a different set of variables.
+func (s *SimConnect) ClearDataDefinition(defineID DWORD) error {
+	r1, _, _ := procClearDataDefinition.Call(uintptr(s.handle), uintptr(defineID))
+	if int32(r1) < 0 {
+		return hresultError("SimConnect_ClearDataDefinition", r1)
+	}
+	return nil
+}
+
+// AllocDefineID reserves a data definition ID that no struct is bound to. It
+// backs definitions built at runtime, such as the variables an aircraft
+// profile asks for.
+func (s *SimConnect) AllocDefineID() DWORD {
+	id := s.DefineMap["_last"]
+	s.DefineMap["_last"] = id + 1
+	return id
+}
+
 // GetDefineID returns the define ID for the given struct type,
 // assigning a new one if not yet registered.
 func (s *SimConnect) GetDefineID(a interface{}) DWORD {
@@ -143,26 +164,28 @@ func (s *SimConnect) RequestDataOnSimObjectType(requestID, defineID, radius, sim
 		uintptr(radius),
 		uintptr(simobjectType),
 	}
-	r1, _, err := procRequestDataOnSimObjectType.Call(args...)
+	r1, _, _ := procRequestDataOnSimObjectType.Call(args...)
 	if int32(r1) < 0 {
-		return fmt.Errorf("SimConnect_RequestDataOnSimObjectType: %d %s", int32(r1), err)
+		return hresultError("SimConnect_RequestDataOnSimObjectType", r1)
 	}
 	return nil
 }
 
 // GetNextDispatch retrieves the next dispatch message from SimConnect.
-// Returns (pointer to data, HRESULT, error). When r1 < 0 there is no message.
-func (s *SimConnect) GetNextDispatch() (unsafe.Pointer, int32, error) {
+// Returns (pointer to data, HRESULT). When the HRESULT is negative there is no
+// message waiting, which is the ordinary case between frames rather than a
+// failure — so there is no error to return.
+func (s *SimConnect) GetNextDispatch() (unsafe.Pointer, int32) {
 	var ppData unsafe.Pointer
 	var ppDataLength DWORD
 
-	r1, _, err := procGetNextDispatch.Call(
+	r1, _, _ := procGetNextDispatch.Call(
 		uintptr(s.handle),
 		uintptr(unsafe.Pointer(&ppData)),
 		uintptr(unsafe.Pointer(&ppDataLength)),
 	)
 
-	return ppData, int32(r1), err
+	return ppData, int32(r1)
 }
 
 // derefDataType maps Go type strings to SimConnect data types.

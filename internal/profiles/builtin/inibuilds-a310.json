@@ -1,0 +1,76 @@
+{
+  "id": "inibuilds-a310",
+  "name": "iniBuilds A310",
+  "description": "iniBuilds A310 on MSFS. Reads the autopilot engagement from the iniBuilds variables.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "ini\\s*-?builds?|inisim"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "a\\s*-?310"
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "A310_ap1_on"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "A310_ap2_on"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "aircraft.type": {
+      "source": {
+        "kind": "const",
+        "value": "A310"
+      }
+    }
+  }
+}

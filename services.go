@@ -10,6 +10,7 @@ package main
 import (
 	"airspace-acars/internal/app"
 	"airspace-acars/internal/domain"
+	"airspace-acars/internal/profiles"
 )
 
 // --- FlightDataService: sim connection, data streaming, recording ---
@@ -109,6 +110,15 @@ func (s *UpdateService) GetCurrentVersion() string                    { return s
 func (s *UpdateService) CheckForUpdate() (*domain.UpdateInfo, error)  { return s.app.CheckForUpdate() }
 func (s *UpdateService) ApplyUpdate() error                           { return s.app.ApplyUpdate() }
 func (s *UpdateService) TailLogs(n int) ([]string, error)             { return s.app.TailLogs(n) }
+
+// --- ProfileService: aircraft profiles ---
+
+type ProfileService struct{ app *app.App }
+
+func (s *ProfileService) ListProfiles() []profiles.Info    { return s.app.ListProfiles() }
+func (s *ProfileService) GetActiveProfile() *profiles.Plan { return s.app.GetActiveProfile() }
+func (s *ProfileService) ReloadProfiles() error            { return s.app.ReloadProfiles() }
+func (s *ProfileService) ProfilesDir() string              { return s.app.ProfilesDir() }
 
 // --- DiscordService: presence toggle ---
 

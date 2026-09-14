@@ -12,11 +12,7 @@ import (
 	"time"
 
 	"airspace-acars/observability"
-
-	"go.opentelemetry.io/otel/codes"
 )
-
-var discordTracer = observability.Tracer("discord")
 
 const clientID = "1471884432234381494"
 
@@ -34,8 +30,8 @@ func NewAdapter() *Adapter {
 
 // Connect opens the Discord IPC pipe and performs the handshake.
 func (d *Adapter) Connect() error {
-	_, span := discordTracer.Start(context.Background(), "discord.connect")
-	defer span.End()
+	_, span := observability.Start(context.Background(), "discord.connect")
+	defer span.Finish()
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -65,9 +61,9 @@ func (d *Adapter) Connect() error {
 		slog.Info("discord: connected", "pipe", i)
 		return nil
 	}
+	// Discord simply is not running. The caller retries on a timer.
 	err := fmt.Errorf("no discord pipe found")
-	span.RecordError(err)
-	span.SetStatus(codes.Error, err.Error())
+	span.Expected(err)
 	return err
 }
 
@@ -91,8 +87,8 @@ func (d *Adapter) IsConnected() bool {
 
 // SetActivity sends a SET_ACTIVITY command to Discord.
 func (d *Adapter) SetActivity(activity map[string]interface{}) error {
-	_, span := discordTracer.Start(context.Background(), "discord.set_activity")
-	defer span.End()
+	_, span := observability.Start(context.Background(), "discord.set_activity")
+	defer span.Finish()
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -110,14 +106,13 @@ func (d *Adapter) SetActivity(activity map[string]interface{}) error {
 		},
 	})
 	if err := writeFrame(d.pipe, 1, payload); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		// The pipe closes when the user quits Discord mid-session.
+		span.Expected(err)
 		return err
 	}
 	_, err := readFrame(d.pipe)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.Expected(err)
 	}
 	return err
 }

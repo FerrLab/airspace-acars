@@ -67,6 +67,9 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Generate icons
         run: wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico
@@ -80,7 +83,7 @@ jobs:
         run: |
           mkdir -p bin
           go build -tags production -trimpath -buildvcs=false \
-            -ldflags="-w -s -H windowsgui -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
+            -ldflags="-w -s -H windowsgui -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }} -X airspace-acars/observability.DSN=${{ secrets.SENTRY_DSN }}" \
             -o bin/airspace-acars-windows-amd64.exe
         env:
           GOOS: windows
@@ -151,12 +154,15 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Build Linux binary
         run: |
           mkdir -p bin
           go build -tags production -trimpath -buildvcs=false \
-            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
+            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }} -X airspace-acars/observability.DSN=${{ secrets.SENTRY_DSN }}" \
             -o bin/airspace-acars-linux-amd64
         env:
           CGO_ENABLED: "1"
@@ -222,12 +228,15 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Build macOS arm64 binary
         run: |
           mkdir -p bin
           go build -tags production -trimpath -buildvcs=false \
-            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
+            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }} -X airspace-acars/observability.DSN=${{ secrets.SENTRY_DSN }}" \
             -o bin/airspace-acars-darwin-arm64
         env:
           CGO_ENABLED: "1"
@@ -237,7 +246,7 @@ jobs:
       - name: Build macOS amd64 binary
         run: |
           go build -tags production -trimpath -buildvcs=false \
-            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }}" \
+            -ldflags="-w -s -X airspace-acars/internal/domain.Version=${{ steps.version.outputs.version }} -X airspace-acars/observability.DSN=${{ secrets.SENTRY_DSN }}" \
             -o bin/airspace-acars-darwin-amd64
         env:
           CGO_ENABLED: "1"

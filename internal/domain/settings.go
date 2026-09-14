@@ -14,6 +14,10 @@ type Settings struct {
 	ConfirmCloseApp     bool   `json:"confirmCloseApp"`
 	ConfirmCancelFlight bool   `json:"confirmCancelFlight"`
 	ConfirmFinishFlight bool   `json:"confirmFinishFlight"`
+	// AircraftProfile selects the aircraft profile: "auto" matches profiles
+	// against the loaded aircraft, "off" disables them, and any other value
+	// pins that profile ID regardless of its selector.
+	AircraftProfile string `json:"aircraftProfile"`
 }
 
 func DefaultSettings() Settings {
@@ -30,5 +34,6 @@ func DefaultSettings() Settings {
 		ConfirmCloseApp:     false,
 		ConfirmCancelFlight: false,
 		ConfirmFinishFlight: false,
+		AircraftProfile:     "auto",
 	}
 }

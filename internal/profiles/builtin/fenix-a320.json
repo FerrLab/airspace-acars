@@ -1,0 +1,16 @@
+{
+  "id": "fenix-a320",
+  "name": "Fenix A320",
+  "description": "Reports the ICAO type A320 for the Fenix A320. The systems bindings come from the fenix-a32x family profile.",
+  "priority": 110,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      { "field": "aircraftName", "op": "contains", "value": "fenix" },
+      { "field": "aircraftName", "op": "matches", "value": "a\\s*-?320" }
+    ]
+  },
+  "mash": {
+    "aircraft.type": { "source": { "kind": "const", "value": "A320" } }
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"airspace-acars/internal/domain"
+	"airspace-acars/internal/profiles"
 
 	"github.com/creativeprojects/go-selfupdate"
 )
@@ -87,6 +88,13 @@ type App struct {
 	startTime      time.Time
 	stopCh         chan struct{}
 	finishCancelCh chan struct{}
+
+	// Aircraft profiles
+	profileMu        sync.RWMutex
+	profileRegistry  *profiles.Registry
+	profilesDir      string
+	activePlan       *profiles.Plan
+	activeProfileSig string
 
 	// Settings
 	settingsMu   sync.RWMutex

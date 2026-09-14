@@ -1,0 +1,23 @@
+{
+  "id": "fslabs-a321neo",
+  "name": "FSLabs A321neo",
+  "description": "Reports the ICAO type A21N for the FSLabs A321neo. The airframe ships as both a ceo and a neo under one package, so the neo is picked out of the title.",
+  "notes": "The model carries L:FSL_AIRCRAFT_321_NEO and L:A321_NEO_PW to tell the variants apart, but a profile is matched before any variable is read, so the selector goes on the title instead. If your liveries do not carry \"neo\" in the title, copy this profile into your own profiles directory and change the selector.",
+  "priority": 120,
+  "match": {
+    "all": [
+      { "field": "simulator", "op": "equals", "value": "simconnect" },
+      { "field": "aircraftName", "op": "matches", "value": "fs\\s*-?labs?" },
+      { "field": "aircraftName", "op": "matches", "value": "a\\s*-?321" },
+      {
+        "any": [
+          { "field": "aircraftName", "op": "contains", "value": "neo" },
+          { "field": "aircraftName", "op": "contains", "value": "a21n" }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "aircraft.type": { "source": { "kind": "const", "value": "A21N" } }
+  }
+}

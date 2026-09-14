@@ -1,0 +1,367 @@
+{
+  "id": "pmdg-737",
+  "name": "PMDG 737",
+  "description": "PMDG 737-600/700/800/900 on MSFS. Takes the autopilot state and the MCP selections from the PMDG variables, the gear from the three green indications, and the flap position from the surface angle rather than the handle.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. PMDG publishes the MCP through the ngx_ variables and the annunciators through switch_*_73X; both sets are listed so the profile survives either naming, and a name the aircraft does not define is withheld rather than read as zero. The V/S window reads -20000 when it is blank, which is mapped to zero.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "simconnect"
+      },
+      {
+        "field": "aircraftName",
+        "op": "matches",
+        "value": "pmdg"
+      },
+      {
+        "any": [
+          {
+            "field": "aircraftName",
+            "op": "contains",
+            "value": "737"
+          },
+          {
+            "field": "aircraftType",
+            "op": "matches",
+            "value": "^B73[6-9]$"
+          }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "autopilot.master": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "ngx_MCP_CMDA"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "ngx_MCP_CMDB"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_4021_73X"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_4031_73X"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT MASTER",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.navLock": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "ngx_MCP_LNav"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_3971_73X"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT NAV1 LOCK",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.approachHold": {
+      "reduce": "or",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "ngx_MCP_App"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_3931_73X"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "AUTOPILOT APPROACH HOLD",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "autopilot.heading": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_HDGwindow"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT HEADING LOCK DIR",
+          "unit": "degrees"
+        }
+      }
+    ],
+    "autopilot.altitude": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_ALTwindow"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT ALTITUDE LOCK VAR",
+          "unit": "feet"
+        }
+      }
+    ],
+    "autopilot.speed": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_SPDwindow"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT AIRSPEED HOLD VAR",
+          "unit": "knots"
+        }
+      }
+    ],
+    "autopilot.vs": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "ngx_MCP_VSwindow"
+        },
+        "transform": [
+          {
+            "op": "map",
+            "map": {
+              "-20000": 0
+            }
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT VERTICAL HOLD VAR",
+          "unit": "feet/minute"
+        }
+      }
+    ],
+    "controls.gearDown": {
+      "reduce": "and",
+      "bindings": [
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_450_73X"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_453_73X"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "lvar",
+            "name": "switch_454_73X"
+          },
+          "transform": [
+            {
+              "op": "gt",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "sim": "simconnect",
+          "source": {
+            "kind": "simvar",
+            "name": "GEAR HANDLE POSITION",
+            "unit": "Bool"
+          },
+          "transform": [
+            {
+              "op": "bool"
+            }
+          ]
+        }
+      ]
+    },
+    "controls.flaps": {
+      "sim": "simconnect",
+      "source": {
+        "kind": "simvar",
+        "name": "TRAILING EDGE FLAPS LEFT PERCENT",
+        "unit": "Percent"
+      },
+      "transform": [
+        {
+          "op": "clamp",
+          "min": 0,
+          "max": 100
+        }
+      ]
+    },
+    "radios.com1": {
+      "sim": "simconnect",
+      "source": {
+        "kind": "simvar",
+        "name": "COM ACTIVE FREQUENCY:1",
+        "unit": "MHz"
+      },
+      "transform": [
+        {
+          "op": "round",
+          "value": 3
+        }
+      ]
+    },
+    "radios.com2": {
+      "sim": "simconnect",
+      "source": {
+        "kind": "simvar",
+        "name": "COM ACTIVE FREQUENCY:2",
+        "unit": "MHz"
+      },
+      "transform": [
+        {
+          "op": "round",
+          "value": 3
+        }
+      ]
+    }
+  }
+}
