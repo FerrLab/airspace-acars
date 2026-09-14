@@ -18,6 +18,7 @@ import (
 	"airspace-acars/internal/domain"
 	"airspace-acars/internal/profiles"
 	sim "airspace-acars/internal/simconnect"
+	"airspace-acars/observability"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -404,6 +405,18 @@ func (s *Adapter) run(errCh chan<- error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer close(s.stopped)
+
+	// This is a bare goroutine, so a panic in here takes the whole ACARS down
+	// with it — a pilot mid-flight loses the app, not just the sim link. It
+	// has happened: reading a nil plan's bindings crashed to desktop on any
+	// aircraft without a profile. Report it and let the connection die on its
+	// own instead.
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("simconnect loop panicked, dropping the connection", "panic", r)
+			observability.Capture(fmt.Errorf("simconnect loop panicked: %v", r))
+		}
+	}()
 
 	dllPath, err := findSimConnectDLL()
 	if err != nil {

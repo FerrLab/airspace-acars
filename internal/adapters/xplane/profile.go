@@ -97,7 +97,7 @@ func (x *Adapter) subscribeExtras(plan *profiles.Plan) error {
 		"adapter", x.Name(),
 		"profiles", plan.ProfileIDs(),
 		"datarefs", len(x.extraByIdx),
-		"points", len(plan.Bindings))
+		"points", plan.PointCount())
 	return firstErr
 }
 
