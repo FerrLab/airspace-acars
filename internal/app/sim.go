@@ -68,7 +68,7 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		if err := connector.Connect(); err != nil {
 			a.simMu.Unlock()
 			err = fmt.Errorf("connect to %s: %w", connector.Name(), err)
-			span.Fail(err)
+			span.Expected(err)
 			return "", err
 		}
 	}
@@ -93,7 +93,7 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		case <-deadline:
 			a.DisconnectSim()
 			err := fmt.Errorf("no data received from %s — is the simulator running?", connector.Name())
-			span.Fail(err)
+			span.Expected(err)
 			return "", err
 		case <-tick.C:
 			a.simMu.Lock()
@@ -277,7 +277,7 @@ func (a *App) dataStreamLoop() {
 					a.reconnectAttempts++
 					attempts := a.reconnectAttempts
 					a.simMu.Unlock()
-					slog.Error("reconnect failed",
+					slog.Warn("reconnect failed",
 						"adapter", adapterName,
 						"attempt", attempts,
 						"error", err)
@@ -355,7 +355,7 @@ func (a *App) reconnectSim() error {
 
 	if err := connector.Connect(); err != nil {
 		err = fmt.Errorf("reconnect %s: %w", name, err)
-		span.Fail(err)
+		span.Expected(err)
 		return err
 	}
 

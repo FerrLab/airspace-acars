@@ -212,6 +212,29 @@ func (s *Span) Fail(err error) {
 	Capture(err)
 }
 
+// Expected marks the operation as failed without reporting it.
+//
+// Some failures are the normal outcome of asking: Discord is not running, the
+// simulator is not up yet, the pipe closed because the user quit. The ACARS
+// probes for all three on a timer, and a probe that comes back negative is an
+// answer, not a fault. Reporting them buried the real errors — the first eight
+// hours of live reporting produced 762 events for "no discord pipe found" and
+// almost nothing else.
+//
+// The span still records the failure, and a breadcrumb still carries the
+// reason, so when something genuinely breaks the report shows what had been
+// failing beforehand.
+func (s *Span) Expected(err error) {
+	if err == nil {
+		return
+	}
+	if s != nil && s.span != nil {
+		s.span.Status = sentry.SpanStatusUnavailable
+		s.span.SetData("expected_error", redactString(err.Error()))
+	}
+	Note("expected: "+err.Error(), "handled", true)
+}
+
 // Finish closes the span. A span that was never failed is reported as OK.
 func (s *Span) Finish() {
 	if s == nil || s.span == nil {

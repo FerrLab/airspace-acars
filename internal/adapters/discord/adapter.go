@@ -61,8 +61,9 @@ func (d *Adapter) Connect() error {
 		slog.Info("discord: connected", "pipe", i)
 		return nil
 	}
+	// Discord simply is not running. The caller retries on a timer.
 	err := fmt.Errorf("no discord pipe found")
-	span.Fail(err)
+	span.Expected(err)
 	return err
 }
 
@@ -105,12 +106,13 @@ func (d *Adapter) SetActivity(activity map[string]interface{}) error {
 		},
 	})
 	if err := writeFrame(d.pipe, 1, payload); err != nil {
-		span.Fail(err)
+		// The pipe closes when the user quits Discord mid-session.
+		span.Expected(err)
 		return err
 	}
 	_, err := readFrame(d.pipe)
 	if err != nil {
-		span.Fail(err)
+		span.Expected(err)
 	}
 	return err
 }
