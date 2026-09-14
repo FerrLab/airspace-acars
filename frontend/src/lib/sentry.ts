@@ -49,9 +49,22 @@ export function initSentry(): void {
     environment: release === "dev" || release.includes("beta") ? "development" : "production",
 
     // The ACARS shows a pilot's own flight; there is no reason to ship the
-    // contents of their screen or their keystrokes to us.
+    // contents of their screen to us. Passing an array to `integrations`
+    // merges with the defaults rather than replacing them — only
+    // `defaultIntegrations: false` replaces — so the breadcrumb integration is
+    // swapped for one that records network and navigation but not DOM clicks
+    // or console output, both of which carry what is on screen.
     sendDefaultPii: false,
-    integrations: [],
+    integrations: (defaults) => [
+      ...defaults.filter((integration) => integration.name !== "Breadcrumbs"),
+      Sentry.breadcrumbsIntegration({
+        dom: false,
+        console: false,
+        fetch: true,
+        xhr: true,
+        history: true,
+      }),
+    ],
 
     // Errors are the point. A webview has no meaningful traffic to trace.
     tracesSampleRate: 0,

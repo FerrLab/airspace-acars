@@ -5,19 +5,16 @@ import { AuthProvider } from "@/context/auth-context";
 import { ThemeProvider } from "@/context/theme-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import i18n from "@/lib/i18n";
-import { initSentry, captureError } from "@/lib/sentry";
+import { initSentry } from "@/lib/sentry";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { SettingsService } from "../bindings/airspace-acars";
 import "./index.css";
 
 async function boot() {
+  // Sentry's GlobalHandlers integration already hooks window.onerror and
+  // onunhandledrejection, so an uncaught error or a rejected Wails call is
+  // reported without a listener of our own.
   initSentry();
-
-  // A promise rejected with nobody listening is usually a Wails call that
-  // failed; it would otherwise vanish into the console.
-  window.addEventListener("unhandledrejection", (event) => {
-    captureError(event.reason ?? new Error("unhandled rejection"));
-  });
 
   try {
     const settings = await SettingsService.GetSettings();
