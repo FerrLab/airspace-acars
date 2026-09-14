@@ -30,6 +30,11 @@ Nothing that identifies the machine or the person flying it:
   values, breadcrumbs, span data, tags. Bearer tokens, JSON Web Tokens, device
   codes, secrets in query strings and anything under the pilot's profile
   directory are replaced with `[redacted]`, the last of which becomes `~`.
+- In the webview, Sentry's default breadcrumb integration is replaced with one
+  that records network requests and navigation but **not** DOM clicks or console
+  output, both of which carry what is on the pilot's screen. Note that passing
+  an array to `integrations` *merges* with the defaults rather than replacing
+  them — the function form above is what actually removes one.
 
 Scrubbing runs in `BeforeSend` *and* in `BeforeBreadcrumb`, so a secret is never
 even held in memory waiting for an error to carry it out. `observability/scrub_test.go`
