@@ -2,7 +2,7 @@
   "id": "fenix-a32x",
   "name": "Fenix A318/A319/A320/A321",
   "description": "Fenix Simulations A32X family on MSFS. The Fenix systems run on their own local variables, so the FCU selections, the autopilot engagement and the overhead switches are read from those rather than from the stock simulation variables the aircraft does not always drive.",
-  "notes": "Variable names come from the Fenix Cockpit_Behavior.xml: I_* are indicator (lit) states, S_* are switch positions, E_* are encoders. SimConnect reads local variables directly since Sim Update 12; the stock simulation variable stays behind each binding as the fallback for older simulator builds. The variant profiles (fenix-a318 and friends) sit on top of this one and only set the ICAO type. The beacon and strobe switches are left on the stock simulation variables: the Fenix overhead values are multi-position and the beacon drives the ACARS' automatic flight start, so it is not worth re-binding on an unverified mapping.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com) and confirmed in the simulator. SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The FCU selections come from N_FCU_* \u2014 the numbers in the windows. The S_FCU_* variables are the switch positions (which mode the knob is in) and were read as values in an earlier version of this profile, which reported a heading of 1 and an altitude of 0. Two caveats remain, neither expressible as a binding: N_FCU_VS carries the FPA times 1000 when the FCU is in FPA rather than V/S mode, and N_FCU_SPEED is a Mach number rather than knots when the speed window is in Mach. The beacon and strobe switches are left on the stock simulation variables: the Fenix overhead values are multi-position and the beacon drives the ACARS' automatic flight start, so it is not worth re-binding on an unverified mapping.",
   "priority": 100,
   "match": {
     "all": [
@@ -120,13 +120,8 @@
         "sim": "simconnect",
         "source": {
           "kind": "lvar",
-          "name": "S_FCU_HEADING"
-        },
-        "transform": [
-          {
-            "op": "round"
-          }
-        ]
+          "name": "N_FCU_HEADING"
+        }
       },
       {
         "sim": "simconnect",
@@ -142,7 +137,7 @@
         "sim": "simconnect",
         "source": {
           "kind": "lvar",
-          "name": "S_FCU_ALTITUDE"
+          "name": "N_FCU_ALTITUDE"
         }
       },
       {
@@ -159,13 +154,8 @@
         "sim": "simconnect",
         "source": {
           "kind": "lvar",
-          "name": "S_FCU_SPEED"
-        },
-        "transform": [
-          {
-            "op": "round"
-          }
-        ]
+          "name": "N_FCU_SPEED"
+        }
       },
       {
         "sim": "simconnect",
@@ -181,7 +171,7 @@
         "sim": "simconnect",
         "source": {
           "kind": "lvar",
-          "name": "S_FCU_VERTICAL_SPEED"
+          "name": "N_FCU_VS"
         }
       },
       {
