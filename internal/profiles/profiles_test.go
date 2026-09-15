@@ -801,3 +801,144 @@ func TestUnprofiledAircraftResolvesEmpty(t *testing.T) {
 		t.Errorf("PointCount() = %d, want 0", got)
 	}
 }
+
+// A transform is a pipeline: every step consumes the previous step's result.
+// The MD-11's APU switch was written as "gte 1" then "lte 2", as if the two
+// were conditions anded together. They are not — (state >= 1) is 0 or 1, and
+// both are <= 2, so the point read on for every state including 0. A map says
+// which states count as on without depending on that misreading.
+func TestMD11APUSwitchFollowsTheState(t *testing.T) {
+	reg := NewRegistry()
+	ctx := Context{AircraftName: "TFDi MD-11", Simulator: SimSimConnect}
+	plan := reg.Resolve(ctx, []SourceKind{SourceSimVar, SourceLVar})
+	require.False(t, plan.Empty(), "the MD-11 profile should match")
+
+	var key string
+	for _, b := range plan.Bindings {
+		if b.Point == "apu.switchOn" {
+			require.NotEmpty(t, b.Sources)
+			key = b.Sources[0].Key
+		}
+	}
+	require.NotEmpty(t, key, "apu.switchOn should be bound")
+
+	// 0 off, 1 starting, 2 running, 3 shutting down.
+	for state, want := range map[float64]bool{0: false, 1: true, 2: true, 3: false} {
+		fd := &domain.FlightData{}
+		plan.Apply(fd, map[string]float64{key: state})
+		assert.Equal(t, want, fd.APU.SwitchOn, "APU state %v", state)
+	}
+}
+
+// The flight guidance values the MD-11 reports are the point of the profile;
+// before these were bound the panel showed nothing for an aircraft that
+// publishes all four.
+func TestMD11ReportsItsFlightGuidance(t *testing.T) {
+	reg := NewRegistry()
+	ctx := Context{AircraftName: "TFDi MD-11", Simulator: SimSimConnect}
+	plan := reg.Resolve(ctx, []SourceKind{SourceSimVar, SourceLVar})
+
+	lvar := map[string]string{}
+	for _, b := range plan.Bindings {
+		if len(b.Sources) > 0 && b.Sources[0].Kind == SourceLVar {
+			lvar[b.Point] = b.Sources[0].Name
+		}
+	}
+	for point, want := range map[string]string{
+		"autopilot.heading":  "MD11_AFS_HDG",
+		"autopilot.altitude": "MD11_AFS_ALT",
+		"autopilot.vs":       "MD11_AFS_VS",
+		"autopilot.speed":    "MD11_AFS_SPD",
+	} {
+		assert.Equal(t, want, lvar[point], "%s", point)
+	}
+
+	fd := &domain.FlightData{}
+	plan.Apply(fd, map[string]float64{
+		"lvar:MD11_AFS_HDG:": 270,
+		"lvar:MD11_AFS_ALT:": 35000,
+		"lvar:MD11_AFS_VS:":  -1800,
+		"lvar:MD11_AFS_SPD:": 280,
+	})
+	assert.Equal(t, 270.0, fd.Autopilot.Heading)
+	assert.Equal(t, 35000.0, fd.Autopilot.Altitude)
+	assert.Equal(t, -1800.0, fd.Autopilot.VS)
+	assert.Equal(t, 280.0, fd.Autopilot.Speed)
+}
+
+// A transform is a pipeline, so a second comparison operates on the 1 or 0 the
+// first one produced, not on the original reading. Chaining two is almost
+// always someone writing a range check as if the steps were anded conditions —
+// which silently reads true for everything. The MD-11's APU switch did exactly
+// that. A range belongs in a map.
+func TestNoProfileChainsComparisons(t *testing.T) {
+	comparison := map[string]bool{
+		OpEq: true, OpNe: true, OpGt: true, OpGte: true,
+		OpLt: true, OpLte: true, OpBool: true, OpNot: true,
+	}
+
+	for _, prof := range NewRegistry().All() {
+		for point, entry := range prof.Mash {
+			for _, b := range entry.Bindings {
+				n := 0
+				for _, step := range b.Transform {
+					if comparison[step.Op] {
+						n++
+					}
+				}
+				assert.LessOrEqual(t, n, 1,
+					"%s: %s chains %d comparisons over %s — the second sees the "+
+						"first one's 1 or 0, not the reading; use a map for a range",
+					prof.ID, point, n, b.Source.Name)
+			}
+		}
+	}
+}
+
+// Every LVAR a profile names was copied from HubHop, where the names are
+// case-sensitive and near-identical spellings mean different aircraft —
+// INI_AIRSPEED_DIAL is the A350's, INI_Airspeed_Dial the A300's. A typo cannot
+// be caught at runtime (an unknown LVAR simply never reports), so at least
+// hold the set of names stable.
+func TestAutopilotValueBindingsAreStable(t *testing.T) {
+	reg := NewRegistry()
+	want := map[string]map[string]string{
+		"tfdi-md11": {
+			"autopilot.heading": "MD11_AFS_HDG", "autopilot.altitude": "MD11_AFS_ALT",
+			"autopilot.vs": "MD11_AFS_VS", "autopilot.speed": "MD11_AFS_SPD",
+		},
+		"fbw-a32nx": {
+			"autopilot.heading": "A32NX_AUTOPILOT_HEADING_SELECTED",
+			"autopilot.altitude": "A32NX_FCU_ALT_SELECTED",
+		},
+		"inibuilds-a350": {
+			"autopilot.heading": "INI_HEADING_DIAL", "autopilot.altitude": "INI_ALTITUDE_DIAL",
+			"autopilot.vs": "INI_VVI_DIAL", "autopilot.speed": "INI_AIRSPEED_DIAL",
+		},
+		"inibuilds-a300": {
+			"autopilot.heading": "INI_HEADING_DIAL", "autopilot.altitude": "INI_Altitude_Dial",
+			"autopilot.vs": "INI_vvi_dial", "autopilot.speed": "INI_Airspeed_Dial",
+		},
+		"inibuilds-a310": {
+			"autopilot.heading": "A310_HEADING_DIAL", "autopilot.altitude": "A310_Altitude_Dial",
+			"autopilot.vs": "A310_vvi_dial", "autopilot.speed": "A310_Airspeed_Dial",
+		},
+	}
+
+	for id, points := range want {
+		prof, ok := reg.Get(id)
+		require.True(t, ok, "profile %s is missing", id)
+		for point, lvar := range points {
+			entry, ok := prof.Mash[point]
+			require.True(t, ok, "%s: %s is not bound", id, point)
+			require.NotEmpty(t, entry.Bindings)
+			assert.Equal(t, lvar, entry.Bindings[0].Source.Name, "%s: %s", id, point)
+
+			// Every one keeps the stock simvar behind it, so an aircraft that
+			// does not publish the LVAR still reports something.
+			last := entry.Bindings[len(entry.Bindings)-1]
+			assert.Equal(t, SourceSimVar, last.Source.Kind,
+				"%s: %s has no stock fallback", id, point)
+		}
+	}
+}

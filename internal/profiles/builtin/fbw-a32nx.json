@@ -271,6 +271,40 @@
         "kind": "const",
         "value": "A20N"
       }
-    }
+    },
+    "autopilot.heading": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_AUTOPILOT_HEADING_SELECTED"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT HEADING LOCK DIR",
+          "unit": "degrees"
+        }
+      }
+    ],
+    "autopilot.altitude": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "A32NX_FCU_ALT_SELECTED"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT ALTITUDE LOCK VAR",
+          "unit": "feet"
+        }
+      }
+    ]
   }
 }

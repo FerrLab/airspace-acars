@@ -146,6 +146,74 @@
           }
         ]
       }
+    ],
+    "autopilot.heading": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "INI_HEADING_DIAL"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT HEADING LOCK DIR",
+          "unit": "degrees"
+        }
+      }
+    ],
+    "autopilot.altitude": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "INI_ALTITUDE_DIAL"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT ALTITUDE LOCK VAR",
+          "unit": "feet"
+        }
+      }
+    ],
+    "autopilot.vs": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "INI_VVI_DIAL"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT VERTICAL HOLD VAR",
+          "unit": "feet per minute"
+        }
+      }
+    ],
+    "autopilot.speed": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "INI_AIRSPEED_DIAL"
+        }
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "AUTOPILOT AIRSPEED HOLD VAR",
+          "unit": "knots"
+        }
+      }
     ]
   }
 }
