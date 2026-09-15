@@ -91,6 +91,15 @@ var xplaneDatarefs = []string{
 	"sim/weather/barometer_sealevel_inhg",
 	"sim/time/paused",
 	"sim/flightmodel2/misc/has_crashed",
+
+	// APU. Appended rather than grouped with the electrical datarefs above,
+	// because applyDefaultRef switches on a dataref's position in this slice
+	// and inserting into the middle would silently reassign every case after
+	// it. New entries go on the end.
+	"sim/cockpit2/electrical/APU_starter_switch",
+	"sim/cockpit2/electrical/APU_N1_percent",
+	"sim/cockpit2/electrical/APU_generator_on",
+	"sim/cockpit2/electrical/APU_generator_amps",
 }
 
 // Adapter is the X-Plane UDP adapter using the RREF protocol.
@@ -437,5 +446,21 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 		x.data.Sensors.Paused = val != 0
 	case 76:
 		x.data.Sensors.Crashed = val != 0
+
+	// APU. X-Plane splits what MSFS reports as four simvars slightly
+	// differently, so the mapping is spelled out rather than assumed:
+	case 77:
+		// APU power switch: 0 off, 1 on, 2 start. The domain field is the
+		// switch, not whether the APU has spun up — RPM covers that.
+		x.data.APU.SwitchOn = val != 0
+	case 78:
+		x.data.APU.RPMPercent = float64(val)
+	case 79:
+		x.data.APU.GenSwitch = val != 0
+	case 80:
+		// There is no "generator active" dataref. Amperage is the closest
+		// honest answer to whether the generator is actually supplying the
+		// bus, which is what the MSFS simvar of that name reports.
+		x.data.APU.GenActive = float64(val) > 0
 	}
 }
