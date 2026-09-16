@@ -16,14 +16,17 @@ func (a *App) GetMessages(page int) (*domain.MessagesResponse, error) {
 	defer span.Finish()
 
 	path := fmt.Sprintf("/api/v2/acars/messages?page=%d", page)
-	body, _, err := a.Airspace.DoRequest("GET", path, nil)
+	body, status, err := a.Airspace.DoRequest("GET", path, nil)
 	if err != nil {
 		span.Fail(err)
 		return nil, err
 	}
 
-	if len(body) > 0 && body[0] == '<' {
-		err := fmt.Errorf("server returned HTML instead of JSON (possible auth redirect or server error)")
+	// A non-2xx body is an error page, not messages. Unmarshalling it reported
+	// whatever its first character happened to be — a CDN's "error code: 502"
+	// arrived as a JSON syntax error about the letter 'e'. The old guard only
+	// caught bodies starting with '<', so plain-text error pages went through.
+	if err := domain.NewStatusError("GET", path, status, body); err != nil {
 		span.Fail(err)
 		return nil, err
 	}
@@ -68,6 +71,9 @@ func (a *App) SendMessage(message string) (*domain.ChatMessage, error) {
 // ConfirmMessage marks a message as read.
 func (a *App) ConfirmMessage(messageID int) error {
 	payload := map[string]int{"message_id": messageID}
-	_, _, err := a.Airspace.DoRequest("PUT", "/api/v2/acars/message/confirm", payload)
-	return err
+	_, status, err := a.Airspace.DoRequest("PUT", "/api/v2/acars/message/confirm", payload)
+	if err != nil {
+		return err
+	}
+	return domain.NewStatusError("PUT", "/api/v2/acars/message/confirm", status, nil)
 }

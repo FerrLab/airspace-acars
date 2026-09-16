@@ -65,8 +65,11 @@ func (a *App) GetActiveFlightInfo() map[string]string {
 
 // GetBooking fetches the current booking from the API.
 func (a *App) GetBooking() (map[string]interface{}, error) {
-	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
+	body, status, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
 	if err != nil {
+		return nil, err
+	}
+	if err := domain.NewStatusError("GET", "/api/v2/acars/booking", status, body); err != nil {
 		return nil, err
 	}
 	var result map[string]interface{}
@@ -78,8 +81,11 @@ func (a *App) GetBooking() (map[string]interface{}, error) {
 
 // GetPilot fetches the pilot profile from the API.
 func (a *App) GetPilot() (map[string]interface{}, error) {
-	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/pilot", nil)
+	body, status, err := a.Airspace.DoRequest("GET", "/api/v2/acars/pilot", nil)
 	if err != nil {
+		return nil, err
+	}
+	if err := domain.NewStatusError("GET", "/api/v2/acars/pilot", status, body); err != nil {
 		return nil, err
 	}
 	var result map[string]interface{}
@@ -447,7 +453,11 @@ func (a *App) sendPositionBatches(reports []map[string]interface{}) (int, error)
 			end = len(reports)
 		}
 		batch := reports[sent:end]
-		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", batch); err != nil {
+		_, status, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", batch)
+		if err == nil {
+			err = domain.NewStatusError("POST", "/api/v2/acars/position", status, nil)
+		}
+		if err != nil {
 			return sent, err
 		}
 		sent = end
@@ -492,7 +502,14 @@ func (a *App) drainOutbox(bookingID string, maxBatches int) (int, int, error) {
 			continue
 		}
 
-		if _, _, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", goodReports); err != nil {
+		// The rows are deleted below on the strength of this reply, so a
+		// non-2xx has to stop it: the outbox exists to survive exactly the
+		// server trouble that produces one.
+		_, status, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", goodReports)
+		if err == nil {
+			err = domain.NewStatusError("POST", "/api/v2/acars/position", status, nil)
+		}
+		if err != nil {
 			remaining, _ := a.DB.CountOutbox(bookingID)
 			return sent, remaining, err
 		}
@@ -838,7 +855,13 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 			// Normal single-report send (only when not in high-res collection mode).
 			if !collecting {
 				report := a.buildPositionReport(fd)
-				_, _, err = a.Airspace.DoRequest("POST", "/api/v2/acars/position", report)
+				var status int
+				_, status, err = a.Airspace.DoRequest("POST", "/api/v2/acars/position", report)
+				if err == nil {
+					// A 502 from the CDN is not a delivered report. Counting
+					// one as sent dropped it instead of queuing it.
+					err = domain.NewStatusError("POST", "/api/v2/acars/position", status, nil)
+				}
 				if err != nil {
 					consecutiveFailures++
 					if bookingID != "" {
