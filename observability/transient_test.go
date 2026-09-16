@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+
+	"airspace-acars/internal/domain"
 )
 
 // wsaeconnreset is what a reset socket returns on Windows. It is spelled as a
@@ -159,5 +161,20 @@ func TestFailStillReportsRealFaults(t *testing.T) {
 
 	if got := transport.captured(); len(got) != 1 {
 		t.Fatalf("captured %d events, want 1 — a real fault must still be reported", len(got))
+	}
+}
+
+// A 5xx says of itself that it will pass. Transient has to honour that, or a
+// CDN outage fills the issue feed with events nobody can act on.
+func TestTransientHonoursServerFailures(t *testing.T) {
+	temporary := domain.NewStatusError("GET", "/api/v2/acars/messages?page=1", 502, []byte("error code: 502"))
+	if !Transient(fmt.Errorf("fetch messages: %w", temporary)) {
+		t.Error("a 502 should not be reported as a fault")
+	}
+
+	// A rejected token is about this request and must stay visible.
+	permanent := domain.NewStatusError("GET", "/api/v2/acars/pilot", 401, nil)
+	if Transient(permanent) {
+		t.Error("a 401 should still be reported")
 	}
 }

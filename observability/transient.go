@@ -63,5 +63,13 @@ func Transient(err error) bool {
 		return true
 	}
 
+	// Anything that says of itself that it will pass — a 5xx from the server
+	// or the CDN in front of it says so this way. The pilot cannot act on one
+	// and the outbox already absorbs it.
+	var temporary interface{ Temporary() bool }
+	if errors.As(err, &temporary) && temporary.Temporary() {
+		return true
+	}
+
 	return false
 }

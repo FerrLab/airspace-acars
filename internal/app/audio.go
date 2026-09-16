@@ -27,7 +27,10 @@ func (a *App) FetchSoundInstructions() ([]domain.SoundInstruction, error) {
 	_, span := observability.Start(context.Background(), "audio.fetch_instructions")
 	defer span.Finish()
 
-	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/sound", nil)
+	body, status, err := a.Airspace.DoRequest("GET", "/api/v2/acars/sound", nil)
+	if err == nil {
+		err = domain.NewStatusError("GET", "/api/v2/acars/sound", status, body)
+	}
 	if err != nil {
 		span.Fail(err)
 		return nil, err
