@@ -402,7 +402,10 @@ func (a *App) checkAutoFlight(data *domain.FlightData) {
 func (a *App) tryAutoStartFlight() {
 	defer observability.Recover()
 
-	body, _, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
+	body, status, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
+	if err == nil {
+		err = domain.NewStatusError("GET", "/api/v2/acars/booking", status, body)
+	}
 	if err != nil {
 		slog.Debug("auto-start: failed to fetch booking", "error", err)
 		return
