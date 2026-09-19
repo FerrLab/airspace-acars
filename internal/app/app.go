@@ -23,6 +23,9 @@ type AirspaceAPI interface {
 	DoRequest(method, path string, body interface{}) ([]byte, int, error)
 	// RawGet performs an unauthenticated GET to an absolute URL.
 	RawGet(url string) ([]byte, error)
+	// OnUnauthorized registers a callback fired when a request is rejected
+	// with a 401, so the app can react to a token going bad mid-session.
+	OnUnauthorized(fn func())
 }
 
 // UIEmitter sends events to the frontend (Wails event bridge).
@@ -138,7 +141,7 @@ func NewApp(
 	newSimConnect func() domain.SimConnector,
 	newXPlane func(host string, port int) domain.SimConnector,
 ) *App {
-	return &App{
+	a := &App{
 		Airspace:             airspace,
 		UI:                   ui,
 		DB:                   db,
@@ -150,4 +153,17 @@ func NewApp(
 		audioClient:          &http.Client{Timeout: 15 * time.Second},
 		discordNudge:         make(chan struct{}, 1),
 	}
+
+	// A token the server has revoked or let expire fails the same way on
+	// every subsequent poll, and the frontend has no way to tell that apart
+	// from "still signed in" — it keeps the token and keeps retrying with it,
+	// forever, each attempt its own reportable error. Clearing the token here
+	// and telling the frontend turns that into a single, one-time prompt to
+	// sign in again instead of an unbounded stream of 401s.
+	airspace.OnUnauthorized(func() {
+		a.SetToken("")
+		a.UI.EmitEvent("session-expired", true)
+	})
+
+	return a
 }

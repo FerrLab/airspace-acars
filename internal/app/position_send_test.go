@@ -24,6 +24,7 @@ func (s *stubAPI) SetToken(string)               {}
 func (s *stubAPI) BaseURL() string               { return "https://tenant.example" }
 func (s *stubAPI) Token() string                 { return "" }
 func (s *stubAPI) RawGet(string) ([]byte, error) { return nil, nil }
+func (s *stubAPI) OnUnauthorized(func())         {}
 
 func reports(n int) []map[string]interface{} {
 	out := make([]map[string]interface{}, n)
