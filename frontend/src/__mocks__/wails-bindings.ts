@@ -60,3 +60,40 @@ export function mockChatService() {
     ConfirmMessage: (_id: number) => Promise.resolve(),
   };
 }
+
+export function mockFlightDataService() {
+  return {
+    ConnectSim: (_simType: string) => Promise.resolve(""),
+    DisconnectSim: () => {},
+    IsConnected: () => false,
+    ConnectedAdapter: () => "",
+    GetFlightDataNow: () => Promise.resolve(null),
+    StartRecording: () => Promise.resolve(),
+    StopRecording: () => {},
+    IsRecording: () => Promise.resolve(false),
+    GetRecordingInfo: () => Promise.resolve({}),
+    ExportCSV: (_filePath: string) => Promise.resolve(),
+  };
+}
+
+export function mockAudioService() {
+  return {
+    FetchSoundInstructions: () => Promise.resolve([]),
+    GetAudioData: (_filename: string) => Promise.resolve(null),
+  };
+}
+
+export function mockDiscordService() {
+  return {
+    SetEnabled: (_enabled: boolean) => Promise.resolve(),
+  };
+}
+
+export function mockUpdateService() {
+  return {
+    CheckForUpdate: () => Promise.resolve(),
+    ApplyUpdate: () => Promise.resolve(),
+    GetCurrentVersion: () => Promise.resolve(""),
+    TailLogs: () => Promise.resolve(""),
+  };
+}
