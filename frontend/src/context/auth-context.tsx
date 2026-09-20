@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { Events } from "@wailsio/runtime";
 import { AuthService } from "../../bindings/airspace-acars";
 
 export interface TenantInfo {
@@ -149,6 +150,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     syncTokenToBackend(null);
   }, []);
+
+  // The backend fires this the moment a request comes back 401: the stored
+  // token has been revoked or has expired. Without this the app has no way
+  // to learn that and keeps polling with the same dead token forever, so the
+  // pilot never notices they need to sign in again.
+  useEffect(() => {
+    return Events.On("session-expired", () => {
+      logout();
+    });
+  }, [logout]);
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, tokenSynced, token, tenant, storedTokens, setAuthenticated, setTenant, loginWithStoredToken, logout }}>
