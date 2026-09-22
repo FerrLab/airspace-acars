@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +34,15 @@ func (a *App) FetchSoundInstructions() ([]domain.SoundInstruction, error) {
 		err = domain.NewStatusError("GET", "/api/v2/acars/sound", status, body)
 	}
 	if err != nil {
-		span.Fail(err)
+		if noActiveBooking(err) {
+			// This poll runs on a timer whether or not the pilot has taken a
+			// booking yet, and a 404 is the server's normal answer when they
+			// have not. Reporting it would repeat the "762 events for no
+			// discord pipe found" mistake: see Span.Expected.
+			span.Expected(err)
+		} else {
+			span.Fail(err)
+		}
 		return nil, err
 	}
 
@@ -139,4 +149,12 @@ func (a *App) downloadAndCacheAudio(audioURL string) (string, error) {
 	}
 
 	return filename, nil
+}
+
+// noActiveBooking reports whether err is the sound endpoint's 404 for a
+// pilot with no active booking - the only non-2xx status that endpoint
+// returns by design, as opposed to an auth failure or a server fault.
+func noActiveBooking(err error) bool {
+	var se *domain.StatusError
+	return errors.As(err, &se) && se.Status == http.StatusNotFound
 }
