@@ -22,8 +22,11 @@ const (
 	criticalAltThreshold = 200.0
 	highAltThreshold     = 10_000.0
 	maxHighResReports    = 3000
-	maxBatchSize         = 250
-	retryAttempts        = 4
+	// maxBatchSize is the upload contract: at most this many position reports
+	// in one POST. It also sizes the outbox peek, so a batch read from disk is
+	// a batch that can be sent as-is.
+	maxBatchSize  = 100
+	retryAttempts = 4
 
 	finishDrainTickEvery  = 1 * time.Second
 	finishDrainBackoffMax = 60 * time.Second

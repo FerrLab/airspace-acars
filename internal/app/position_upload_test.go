@@ -116,6 +116,15 @@ func TestDeliveredUploadLeavesNothingQueued(t *testing.T) {
 	}
 }
 
+// The upload contract is at most 100 reports per POST. It is asserted as a
+// number, not as maxBatchSize, so that changing the constant has to be a
+// deliberate change to the contract rather than a silent one.
+func TestBatchSizeContractIsOneHundred(t *testing.T) {
+	if maxBatchSize != 100 {
+		t.Errorf("maxBatchSize = %d, want 100", maxBatchSize)
+	}
+}
+
 // A batch larger than the server contract is split, not truncated.
 func TestLargeSubmissionIsSplitIntoBatches(t *testing.T) {
 	api := &fixedAPI{status: 202}
