@@ -22,8 +22,11 @@ const (
 	criticalAltThreshold = 200.0
 	highAltThreshold     = 10_000.0
 	maxHighResReports    = 3000
-	maxBatchSize         = 250
-	retryAttempts        = 4
+	// maxBatchSize is the upload contract: at most this many position reports
+	// in one POST. It also sizes the outbox peek, so a batch read from disk is
+	// a batch that can be sent as-is.
+	maxBatchSize  = 100
+	retryAttempts = 4
 
 	finishDrainTickEvery  = 1 * time.Second
 	finishDrainBackoffMax = 60 * time.Second
@@ -442,29 +445,6 @@ func (a *App) doRequestWithRetry(method, path string, body interface{}) ([]byte,
 	return nil, 0, fmt.Errorf("all %d attempts failed: %w", retryAttempts, lastErr)
 }
 
-// sendPositionBatches POSTs reports to /api/v2/acars/position in chunks of at
-// most maxBatchSize. Returns the number sent successfully before returning.
-// On error, returns (sent, err) and leaves the unsent suffix to the caller.
-func (a *App) sendPositionBatches(reports []map[string]interface{}) (int, error) {
-	sent := 0
-	for sent < len(reports) {
-		end := sent + maxBatchSize
-		if end > len(reports) {
-			end = len(reports)
-		}
-		batch := reports[sent:end]
-		_, status, err := a.Airspace.DoRequest("POST", "/api/v2/acars/position", batch)
-		if err == nil {
-			err = domain.NewStatusError("POST", "/api/v2/acars/position", status, nil)
-		}
-		if err != nil {
-			return sent, err
-		}
-		sent = end
-	}
-	return sent, nil
-}
-
 // drainOutbox pulls up to maxBatches batches of maxBatchSize from the outbox
 // for the given booking and POSTs each. Successfully shipped rows are deleted
 // from the DB. Returns (sent, remaining, err); on error the unsent rows stay.
@@ -693,7 +673,6 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 	lastChanged := time.Now()
 
 	var highResQueue []map[string]interface{}
-	var consecutiveFailures int
 	collecting := false
 	var touchdownGrace time.Time
 
@@ -703,24 +682,12 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 
 	slog.Info("position loop started", "interval", intervalName(currentInterval), "booking_id", bookingID)
 
-	persistQueue := func(q []map[string]interface{}, reason string) {
-		if bookingID == "" || len(q) == 0 {
-			return
-		}
-		for _, report := range q {
-			raw, err := json.Marshal(report)
-			if err != nil {
-				slog.Warn("position: marshal for outbox failed", "error", err, "reason", reason)
-				continue
-			}
-			if err := a.DB.EnqueuePosition(bookingID, raw); err != nil {
-				slog.Warn("position: enqueue to outbox failed", "error", err, "reason", reason)
-				continue
-			}
-			observability.Count("position.reports_queued")
-			observability.Count("position.outbox_enqueued")
-		}
-	}
+	// Every request is made by the uploader, on its own goroutine. This loop
+	// samples, and a sampler that waits on the network stops sampling: a
+	// ticker holds one tick and drops the rest, so a slow upload used to cost
+	// the flare. Handing work over must stay cheap.
+	uploader := a.startPositionUploader(bookingID)
+	defer uploader.Stop()
 
 	for {
 		select {
@@ -728,7 +695,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 			slog.Info("position loop stopping",
 				"collecting", collecting,
 				"highResQueued", len(highResQueue))
-			persistQueue(highResQueue, "loop-stop")
+			uploader.Submit(highResQueue)
 			return
 
 		case <-collectTicker.C:
@@ -740,9 +707,13 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				slog.Warn("high-res collect tick: no data", "error", err)
 				continue
 			}
-			if len(highResQueue) < maxHighResReports {
-				highResQueue = append(highResQueue, a.buildPositionReport(fd))
-				observability.Count("position.highres_queued")
+			highResQueue = append(highResQueue, a.buildPositionReport(fd))
+			observability.Count("position.highres_queued")
+			if len(highResQueue) >= maxHighResReports {
+				// Hand it over rather than start discarding samples. The old
+				// cap silently dropped everything past this point.
+				uploader.Submit(highResQueue)
+				highResQueue = nil
 			}
 
 		case <-ticker.C:
@@ -823,68 +794,18 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				ticker.Reset(currentInterval)
 			}
 
-			// Drain one batch from the outbox (non-blocking).
-			if bookingID != "" {
-				if sent, remaining, derr := a.drainOutbox(bookingID, 1); derr != nil {
-					if consecutiveFailures%30 == 0 {
-						slog.Warn("outbox drain failed", "error", derr, "remaining", remaining)
-					}
-				} else if sent > 0 {
-					observability.Add("position.reports_sent", int64(sent))
-					slog.Info("outbox drained", "sent", sent, "remaining", remaining)
-				}
-			}
-
-			// High-res queue drain — batched; on failure persist to outbox.
+			// Hand the flare samples over. The uploader batches, retries and
+			// falls back to the outbox; none of that happens on this
+			// goroutine, so the next sample is taken on time.
 			if len(highResQueue) > 0 {
 				observability.Gauge("position.highres_depth", float64(len(highResQueue)))
-				shipped, err := a.sendPositionBatches(highResQueue)
-				if shipped > 0 {
-					observability.Add("position.reports_sent", int64(shipped))
-				}
-				if err != nil {
-					unsent := highResQueue[shipped:]
-					observability.Add("position.reports_failed", int64(len(unsent)))
-					persistQueue(unsent, "highres-drain-failed")
-					highResQueue = nil
-				} else {
-					highResQueue = nil
-				}
+				uploader.Submit(highResQueue)
+				highResQueue = nil
 			}
 
-			// Normal single-report send (only when not in high-res collection mode).
+			// The ordinary once-a-tick report, while not in the flare.
 			if !collecting {
-				report := a.buildPositionReport(fd)
-				var status int
-				_, status, err = a.Airspace.DoRequest("POST", "/api/v2/acars/position", report)
-				if err == nil {
-					// A 502 from the CDN is not a delivered report. Counting
-					// one as sent dropped it instead of queuing it.
-					err = domain.NewStatusError("POST", "/api/v2/acars/position", status, nil)
-				}
-				if err != nil {
-					consecutiveFailures++
-					if bookingID != "" {
-						raw, mErr := json.Marshal(report)
-						if mErr == nil {
-							if eErr := a.DB.EnqueuePosition(bookingID, raw); eErr == nil {
-								observability.Count("position.reports_queued")
-								observability.Count("position.outbox_enqueued")
-							}
-						}
-					}
-					if consecutiveFailures == 1 {
-						slog.Warn("server connection lost, queuing position reports", "error", err)
-					} else if consecutiveFailures%30 == 0 {
-						slog.Warn("server still unreachable", "failures", consecutiveFailures)
-					}
-				} else {
-					observability.Count("position.reports_sent")
-					if consecutiveFailures > 0 {
-						slog.Info("server connection restored", "had_failures", consecutiveFailures)
-					}
-					consecutiveFailures = 0
-				}
+				uploader.Submit([]map[string]interface{}{a.buildPositionReport(fd)})
 			}
 		}
 	}
