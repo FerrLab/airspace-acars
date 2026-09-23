@@ -39,6 +39,7 @@ func init() {
 	application.RegisterEvent[string]("auto-flight-start")
 	application.RegisterEvent[bool]("request-window-close")
 	application.RegisterEvent[*profiles.Plan]("aircraft-profile")
+	application.RegisterEvent[bool]("session-expired")
 }
 
 func main() {
