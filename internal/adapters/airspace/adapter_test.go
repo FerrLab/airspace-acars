@@ -81,6 +81,58 @@ func TestPostIsNotRetried(t *testing.T) {
 	}
 }
 
+// A revoked or expired token fails the same way on every subsequent poll,
+// and nothing else in the adapter would ever tell a caller its token has
+// gone bad rather than merely being briefly rejected. OnUnauthorized is the
+// one signal that fires so the caller can react instead of retrying forever.
+func TestOnUnauthorizedFiresOn401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"Unauthenticated."}`))
+	}))
+	defer srv.Close()
+
+	a := NewAdapter()
+	a.SetBaseURL(srv.URL)
+
+	var calls int32
+	a.OnUnauthorized(func() { atomic.AddInt32(&calls, 1) })
+
+	_, status, err := a.DoRequest("GET", "/api/v2/acars/messages", nil)
+	if err != nil {
+		t.Fatalf("DoRequest: %v", err)
+	}
+	if status != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", status, http.StatusUnauthorized)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("OnUnauthorized callback fired %d times, want 1", got)
+	}
+}
+
+// A successful reply must never trigger the callback — only an actual 401
+// should ever prompt a sign-out.
+func TestOnUnauthorizedDoesNotFireOnSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	a := NewAdapter()
+	a.SetBaseURL(srv.URL)
+
+	var calls int32
+	a.OnUnauthorized(func() { atomic.AddInt32(&calls, 1) })
+
+	if _, _, err := a.DoRequest("GET", "/api/v2/acars/messages", nil); err != nil {
+		t.Fatalf("DoRequest: %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 0 {
+		t.Errorf("OnUnauthorized callback fired %d times, want 0", got)
+	}
+}
+
 func TestPostBodyStillReachesTheServer(t *testing.T) {
 	var got []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

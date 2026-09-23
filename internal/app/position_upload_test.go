@@ -52,6 +52,7 @@ func (f *fixedAPI) SetToken(string)               {}
 func (f *fixedAPI) BaseURL() string               { return "https://tenant.example" }
 func (f *fixedAPI) Token() string                 { return "" }
 func (f *fixedAPI) RawGet(string) ([]byte, error) { return nil, nil }
+func (f *fixedAPI) OnUnauthorized(func())         {}
 
 func samples(n int) []map[string]interface{} {
 	out := make([]map[string]interface{}, n)

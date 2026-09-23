@@ -67,6 +67,7 @@ func (s *slowAPI) SetToken(string)               {}
 func (s *slowAPI) BaseURL() string               { return "https://tenant.example" }
 func (s *slowAPI) Token() string                 { return "" }
 func (s *slowAPI) RawGet(string) ([]byte, error) { return nil, nil }
+func (s *slowAPI) OnUnauthorized(func())         {}
 
 // memDB is an in-memory stand-in for the outbox.
 type memDB struct {

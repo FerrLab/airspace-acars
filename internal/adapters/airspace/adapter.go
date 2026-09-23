@@ -19,10 +19,11 @@ const retryDelay = 250 * time.Millisecond
 
 // Adapter is the Airspace HTTP API client.
 type Adapter struct {
-	mu         sync.RWMutex
-	httpClient *http.Client
-	baseURL    string
-	token      string
+	mu             sync.RWMutex
+	httpClient     *http.Client
+	baseURL        string
+	token          string
+	onUnauthorized func()
 }
 
 // NewAdapter creates a new Airspace API adapter.
@@ -54,6 +55,21 @@ func (a *Adapter) Token() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.token
+}
+
+// OnUnauthorized registers a callback fired when the server rejects the
+// current token with a 401.
+//
+// A revoked or expired token otherwise fails silently on every poll, forever:
+// the frontend has no way to learn the token has gone bad, so it keeps
+// believing it is signed in and keeps retrying with the same dead token every
+// few seconds — each attempt its own reportable error. The callback exists so
+// the caller can sign the pilot out and prompt a fresh login the moment this
+// is first detected, rather than only ever finding out from the error stream.
+func (a *Adapter) OnUnauthorized(fn func()) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onUnauthorized = fn
 }
 
 // DoRequest makes an authenticated HTTP request to baseURL + path.
@@ -157,6 +173,15 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	statusStr := fmt.Sprintf("%d", resp.StatusCode)
 	span.Set("http.status_code", statusStr)
 	observability.Count("api.requests_total", "http.method", method, "http.path", path, "status", statusStr)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		a.mu.RLock()
+		cb := a.onUnauthorized
+		a.mu.RUnlock()
+		if cb != nil {
+			cb()
+		}
+	}
 
 	return respBody, resp.StatusCode, nil
 }

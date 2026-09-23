@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { Events } from "@wailsio/runtime";
 import { AuthService } from "../../bindings/airspace-acars";
 
 export interface TenantInfo {
@@ -15,6 +16,12 @@ interface StoredTokens {
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  // True once the Go backend has acknowledged the current token. Callers that
+  // make authenticated API calls right after mount (the chat unread poll, in
+  // particular) must wait for this: the backend only has `token` after an
+  // async Wails round-trip, and firing a request before it lands means the
+  // request goes out with no Authorization header and comes back 401.
+  tokenSynced: boolean;
   token: string | null;
   tenant: TenantInfo | null;
   storedTokens: StoredTokens;
@@ -53,8 +60,8 @@ function saveStoredTokens(tokens: StoredTokens) {
 }
 
 // Sync token to the Go backend so services can make authenticated API calls
-function syncTokenToBackend(token: string | null) {
-  AuthService.SetToken(token ?? "").catch(() => {});
+function syncTokenToBackend(token: string | null): Promise<void> {
+  return AuthService.SetToken(token ?? "").catch(() => {});
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -75,9 +82,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = token !== null;
 
+  // Starts false whenever there is a token to hand the backend, so a caller
+  // gating on it (App.tsx) waits out the round-trip below instead of
+  // assuming isAuthenticated already means the backend has it too.
+  const [tokenSynced, setTokenSynced] = useState(token === null);
+
   // Sync token + tenant to backend on mount and whenever they change
   useEffect(() => {
-    syncTokenToBackend(token);
+    let cancelled = false;
+    setTokenSynced(token === null);
+
+    syncTokenToBackend(token).then(() => {
+      if (!cancelled) setTokenSynced(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   useEffect(() => {
@@ -130,8 +151,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     syncTokenToBackend(null);
   }, []);
 
+  // The backend fires this the moment a request comes back 401: the stored
+  // token has been revoked or has expired. Without this the app has no way
+  // to learn that and keeps polling with the same dead token forever, so the
+  // pilot never notices they need to sign in again.
+  useEffect(() => {
+    return Events.On("session-expired", () => {
+      logout();
+    });
+  }, [logout]);
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, token, tenant, storedTokens, setAuthenticated, setTenant, loginWithStoredToken, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, tokenSynced, token, tenant, storedTokens, setAuthenticated, setTenant, loginWithStoredToken, logout }}>
       {children}
     </AuthContext.Provider>
   );
