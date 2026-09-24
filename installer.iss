@@ -14,9 +14,12 @@ SolidCompression=yes
 PrivilegesRequired=lowest
 WizardStyle=modern
 
+[Dirs]
+Name: "{app}"; Permissions: users-modify
+
 [Files]
-Source: "Airspace ACARS.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "SimConnect.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Airspace ACARS.exe"; DestDir: "{app}"; Flags: ignoreversion; Permissions: users-modify
+Source: "SimConnect.dll"; DestDir: "{app}"; Flags: ignoreversion; Permissions: users-modify
 
 [Icons]
 Name: "{userprograms}\Airspace ACARS\Airspace ACARS"; Filename: "{app}\Airspace ACARS.exe"
