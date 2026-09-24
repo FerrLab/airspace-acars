@@ -87,25 +87,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // assuming isAuthenticated already means the backend has it too.
   const [tokenSynced, setTokenSynced] = useState(token === null);
 
-  // Sync token + tenant to backend on mount and whenever they change
+  // Hand the backend the tenant and then the token, in that order, as one
+  // operation.
+  //
+  // These were two effects with no ordering between them, and tokenSynced
+  // tracked only the token. So the backend could hold a newly issued token
+  // while still pointing at the previous tenant's URL — and a token is only
+  // valid against the tenant that issued it. That request comes back 401,
+  // which signs the pilot out of the tenant they just signed in to. Switching
+  // airlines was the way to hit it.
+  //
+  // tokenSynced now means both are in place, so App.tsx holds the shell back
+  // until the backend agrees with this context about who we are and where we
+  // are talking to.
   useEffect(() => {
     let cancelled = false;
     setTokenSynced(token === null);
 
-    syncTokenToBackend(token).then(() => {
+    (async () => {
+      try {
+        if (tenant) {
+          await AuthService.SelectTenant(tenant.domain);
+        }
+        await AuthService.SetToken(token ?? "");
+      } catch {
+        // The backend keeps whatever it had; the next change tries again.
+      }
       if (!cancelled) setTokenSynced(true);
-    });
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [token]);
-
-  useEffect(() => {
-    if (tenant) {
-      AuthService.SelectTenant(tenant.domain).catch(() => {});
-    }
-  }, [tenant]);
+  }, [token, tenant]);
 
   const setAuthenticated = useCallback((newToken: string) => {
     setToken(newToken);
