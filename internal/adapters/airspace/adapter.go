@@ -174,7 +174,13 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	span.Set("http.status_code", statusStr)
 	observability.Count("api.requests_total", "http.method", method, "http.path", path, "status", statusStr)
 
-	if resp.StatusCode == http.StatusUnauthorized {
+	// A 401 only means the session has expired if there was a session: the
+	// Authorization header is attached only when a token exists, so a request
+	// made before one is set — or after one was just cleared — is rejected the
+	// same way. Treating that as an expired session signed the pilot out of a
+	// tenant they had just signed in to, and deleted the stored token on the
+	// way out, so the next attempt needed a fresh code as well.
+	if resp.StatusCode == http.StatusUnauthorized && token != "" {
 		a.mu.RLock()
 		cb := a.onUnauthorized
 		a.mu.RUnlock()
