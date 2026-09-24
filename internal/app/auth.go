@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"airspace-acars/internal/domain"
@@ -15,11 +16,18 @@ import (
 )
 
 // SetToken stores the bearer token for API requests.
+//
+// The token itself is never logged, here or anywhere: only whether there is
+// one. That is the part that matters when a pilot reports being signed out,
+// and it is the whole of what the log needs to show.
 func (a *App) SetToken(token string) {
 	a.Airspace.SetToken(token)
 	if token == "" {
 		observability.ClearPilot()
+		slog.Info("auth: token cleared", "tenant", a.Airspace.BaseURL())
+		return
 	}
+	slog.Info("auth: token set", "tenant", a.Airspace.BaseURL())
 }
 
 // FetchTenants lists available tenants from the API base URL.
@@ -44,7 +52,15 @@ func (a *App) FetchTenants() ([]domain.Tenant, error) {
 
 // SelectTenant sets the tenant base URL for API requests.
 func (a *App) SelectTenant(d string) {
+	previous := a.Airspace.BaseURL()
 	a.Airspace.SetBaseURL(fmt.Sprintf("https://%s", d))
+	if previous != "" && previous != fmt.Sprintf("https://%s", d) {
+		// Worth its own line: a token belongs to one tenant, so a switch is
+		// where a request can end up at the wrong one.
+		slog.Info("auth: tenant switched", "from", previous, "to", d)
+		return
+	}
+	slog.Info("auth: tenant selected", "tenant", d)
 }
 
 // RequestDeviceCode initiates the device-code OAuth flow.
@@ -53,6 +69,8 @@ func (a *App) RequestDeviceCode() (*domain.DeviceCodeResponse, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("no tenant selected")
 	}
+
+	slog.Info("auth: requesting a device code", "tenant", baseURL)
 
 	resp, err := a.httpClient.Post(
 		baseURL+"/api/v2/acars/auth/request",
@@ -123,6 +141,15 @@ func (a *App) PollForToken(authorizationToken string) (*domain.TokenResponse, er
 		}
 	}
 	tr.Status = resp.StatusCode
+
+	// The poll runs on a timer while the pilot is in the browser, so only the
+	// outcomes are logged: pending is the expected answer nearly every time.
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		slog.Info("auth: device code accepted, signing in", "tenant", baseURL)
+	case resp.StatusCode >= 400 && resp.StatusCode != http.StatusAccepted:
+		slog.Warn("auth: device code rejected", "tenant", baseURL, "status", resp.StatusCode)
+	}
 
 	span.Set("oauth.status", fmt.Sprintf("%d", resp.StatusCode))
 	return &tr, nil
