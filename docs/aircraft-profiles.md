@@ -203,8 +203,8 @@ Comparison steps return `1` or `0`, so they can feed boolean data points.
 | `attitude.headingMag` | float | Magnetic heading in degrees |
 | `attitude.headingTrue` | float | True heading in degrees |
 | `attitude.ias` | float | Indicated airspeed in knots |
-| `attitude.pitch` | float | Pitch in degrees |
-| `attitude.roll` | float | Bank in degrees |
+| `attitude.pitch` | float | Pitch in degrees, positive nose down |
+| `attitude.roll` | float | Bank in degrees, positive left wing down |
 | `attitude.tas` | float | True airspeed in knots |
 | `attitude.vs` | float | Vertical speed in feet per minute |
 | `autopilot.altitude` | float | Selected altitude in feet |
