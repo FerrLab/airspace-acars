@@ -84,7 +84,7 @@ func resolveCoordinates(icao string, lat, lon float64) (float64, float64) {
 
 // calculateGreatCircleDistanceNM computes distance in nautical miles between coordinates.
 func calculateGreatCircleDistanceNM(lat1, lon1, lat2, lon2 float64) float64 {
-	if lat1 == 0 && lon1 == 0 && lat2 == 0 && lon2 == 0 {
+	if (lat1 == 0 && lon1 == 0) || (lat2 == 0 && lon2 == 0) {
 		return 0
 	}
 	rad := math.Pi / 180.0
@@ -241,9 +241,6 @@ func (f flightWire) toDomain() (domain.FlightLog, error) {
 	score := int(parseFloat(f.Score))
 
 	status := f.Status
-	if status == "" {
-		status = "accepted"
-	}
 
 	return domain.FlightLog{
 		ID:                id,
@@ -262,6 +259,26 @@ func (f flightWire) toDomain() (domain.FlightLog, error) {
 		ArrivalTime:       f.ArrivalTime,
 		CreatedAt:         f.CreatedAt,
 	}, nil
+}
+
+func extractPilotUserID(pilot map[string]interface{}) string {
+	for _, key := range []string{"id", "user_id", "pilot_id"} {
+		switch v := pilot[key].(type) {
+		case float64:
+			if v > 0 {
+				return strconv.FormatInt(int64(v), 10)
+			}
+		case int:
+			if v > 0 {
+				return strconv.Itoa(v)
+			}
+		case string:
+			if v != "" {
+				return v
+			}
+		}
+	}
+	return ""
 }
 
 // GetMyFlights loads pilot past flights and calculates summary metrics.
@@ -286,78 +303,74 @@ func (a *App) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, erro
 		limit = 50
 	}
 
-	// Fetch pilot profile for overview statistics
-	pilotProfile, _ := a.GetPilot()
+	// Fetch pilot profile for overview statistics and user filter
+	pilotProfile, err := a.GetPilot()
+	if err != nil || pilotProfile == nil {
+		return &domain.MyFlightsResponse{
+			Status:  "unavailable",
+			Flights: []domain.FlightLog{},
+		}, nil
+	}
 
-	summary := domain.PilotSummaryStats{}
-	var pilotUserID string
-	if pilotProfile != nil {
-		summary.PilotID = pilotIdentifier(pilotProfile)
-		pilotUserID = summary.PilotID
-		if name, ok := pilotProfile["name"].(string); ok {
-			summary.Name = name
-		}
-		if callsign, ok := pilotProfile["callsign"].(string); ok {
-			summary.Callsign = callsign
-		}
-		if points, ok := pilotProfile["points"].(float64); ok {
-			summary.Points = int(points)
-		}
-		if flightsCount, ok := pilotProfile["flights_count"].(float64); ok {
-			summary.TotalFlights = int(flightsCount)
-		}
-		if flightHours, ok := pilotProfile["flight_hours"].(float64); ok {
-			summary.TotalHours = flightHours
-		} else if hours, ok := pilotProfile["hours"].(float64); ok {
-			summary.TotalHours = hours
-		}
-		if landingAvg, ok := pilotProfile["landing_rate_avg"].(float64); ok {
-			summary.AvgLandingRate = landingAvg
-		}
-		if rankObj, ok := pilotProfile["rank"].(map[string]interface{}); ok {
-			if rName, ok := rankObj["name"].(string); ok {
-				summary.Rank = rName
-			}
-			if rImg, ok := rankObj["image_url"].(string); ok {
-				summary.RankImageURL = rImg
-			}
-		} else if rName, ok := pilotProfile["rank"].(string); ok {
+	pilotUserID := extractPilotUserID(pilotProfile)
+	if pilotUserID == "" {
+		return &domain.MyFlightsResponse{
+			Status:  "unavailable",
+			Flights: []domain.FlightLog{},
+		}, fmt.Errorf("could not determine pilot user id")
+	}
+
+	summary := domain.PilotSummaryStats{
+		PilotID: pilotUserID,
+	}
+	if name, ok := pilotProfile["name"].(string); ok {
+		summary.Name = name
+	}
+	if callsign, ok := pilotProfile["callsign"].(string); ok {
+		summary.Callsign = callsign
+	}
+	if points, ok := pilotProfile["points"].(float64); ok {
+		summary.Points = int(points)
+	}
+	if flightsCount, ok := pilotProfile["flights_count"].(float64); ok {
+		summary.TotalFlights = int(flightsCount)
+	}
+	if flightHours, ok := pilotProfile["flight_hours"].(float64); ok {
+		summary.TotalHours = flightHours
+	} else if hours, ok := pilotProfile["hours"].(float64); ok {
+		summary.TotalHours = hours
+	}
+	if landingAvg, ok := pilotProfile["landing_rate_avg"].(float64); ok {
+		summary.AvgLandingRate = landingAvg
+	}
+	if rankObj, ok := pilotProfile["rank"].(map[string]interface{}); ok {
+		if rName, ok := rankObj["name"].(string); ok {
 			summary.Rank = rName
 		}
+		if rImg, ok := rankObj["image_url"].(string); ok {
+			summary.RankImageURL = rImg
+		}
+	} else if rName, ok := pilotProfile["rank"].(string); ok {
+		summary.Rank = rName
 	}
 
 	query := url.Values{
-		"page":     {strconv.Itoa(page)},
-		"per_page": {strconv.Itoa(limit)},
-		"sort":     {"created_at"},
-		"sort_dir": {"desc"},
-	}
-	if pilotUserID != "" {
-		query.Set("filter[user_id]", pilotUserID)
+		"page":            {strconv.Itoa(page)},
+		"per_page":        {strconv.Itoa(limit)},
+		"sort":            {"created_at"},
+		"sort_dir":        {"desc"},
+		"filter[user_id]": {pilotUserID},
 	}
 
 	candidates := []string{
 		"/api/v1/flights?" + query.Encode(),
-		"/api/v2/acars/flights?" + query.Encode(),
 		"/api/v2/acars/pilot/flights?" + query.Encode(),
-		"/api/v1/flights",
+		"/api/v2/acars/flights?" + query.Encode(),
 	}
 
-	var body []byte
-	var status string
-	var err error
-
-	for _, path := range candidates {
-		body, status, err = a.documentRequest(path)
-		if err != nil {
-			return nil, err
-		}
-		if status == "ok" {
-			break
-		}
-		if status == "localMode" || status == "noSession" {
-			break
-		}
+	body, status, err := executeCandidates(candidates, a.documentRequest)
+	if err != nil {
+		return nil, err
 	}
 
 	response := &domain.MyFlightsResponse{
@@ -411,7 +424,13 @@ func (a *App) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, erro
 
 	if len(response.Flights) > 0 {
 		if response.Pilot.TotalFlights == 0 {
-			response.Pilot.TotalFlights = len(response.Flights)
+			if envelope.Meta.Total > 0 {
+				response.Pilot.TotalFlights = envelope.Meta.Total
+			} else if envelope.Total > 0 {
+				response.Pilot.TotalFlights = envelope.Total
+			} else {
+				response.Pilot.TotalFlights = len(response.Flights)
+			}
 		}
 		if response.Pilot.TotalHours == 0 && totalFlightMinutes > 0 {
 			response.Pilot.TotalHours = math.Round((float64(totalFlightMinutes)/60.0)*10) / 10

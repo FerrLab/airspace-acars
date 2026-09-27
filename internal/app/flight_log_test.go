@@ -7,12 +7,19 @@ import (
 
 type flightLogAPI struct {
 	stubAPI
-	path string
+	path      string
+	pilotBody []byte
 }
 
 func (*flightLogAPI) Token() string { return "pilot-token" }
 func (s *flightLogAPI) DoRequest(method, path string, body interface{}) ([]byte, int, error) {
 	s.path = path
+	if path == "/api/v2/acars/pilot" {
+		if s.pilotBody != nil {
+			return s.pilotBody, 200, nil
+		}
+		return []byte(`{"id": 42, "name": "Pilot 42", "callsign": "GLO1234"}`), 200, nil
+	}
 	return s.stubAPI.DoRequest(method, path, body)
 }
 
@@ -116,9 +123,9 @@ func TestGetMyFlightsSuccessWithNestedDataAndStats(t *testing.T) {
 		t.Errorf("expected computed distance > 0, got %v", f2.DistanceNM)
 	}
 
-	// Summary stats
-	if res.Pilot.TotalFlights != 2 {
-		t.Errorf("expected TotalFlights 2, got %d", res.Pilot.TotalFlights)
+	// Summary stats: verifies meta.total (12) is preferred over page count (2)
+	if res.Pilot.TotalFlights != 12 {
+		t.Errorf("expected TotalFlights 12, got %d", res.Pilot.TotalFlights)
 	}
 	if res.Pilot.AvgLandingRate == 0 {
 		t.Errorf("expected non-zero AvgLandingRate")
@@ -130,6 +137,9 @@ func TestGetMyFlightsSuccessWithNestedDataAndStats(t *testing.T) {
 	}
 	if u.Query().Get("page") != "1" || u.Query().Get("per_page") != "10" {
 		t.Errorf("unexpected query parameters in %s", api.path)
+	}
+	if u.Query().Get("filter[user_id]") != "42" {
+		t.Errorf("expected filter[user_id]=42, got %s", u.Query().Get("filter[user_id]"))
 	}
 }
 
@@ -163,5 +173,34 @@ func TestGetMyFlightsErrorStatuses(t *testing.T) {
 		if err != nil || res.Status != want {
 			t.Errorf("status %d: got status %q, want %q", status, res.Status, want)
 		}
+	}
+}
+
+func TestGetMyFlightsFailsWithoutPilotID(t *testing.T) {
+	// If /api/v2/acars/pilot returns no id, user_id or pilot_id, GetMyFlights must fail
+	// and never issue an unfiltered request.
+	api := &flightLogAPI{
+		stubAPI:   stubAPI{status: 200, body: []byte(`{"data": []}`)},
+		pilotBody: []byte(`{"name": "No ID Pilot"}`),
+	}
+	a := &App{Airspace: api}
+	res, err := a.GetMyFlights(1, 20)
+	if err == nil {
+		t.Fatal("expected error when pilot ID cannot be determined, got nil")
+	}
+	if res.Status != "unavailable" {
+		t.Errorf("got status %q, want 'unavailable'", res.Status)
+	}
+}
+
+func TestNullIslandDistanceGuard(t *testing.T) {
+	// If only one airport resolves coordinates, distance must not be measured to (0,0)
+	d := calculateGreatCircleDistanceNM(-23.435556, -46.473056, 0, 0)
+	if d != 0 {
+		t.Errorf("expected 0 distance when destination is (0,0), got %v", d)
+	}
+	d2 := calculateGreatCircleDistanceNM(0, 0, -22.910278, -43.163056)
+	if d2 != 0 {
+		t.Errorf("expected 0 distance when origin is (0,0), got %v", d2)
 	}
 }
