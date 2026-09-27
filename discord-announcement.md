@@ -1,6 +1,4 @@
-# 📡 Airspace ACARS — new release
-
-> Replace `v1.XXXXXXXX.XXX` below with the version the release workflow produces once #87 is merged.
+# 📡 Airspace ACARS v1.20260927.126
 
 **A big one for X-Plane pilots.** Three flight-data readings were plain wrong, and the server stored and scored them that way. If you fly X-Plane, please update.
 
@@ -36,6 +34,6 @@ The install folder is now writable by standard users, so updates apply without a
 
 ---
 
-**Update:** the ACARS updates itself on launch, or grab `v1.XXXXXXXX.XXX` from the downloads page.
+**Update:** the ACARS updates itself on launch, or grab `v1.20260927.126` from the downloads page.
 
 Found something off? Post in the support channel with your log and we'll take a look. 🛠️
