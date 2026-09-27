@@ -298,10 +298,16 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 		x.data.Position.Altitude = float64(val) * 3.28084
 	case 3:
 		x.data.Position.AltitudeAGL = float64(val) * 3.28084
+	// Pitch and bank are reported in SimConnect's sign, positive nose down and
+	// positive left wing down: that is what the server stores, and it negates
+	// every flight on the way to the PFD and the 3D model. theta and phi are
+	// the other way round, so X-Plane flights drew a climb as a descent and a
+	// right turn as a left one. Subtracted from zero rather than negated, so a
+	// level attitude reads 0 and not IEEE -0.
 	case 4:
-		x.data.Attitude.Pitch = float64(val)
+		x.data.Attitude.Pitch = 0 - float64(val)
 	case 5:
-		x.data.Attitude.Roll = float64(val)
+		x.data.Attitude.Roll = 0 - float64(val)
 	case 6:
 		x.data.Attitude.HeadingTrue = float64(val)
 	case 7:
