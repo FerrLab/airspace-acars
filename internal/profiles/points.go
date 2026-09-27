@@ -91,8 +91,8 @@ func init() {
 	registerFloat("position.altitude", "Indicated altitude in feet", func(fd *domain.FlightData, n float64) { fd.Position.Altitude = n })
 	registerFloat("position.altitudeAGL", "Height above ground in feet", func(fd *domain.FlightData, n float64) { fd.Position.AltitudeAGL = n })
 
-	registerFloat("attitude.pitch", "Pitch in degrees, positive nose down", func(fd *domain.FlightData, n float64) { fd.Attitude.Pitch = n })
-	registerFloat("attitude.roll", "Bank in degrees, positive left wing down", func(fd *domain.FlightData, n float64) { fd.Attitude.Roll = n })
+	registerFloat("attitude.pitch", "Pitch in degrees", func(fd *domain.FlightData, n float64) { fd.Attitude.Pitch = n })
+	registerFloat("attitude.roll", "Bank in degrees", func(fd *domain.FlightData, n float64) { fd.Attitude.Roll = n })
 	registerFloat("attitude.headingTrue", "True heading in degrees", func(fd *domain.FlightData, n float64) { fd.Attitude.HeadingTrue = n })
 	registerFloat("attitude.headingMag", "Magnetic heading in degrees", func(fd *domain.FlightData, n float64) { fd.Attitude.HeadingMag = n })
 	registerFloat("attitude.vs", "Vertical speed in feet per minute", func(fd *domain.FlightData, n float64) { fd.Attitude.VS = n })
