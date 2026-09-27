@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Sidebar, type Tab } from "@/components/sidebar";
 import { AcarsTab } from "@/components/acars-tab";
 import { ChatTab } from "@/components/chat-tab";
+import { FlightClocks } from "@/components/flight-clocks";
 import { DebugTab } from "@/components/debug-tab";
 import { SettingsTab } from "@/components/settings-tab";
 import { useUnreadChat } from "@/hooks/use-unread-chat";
@@ -70,8 +71,9 @@ export function AppShell() {
   return (
     <div className="flex h-full relative">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} hasUnreadChat={hasUnread} localMode={localMode} />
-      <div className="flex flex-1 flex-col">
-        <main className="flex-1 overflow-y-auto p-6">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <FlightClocks />
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "acars" && <AcarsTab localMode={localMode} volume={volume} onVolumeChange={handleVolumeChange} />}
           {activeTab === "chat" && <ChatTab localMode={localMode} />}
           {activeTab === "debug" && <DebugTab />}
