@@ -139,6 +139,10 @@ func (p *UserActionPort) GetDocument(id string) (*domain.DocumentDetail, error) 
 	return p.App.GetDocument(id)
 }
 
+func (p *UserActionPort) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, error) {
+	return p.App.GetMyFlights(page, limit)
+}
+
 func (p *UserActionPort) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return p.App.GetMessages(page)
 }

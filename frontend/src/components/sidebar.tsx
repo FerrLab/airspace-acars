@@ -4,10 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Settings, LogOut, Bug, MessageSquare, Radio, Building2, FileText, BookOpen } from "lucide-react";
+import { Settings, LogOut, Bug, MessageSquare, Radio, Building2, FileText, BookOpen, PlaneTakeoff } from "lucide-react";
 import { useDevMode } from "@/hooks/use-dev-mode";
 
-export type Tab = "acars" | "documents" | "notams" | "chat" | "debug" | "settings";
+export type Tab = "acars" | "my-flights" | "documents" | "notams" | "chat" | "debug" | "settings";
 
 interface SidebarProps {
   activeTab: Tab;
@@ -23,6 +23,7 @@ export function Sidebar({ activeTab, onTabChange, hasUnreadChat, localMode }: Si
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "acars", label: t("sidebar.acars"), icon: <Radio className="h-4 w-4" /> },
+    { id: "my-flights", label: t("sidebar.myFlights"), icon: <PlaneTakeoff className="h-4 w-4" /> },
     { id: "documents", label: t("sidebar.documents"), icon: <BookOpen className="h-4 w-4" /> },
     { id: "notams", label: t("sidebar.notams"), icon: <FileText className="h-4 w-4" /> },
     { id: "chat", label: t("sidebar.chat"), icon: <MessageSquare className={`h-4 w-4 ${hasUnreadChat && activeTab !== "chat" ? "animate-pulse text-yellow-400" : ""}`} /> },
