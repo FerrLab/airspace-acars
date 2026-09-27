@@ -10,6 +10,25 @@ import (
 	"airspace-acars/observability"
 )
 
+func TestPrivateNOTAMRejectionDoesNotExpirePilotSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer pilot-token" {
+			t.Error("pilot token not sent")
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	a := NewAdapter()
+	a.SetBaseURL(srv.URL)
+	a.SetToken("pilot-token")
+	called := false
+	a.OnUnauthorized(func() { called = true })
+	_, status, err := a.DoRequest("GET", "/api/v1/company-notams?page=1", nil)
+	if err != nil || status != 401 || called || a.Token() != "pilot-token" {
+		t.Fatalf("private API rejection affected session: status=%d callback=%v err=%v", status, called, err)
+	}
+}
+
 // resetOnceServer answers the first request by killing the connection the way
 // a CDN does when it drops a keep-alive — an RST, which surfaces to the client
 // as the "connection was forcibly closed" error the live reports carry — then

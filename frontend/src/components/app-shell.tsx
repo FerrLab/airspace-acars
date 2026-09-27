@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Sidebar, type Tab } from "@/components/sidebar";
 import { AcarsTab } from "@/components/acars-tab";
 import { ChatTab } from "@/components/chat-tab";
+import { NotamsTab } from "@/components/notams-tab";
 import { FlightClocks } from "@/components/flight-clocks";
 import { DebugTab } from "@/components/debug-tab";
 import { SettingsTab } from "@/components/settings-tab";
@@ -76,6 +77,7 @@ export function AppShell() {
         <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "acars" && <AcarsTab localMode={localMode} volume={volume} onVolumeChange={handleVolumeChange} />}
           {activeTab === "chat" && <ChatTab localMode={localMode} />}
+          {activeTab === "notams" && <NotamsTab localMode={localMode} />}
           {activeTab === "debug" && <DebugTab />}
           {activeTab === "settings" && <SettingsTab localMode={localMode} onLocalModeChange={setLocalMode} />}
         </main>

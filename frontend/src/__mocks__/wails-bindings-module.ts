@@ -10,6 +10,7 @@
 import {
   mockAuthService,
   mockChatService,
+  mockNOTAMService,
   mockFlightService,
   mockFlightDataService,
   mockSettingsService,
@@ -20,6 +21,7 @@ import {
 
 export const AuthService = mockAuthService();
 export const ChatService = mockChatService();
+export const NOTAMService = mockNOTAMService();
 export const FlightService = mockFlightService();
 export const FlightDataService = mockFlightDataService();
 export const SettingsService = mockSettingsService();

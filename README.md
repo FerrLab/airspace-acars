@@ -16,6 +16,10 @@ Built with [Wails v3](https://wails.io) (Go + React).
 - **Offline recording** — Local SQLite database for flight data persistence
 - **Error reporting** — Crashes and failures report to Sentry, scrubbed of tokens and anything identifying the pilot's machine; off unless a DSN is built in — see [docs/observability.md](docs/observability.md)
 
+Company notices are available in the **NOTAMs** tab. See
+[docs/notams.md](docs/notams.md) for the API contract and the pilot-token access
+limitation that still needs validation with the airline server.
+
 ## Requirements
 
 - [Go 1.26+](https://go.dev/dl/)

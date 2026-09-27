@@ -1,5 +1,22 @@
 // Factory functions for mocking Wails binding services in tests.
 
+export function mockNOTAMService() {
+  return {
+    GetNOTAMs: (_page: number) =>
+      Promise.resolve({
+        status: "ok",
+        data: [] as Array<{ id: string; title: string; content: string; created_at: string }>,
+        current_page: 1,
+        last_page: 1,
+      }),
+    GetNOTAM: (_id: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: null as { id: string; title: string; content: string; created_at: string } | null,
+      }),
+  };
+}
+
 export function mockSettingsService() {
   return {
     GetSettings: () =>
@@ -9,6 +26,7 @@ export function mockSettingsService() {
         xplaneHost: "127.0.0.1",
         xplanePort: 49000,
         apiBaseURL: "https://airspace.ferrlab.com",
+        apiKey: "",
         localMode: false,
         chatSound: "default",
         discordPresence: true,
