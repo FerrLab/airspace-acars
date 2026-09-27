@@ -95,6 +95,9 @@ func (s *DocumentService) GetDocument(id string) (*domain.DocumentDetail, error)
 	return s.app.GetDocument(id)
 }
 
+func (s *DocumentService) OpenDocumentURL(rawURL string) error {
+	return s.app.OpenDocumentURL(rawURL)
+}
 func (s *ChatService) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return s.app.GetMessages(page)
 }

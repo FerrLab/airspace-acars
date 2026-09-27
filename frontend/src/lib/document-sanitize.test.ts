@@ -22,7 +22,27 @@ describe("sanitizeDocumentHtml", () => {
     expect(cleaned).not.toContain("onclick");
     expect(cleaned).not.toContain("onerror");
     expect(cleaned).not.toContain("javascript:");
-    expect(cleaned).toContain("<img src=\"valid.png\">");
+    expect(cleaned).toContain('<img src="valid.png">');
+  });
+
+  it("neutralizes bypass vectors: tabs, control chars, xlink:href, and overlay styling", () => {
+    // Tab within javascript scheme
+    const tabBypass = '<a href="java&#9;script:alert(1)">Click</a>';
+    expect(sanitizeDocumentHtml(tabBypass)).not.toContain("alert(1)");
+
+    // Control char within javascript scheme
+    const ctrlBypass = '<a href="&#1;javascript:alert(1)">Click</a>';
+    expect(sanitizeDocumentHtml(ctrlBypass)).not.toContain("alert(1)");
+
+    // SVG xlink:href
+    const svgBypass = '<svg><a xlink:href="javascript:alert(1)">Click</a></svg>';
+    expect(sanitizeDocumentHtml(svgBypass)).not.toContain("alert(1)");
+
+    // Fixed overlay style
+    const styleOverlay = '<div style="position:fixed;inset:0;z-index:9999">Overlay</div>';
+    const cleanedStyle = sanitizeDocumentHtml(styleOverlay);
+    expect(cleanedStyle).not.toContain("position:fixed");
+    expect(cleanedStyle).not.toContain("z-index");
   });
 
   it("handles empty or null input gracefully", () => {
