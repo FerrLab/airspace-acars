@@ -17,7 +17,8 @@ type Settings struct {
 	// AircraftProfile selects the aircraft profile: "auto" matches profiles
 	// against the loaded aircraft, "off" disables them, and any other value
 	// pins that profile ID regardless of its selector.
-	AircraftProfile string `json:"aircraftProfile"`
+	AircraftProfile   string `json:"aircraftProfile"`
+	AudioOutputDevice string `json:"audioOutputDevice"`
 }
 
 func DefaultSettings() Settings {
@@ -35,5 +36,6 @@ func DefaultSettings() Settings {
 		ConfirmCancelFlight: false,
 		ConfirmFinishFlight: false,
 		AircraftProfile:     "auto",
+		AudioOutputDevice:   "default",
 	}
 }
