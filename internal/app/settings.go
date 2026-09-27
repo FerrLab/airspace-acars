@@ -20,9 +20,6 @@ func (a *App) InitSettings() {
 		return
 	}
 	json.Unmarshal(data, &a.settings)
-	if a.Airspace != nil {
-		a.Airspace.SetAPIKey(a.settings.APIKey)
-	}
 }
 
 // GetSettings returns the current settings.
@@ -37,9 +34,6 @@ func (a *App) UpdateSettings(settings domain.Settings) error {
 	a.settingsMu.Lock()
 	defer a.settingsMu.Unlock()
 	a.settings = settings
-	if a.Airspace != nil {
-		a.Airspace.SetAPIKey(settings.APIKey)
-	}
 	return a.saveSettings()
 }
 

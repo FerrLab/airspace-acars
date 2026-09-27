@@ -6,7 +6,6 @@ type Settings struct {
 	XPlaneHost          string `json:"xplaneHost"`
 	XPlanePort          int    `json:"xplanePort"`
 	APIBaseURL          string `json:"apiBaseURL"`
-	APIKey              string `json:"apiKey"`
 	LocalMode           bool   `json:"localMode"`
 	ChatSound           string `json:"chatSound"`
 	DiscordPresence     bool   `json:"discordPresence"`
@@ -29,7 +28,6 @@ func DefaultSettings() Settings {
 		XPlaneHost:          "127.0.0.1",
 		XPlanePort:          49000,
 		APIBaseURL:          "https://airspace.ferrlab.com",
-		APIKey:              "",
 		ChatSound:           "default",
 		DiscordPresence:     true,
 		Language:            "en",

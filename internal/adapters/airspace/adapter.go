@@ -24,7 +24,6 @@ type Adapter struct {
 	httpClient     *http.Client
 	baseURL        string
 	token          string
-	apiKey         string
 	onUnauthorized func()
 }
 
@@ -47,12 +46,6 @@ func (a *Adapter) SetToken(token string) {
 	a.token = token
 }
 
-func (a *Adapter) SetAPIKey(key string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.apiKey = key
-}
-
 func (a *Adapter) BaseURL() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -65,14 +58,15 @@ func (a *Adapter) Token() string {
 	return a.token
 }
 
-func (a *Adapter) APIKey() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.apiKey
-}
-
 // OnUnauthorized registers a callback fired when the server rejects the
 // current token with a 401.
+//
+// A revoked or expired token otherwise fails silently on every poll, forever:
+// the frontend has no way to learn the token has gone bad, so it keeps
+// believing it is signed in and keeps retrying with the same dead token every
+// few seconds — each attempt its own reportable error. The callback exists so
+// the caller can sign the pilot out and prompt a fresh login the moment this
+// is first detected, rather than only ever finding out from the error stream.
 func (a *Adapter) OnUnauthorized(fn func()) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -89,7 +83,6 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	a.mu.RLock()
 	baseURL := a.baseURL
 	token := a.token
-	apiKey := a.apiKey
 	a.mu.RUnlock()
 
 	if baseURL == "" {
@@ -121,18 +114,21 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
-
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
-		}
-		if apiKey != "" && strings.HasPrefix(path, "/api/v1/") {
-			req.Header.Set("X-API-Key", apiKey)
-			req.Header.Set("Authorization", "Bearer "+apiKey)
 		}
 		return req, nil
 	}
 
+	// The tenant sits behind a CDN that closes idle keep-alive connections on
+	// its own schedule, so the first request after a quiet spell can go out
+	// on a socket that is already gone. One retry on a fresh connection turns
+	// that into a hiccup instead of an error the pilot sees.
+	//
+	// Only idempotent methods are retried. A POST that failed while reading
+	// the response may well have been processed, and the ACARS must not risk
+	// filing anything twice — position reports have an outbox that replays
+	// them properly.
 	attempts := 1
 	if method == http.MethodGet || method == http.MethodHead {
 		attempts = 2
@@ -180,7 +176,12 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	observability.Count("api.requests_total", "http.method", method, "http.path", path, "status", statusStr)
 
 	// A 401 only means the session has expired if there was a session: the
-	// Authorization header is attached only when a token exists.
+	// Authorization header is attached only when a token exists, so a request
+	// made before one is set — or after one was just cleared — is rejected the
+	// same way. Treating that as an expired session signed the pilot out of a
+	// tenant they had just signed in to, and deleted the stored token on the
+	// way out, so the next attempt needed a fresh code as well.
+	//
 	// A private v1 API may require a different credential. Its rejection does
 	// not invalidate the pilot's ACARS token (e.g. optional company NOTAMs).
 	if resp.StatusCode == http.StatusUnauthorized && token != "" && strings.HasPrefix(path, "/api/v2/acars/") {
