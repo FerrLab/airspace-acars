@@ -181,11 +181,12 @@ function MyFlightsDashboard({
     FlightLogService.GetMyFlights(1, 50)
       .then((res) => {
         if (cancelled) return;
+        if (res?.pilot) {
+          setPilot(res.pilot);
+        }
         if (!res || res.status !== "ok") {
-          setError(statusKey(res?.status ?? ""));
           return;
         }
-        setPilot(res.pilot ?? null);
         const flightList = (res.flights ?? []) as FlightLog[];
         setFlights(flightList);
         if (flightList.length > 0 && !selectedFlightId) {
@@ -317,22 +318,6 @@ function MyFlightsDashboard({
         </Card>
       )}
 
-      {error && !localMode && (
-        <Card className="flex items-center justify-between gap-3 border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{t(error, "Não foi possível carregar os dados de voos.")}</span>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setRefresh((r) => r + 1)}
-            className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
-          >
-            {t("myFlights.retry", "Tentar novamente")}
-          </Button>
-        </Card>
-      )}
 
       {/* Pilot Statistics KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

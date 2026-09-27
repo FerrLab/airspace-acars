@@ -169,10 +169,20 @@ it("shows local mode banner when localMode is active", async () => {
   expect(FlightLogService.GetMyFlights).not.toHaveBeenCalled();
 });
 
-it("handles error state and allows retry", async () => {
+it("handles unauthorized api response gracefully without showing error banner", async () => {
   vi.spyOn(FlightLogService, "GetMyFlights").mockResolvedValueOnce({
     status: "accessDenied",
-    pilot: {} as any,
+    pilot: {
+      pilot_id: "1",
+      name: "Captain John Doe",
+      callsign: "GLO101",
+      rank: "Commander",
+      total_flights: 0,
+      total_hours: 0,
+      avg_landing_rate: 0,
+      total_distance_nm: 0,
+      points: 0,
+    } as any,
     flights: [],
     current_page: 1,
     last_page: 1,
@@ -180,11 +190,7 @@ it("handles error state and allows retry", async () => {
   });
 
   render(view());
-  expect(await screen.findByText(en["myFlights.accessDenied"])).toBeInTheDocument();
-
-  const retryButton = screen.getByText(en["myFlights.retry"]);
-  await act(async () => {
-    fireEvent.click(retryButton);
-  });
-  expect(FlightLogService.GetMyFlights).toHaveBeenCalledTimes(2);
+  expect(await screen.findByText("GLO101")).toBeInTheDocument();
+  expect(screen.queryByText(en["myFlights.accessDenied"])).not.toBeInTheDocument();
+  expect(screen.getByText("Nenhum voo encontrado")).toBeInTheDocument();
 });
