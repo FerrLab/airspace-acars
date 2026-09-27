@@ -17,6 +17,49 @@ export function mockNOTAMService() {
   };
 }
 
+export function mockDocumentService() {
+  return {
+    GetDocuments: (_page: number, _parentID: string, _search: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: [] as Array<{
+          id: string;
+          title: string;
+          type: string;
+          parent_id?: string;
+          visibility?: string;
+          is_auto_generated: boolean;
+          source?: string;
+          content?: string;
+          file_url?: string;
+          sort_order: number;
+          created_at?: string;
+          updated_at?: string;
+        }>,
+        current_page: 1,
+        last_page: 1,
+      }),
+    GetDocument: (_id: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: null as {
+          id: string;
+          title: string;
+          type: string;
+          parent_id?: string;
+          visibility?: string;
+          is_auto_generated: boolean;
+          source?: string;
+          content?: string;
+          file_url?: string;
+          sort_order: number;
+          created_at?: string;
+          updated_at?: string;
+        } | null,
+      }),
+  };
+}
+
 export function mockSettingsService() {
   return {
     GetSettings: () =>
@@ -38,6 +81,8 @@ export function mockSettingsService() {
 export function mockFlightService() {
   return {
     GetFlightState: () => Promise.resolve("idle"),
+    GetActiveFlightInfo: () =>
+      Promise.resolve(null as { departure?: string; arrival?: string; callsign?: string } | null),
     GetBooking: () =>
       Promise.resolve({
         id: "bk_test_1",
