@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  AlertTriangle,
   ArrowLeft,
   Clock,
   Eye,
@@ -12,7 +13,6 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-
   TrendingDown,
   X,
 } from "lucide-react";
@@ -153,6 +153,7 @@ function MyFlightsDashboard({
   const [flights, setFlights] = useState<FlightLog[]>([]);
   const [pilotStats, setPilotStats] = useState<PilotSummaryStats | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "accepted" | "pending">("all");
+  const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -166,6 +167,7 @@ function MyFlightsDashboard({
     if (localMode || !ready) {
       setFlights([]);
       setPilotStats(null);
+      setErrorStatus(null);
       setLoading(false);
       return;
     }
@@ -173,6 +175,19 @@ function MyFlightsDashboard({
     FlightLogService.GetMyFlights(1, 50)
       .then((res) => {
         if (cancelled) return;
+        if (res?.status && res.status !== "ok") {
+          if (res.status === "localMode" || res.status === "noSession") {
+            setErrorStatus(null);
+            setFlights([]);
+            setPilotStats(null);
+            return;
+          }
+          setErrorStatus(res.status);
+          setFlights([]);
+          setPilotStats(null);
+          return;
+        }
+        setErrorStatus(null);
         if (res?.flights) {
           setFlights(res.flights);
         } else {
@@ -186,6 +201,7 @@ function MyFlightsDashboard({
       })
       .catch(() => {
         if (!cancelled) {
+          setErrorStatus("loadError");
           setFlights([]);
           setPilotStats(null);
         }
@@ -242,9 +258,10 @@ function MyFlightsDashboard({
 
   // Calculate live average score from flights
   const avgScore = useMemo(() => {
-    if (flights.length === 0) return 100;
-    const total = flights.reduce((acc, f) => acc + (f.score || 100), 0);
-    return (total / flights.length).toFixed(1);
+    const scored = flights.filter((f) => f.score != null && f.score > 0);
+    if (scored.length === 0) return null;
+    const total = scored.reduce((acc, f) => acc + f.score, 0);
+    return (total / scored.length).toFixed(1);
   }, [flights]);
 
   // If a specific flight is selected for inspection, show the full-screen view inside the tab
@@ -260,6 +277,45 @@ function MyFlightsDashboard({
 
   return (
     <div className="flex h-full flex-col space-y-4">
+      {/* Error Alert Banner */}
+      {errorStatus && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
+            <span>
+              {errorStatus === "accessDenied"
+                ? t(
+                    "myFlights.accessDenied",
+                    "Sua companhia aérea não autorizou o acesso ao seu histórico de voos."
+                  )
+                : errorStatus === "rateLimited"
+                ? t(
+                    "myFlights.rateLimited",
+                    "Muitas solicitações. Aguarde um momento antes de atualizar."
+                  )
+                : errorStatus === "unavailable"
+                ? t(
+                    "myFlights.unavailable",
+                    "O histórico de voos não está disponível na sua companhia no momento."
+                  )
+                : t(
+                    "myFlights.loadError",
+                    "Não foi possível carregar os dados de voos. Verifique sua conexão."
+                  )}
+            </span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setRefresh((r) => r + 1)}
+            disabled={loading}
+            className="h-7 text-xs border-red-500/30 text-red-300 hover:bg-red-500/20"
+          >
+            {t("myFlights.retry", "Tentar novamente")}
+          </Button>
+        </div>
+      )}
+
       {/* Header bar strictly following the ACARS Flux UI design system */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -416,7 +472,7 @@ function MyFlightsDashboard({
             {t("myFlights.avgScore", "Score Médio")}
           </span>
           <p className="mt-1 text-xl font-bold font-mono text-emerald-400">
-            {flights.length > 0 ? (
+            {avgScore ? (
               <>
                 {avgScore}{" "}
                 <span className="text-xs font-normal text-muted-foreground font-sans">pts</span>
@@ -531,7 +587,7 @@ function MyFlightsDashboard({
                         {/* Operational Score */}
                         <td className="py-2.5 px-3 whitespace-nowrap">
                           <Badge variant="outline" className="text-[10px] font-mono border-border text-foreground">
-                            {flight.score ? `${flight.score} pts` : "100 pts"}
+                            {flight.score != null && flight.score > 0 ? `${flight.score} pts` : "—"}
                           </Badge>
                         </td>
 
@@ -723,34 +779,62 @@ function FlightDetailView({
               </span>
             </Card>
 
-            {/* FDM Operational Score */}
+            {/* Operational Score */}
             <Card className="border-border/70 bg-card p-3 shadow-xs">
               <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
                 {t("myFlights.operationalScore", "Score Operacional")}
               </span>
               <p className="text-lg font-bold font-mono text-emerald-400 mt-1">
-                {flight.score || 100} / 100
+                {flight.score != null && flight.score > 0 ? `${flight.score} / 100` : "—"}
               </p>
               <span className="text-[10px] text-muted-foreground">
-                {t("myFlights.fdmValidated", "FDM Validado")}
+                {flight.score != null && flight.score > 0
+                  ? t("myFlights.scoreRecorded", "Score Registrado")
+                  : t("myFlights.noScore", "Sem pontuação")}
               </span>
             </Card>
           </div>
 
-          {/* Operational Briefing & Audit Report */}
-          <Card className="border-border/70 bg-card p-4 space-y-2 shadow-xs flex-1">
+          {/* Flight Summary */}
+          <Card className="border-border/70 bg-card p-4 space-y-2.5 shadow-xs flex-1">
             <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
-              {t("myFlights.auditReport", "Relatório Operacional de Auditoria (vOCC)")}
+              <Plane className="h-4 w-4 text-primary" />
+              {t("myFlights.flightSummary", "Resumo do Voo")}
             </h4>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {t("myFlights.auditFlightFrom", "Voo operado de")} <span className="text-foreground font-semibold">{flight.departure_airport?.name} ({flight.departure_airport?.icao})</span> {t("myFlights.auditFlightTo", "para")}{" "}
-              <span className="text-foreground font-semibold">{flight.arrival_airport?.name} ({flight.arrival_airport?.icao})</span>.
-              {t("myFlights.auditTelemetry", "Telemetria de voo registrada e arquivada pelo ACARS.")}
-              {" "}{t("myFlights.auditTouchdown", "Toque registrado a")} <span className="text-emerald-400 font-semibold font-mono">{Math.round(flight.landing_rate_fpm)} ft/min</span>,
-              {t("myFlights.auditConclusion", "velocidade de aproximação estabilizada e parâmetros de segurança operacionais validados com sucesso.")}
-            </p>
+            <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed">
+              <p>
+                {t("myFlights.departureLabel", "Partida")}:{" "}
+                <span className="text-foreground font-semibold font-mono">
+                  {flight.departure_airport?.icao}
+                </span>{" "}
+                ({flight.departure_airport?.city || flight.departure_airport?.name || "—"}) —{" "}
+                {formatUtcDate(flight.departure_time || flight.created_at)}
+              </p>
+              <p>
+                {t("myFlights.destinationLabel", "Destino")}:{" "}
+                <span className="text-foreground font-semibold font-mono">
+                  {flight.arrival_airport?.icao}
+                </span>{" "}
+                ({flight.arrival_airport?.city || flight.arrival_airport?.name || "—"}) —{" "}
+                {formatUtcDate(flight.arrival_time)}
+              </p>
+              <p>
+                {t("myFlights.flightDuration", "Duração de Voo")}:{" "}
+                <span className="text-foreground font-medium">
+                  {formatDuration(flight.flight_time_minutes)}
+                </span>{" "}
+                ({Math.round(flight.distance_nm)} NM)
+              </p>
+              {flight.landing_rate_fpm ? (
+                <p>
+                  {t("myFlights.touchdownRate", "Toque na Pista")}:{" "}
+                  <span className="text-emerald-400 font-semibold font-mono">
+                    {Math.round(flight.landing_rate_fpm)} ft/min
+                  </span>
+                </p>
+              ) : null}
+            </div>
           </Card>
         </div>
       </div>

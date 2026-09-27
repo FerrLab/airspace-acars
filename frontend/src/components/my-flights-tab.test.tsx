@@ -256,7 +256,7 @@ it("clicking the eye action button opens full-screen flight detail view with map
   });
 
   // Full-screen detail view is shown with route map and metrics
-  expect(screen.getByText("Operational Audit Report (vOCC)")).toBeInTheDocument();
+  expect(screen.getByText("Flight Summary")).toBeInTheDocument();
   expect(screen.getByText("Flight Duration")).toBeInTheDocument();
   expect(screen.getByText("Touchdown Rate")).toBeInTheDocument();
   expect(screen.getAllByText("-128 ft/min").length).toBeGreaterThan(0);
@@ -272,7 +272,7 @@ it("clicking the eye action button opens full-screen flight detail view with map
   });
 
   // Returns to the table
-  expect(screen.queryByText("Operational Audit Report (vOCC)")).not.toBeInTheDocument();
+  expect(screen.queryByText("Flight Summary")).not.toBeInTheDocument();
   expect(screen.getByText("SXB1265")).toBeInTheDocument();
 });
 
@@ -294,4 +294,20 @@ it("filters by status using segmented buttons", async () => {
 it("renders local mode message when localMode is true", async () => {
   render(view(true));
   expect(await screen.findByText(en["myFlights.localMode"])).toBeInTheDocument();
+});
+
+it("renders error banner with retry button on error status", async () => {
+  vi.spyOn(FlightLogService, "GetMyFlights").mockResolvedValueOnce({
+    status: "accessDenied",
+    pilot: {} as any,
+    flights: [],
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+  });
+
+  render(view());
+
+  expect(await screen.findByText(en["myFlights.accessDenied"])).toBeInTheDocument();
+  expect(screen.getByText(en["myFlights.retry"])).toBeInTheDocument();
 });

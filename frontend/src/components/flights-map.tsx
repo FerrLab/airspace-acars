@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,16 @@ interface FlightsMapProps {
   onSelectFlight: (flightId: string) => void;
   className?: string;
   overlayContent?: React.ReactNode;
+}
+
+function escapeHtml(value: unknown): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 const ARCGIS_DARK_BASE =
@@ -65,6 +76,7 @@ function createAirportIcon(
   isSelected: boolean,
   isDark: boolean
 ) {
+  const safeIcao = escapeHtml(icao);
   const pulseClass = isSelected
     ? isDark
       ? "bg-sky-400/40 animate-ping"
@@ -102,7 +114,7 @@ function createAirportIcon(
           <div class="h-1.5 w-1.5 rounded-full bg-white"></div>
         </div>
         <span class="absolute top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-mono tracking-wider ${labelClass} transition-all">
-          ${icao}
+          ${safeIcao}
         </span>
       </div>
     `,
@@ -119,6 +131,7 @@ export function FlightsMap({
   className = "",
   overlayContent,
 }: FlightsMapProps) {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -287,38 +300,49 @@ export function FlightsMap({
         onSelectFlight(flight.id);
       });
 
+      const safeCallsign = escapeHtml(flight.callsign);
+      const safeAircraft = escapeHtml(flight.aircraft?.icao_code || "A/C");
+      const safeDepIcao = escapeHtml(dep.icao);
+      const safeArrIcao = escapeHtml(arr.icao);
+      const distLabel = escapeHtml(t("myFlights.distance", "Dist"));
+      const timeLabel = escapeHtml(t("myFlights.flightTime", "Tempo"));
+      const landingLabel = escapeHtml(t("myFlights.landingRate", "Toque"));
+      const scoreLabel = escapeHtml(t("myFlights.score", "Score"));
+      const scoreDisplay =
+        flight.score != null && flight.score > 0 ? `${flight.score} pts` : "—";
+
       const popupContent = isDark
         ? `
         <div class="text-xs p-2 text-slate-100 font-sans space-y-1.5 min-w-[170px]">
           <div class="font-bold text-sm text-sky-400 flex items-center justify-between gap-3">
-            <span>${flight.callsign}</span>
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono">${flight.aircraft?.icao_code || "A/C"}</span>
+            <span>${safeCallsign}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800/60 font-mono">${safeAircraft}</span>
           </div>
           <div class="text-[11px] text-slate-300 font-medium">
-            ${dep.icao} ➔ ${arr.icao}
+            ${safeDepIcao} ➔ ${safeArrIcao}
           </div>
           <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-slate-400 pt-1.5 border-t border-slate-700/60">
-            <div>Dist: <span class="text-slate-100 font-medium">${Math.round(flight.distance_nm)} NM</span></div>
-            <div>Tempo: <span class="text-slate-100 font-medium">${flight.flight_time_minutes}m</span></div>
-            <div>Toque: <span class="text-emerald-400 font-medium">${flight.landing_rate_fpm ? `${Math.round(flight.landing_rate_fpm)}` : "—"} fpm</span></div>
-            <div>Score: <span class="text-slate-100 font-medium">${flight.score || "100"} pts</span></div>
+            <div>${distLabel}: <span class="text-slate-100 font-medium">${Math.round(flight.distance_nm)} NM</span></div>
+            <div>${timeLabel}: <span class="text-slate-100 font-medium">${flight.flight_time_minutes}m</span></div>
+            <div>${landingLabel}: <span class="text-emerald-400 font-medium">${flight.landing_rate_fpm ? `${Math.round(flight.landing_rate_fpm)}` : "—"} fpm</span></div>
+            <div>${scoreLabel}: <span class="text-slate-100 font-medium">${scoreDisplay}</span></div>
           </div>
         </div>
       `
         : `
         <div class="text-xs p-2 text-slate-900 font-sans space-y-1.5 min-w-[170px]">
           <div class="font-bold text-sm text-sky-700 flex items-center justify-between gap-3">
-            <span>${flight.callsign}</span>
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 border border-sky-300 font-mono">${flight.aircraft?.icao_code || "A/C"}</span>
+            <span>${safeCallsign}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 border border-sky-300 font-mono">${safeAircraft}</span>
           </div>
           <div class="text-[11px] text-slate-700 font-medium">
-            ${dep.icao} ➔ ${arr.icao}
+            ${safeDepIcao} ➔ ${safeArrIcao}
           </div>
           <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-slate-500 pt-1.5 border-t border-slate-200">
-            <div>Dist: <span class="text-slate-900 font-medium">${Math.round(flight.distance_nm)} NM</span></div>
-            <div>Tempo: <span class="text-slate-900 font-medium">${flight.flight_time_minutes}m</span></div>
-            <div>Toque: <span class="text-emerald-700 font-medium">${flight.landing_rate_fpm ? `${Math.round(flight.landing_rate_fpm)}` : "—"} fpm</span></div>
-            <div>Score: <span class="text-slate-900 font-medium">${flight.score || "100"} pts</span></div>
+            <div>${distLabel}: <span class="text-slate-900 font-medium">${Math.round(flight.distance_nm)} NM</span></div>
+            <div>${timeLabel}: <span class="text-slate-900 font-medium">${flight.flight_time_minutes}m</span></div>
+            <div>${landingLabel}: <span class="text-emerald-700 font-medium">${flight.landing_rate_fpm ? `${Math.round(flight.landing_rate_fpm)}` : "—"} fpm</span></div>
+            <div>${scoreLabel}: <span class="text-slate-900 font-medium">${scoreDisplay}</span></div>
           </div>
         </div>
       `;
@@ -350,19 +374,23 @@ export function FlightsMap({
         zIndexOffset: isSelectedAirport ? 1000 : 100,
       });
 
+      const safeAirportIcao = escapeHtml(airport.icao);
+      const safeAirportName = escapeHtml(airport.name);
+      const safeAirportCity = escapeHtml(airport.city);
+
       const airportPopupContent = isDark
         ? `
         <div class="text-xs p-2 text-slate-100 font-sans min-w-[140px]">
-          <div class="font-bold text-sky-400 text-sm font-mono">${airport.icao}</div>
-          <div class="text-[11px] text-slate-200 font-medium mt-0.5">${airport.name}</div>
-          ${airport.city ? `<div class="text-[10px] text-slate-400 mt-0.5">${airport.city}</div>` : ""}
+          <div class="font-bold text-sky-400 text-sm font-mono">${safeAirportIcao}</div>
+          <div class="text-[11px] text-slate-200 font-medium mt-0.5">${safeAirportName}</div>
+          ${safeAirportCity ? `<div class="text-[10px] text-slate-400 mt-0.5">${safeAirportCity}</div>` : ""}
         </div>
         `
         : `
         <div class="text-xs p-2 text-slate-900 font-sans min-w-[140px]">
-          <div class="font-bold text-sky-700 text-sm font-mono">${airport.icao}</div>
-          <div class="text-[11px] text-slate-800 font-medium mt-0.5">${airport.name}</div>
-          ${airport.city ? `<div class="text-[10px] text-slate-500 mt-0.5">${airport.city}</div>` : ""}
+          <div class="font-bold text-sky-700 text-sm font-mono">${safeAirportIcao}</div>
+          <div class="text-[11px] text-slate-800 font-medium mt-0.5">${safeAirportName}</div>
+          ${safeAirportCity ? `<div class="text-[10px] text-slate-500 mt-0.5">${safeAirportCity}</div>` : ""}
         </div>
         `;
 
@@ -398,7 +426,7 @@ export function FlightsMap({
         }, 100);
       }
     }
-  }, [flights, selectedFlightId, onSelectFlight, isDark]);
+  }, [flights, selectedFlightId, onSelectFlight, isDark, t]);
 
   const handleResetBounds = () => {
     if (!mapRef.current || !layersGroupRef.current) return;
@@ -429,14 +457,17 @@ export function FlightsMap({
         <div className="absolute top-3 left-3 z-[400] flex items-center gap-2 rounded-lg border border-border/70 bg-card/90 px-3 py-1.5 shadow-md backdrop-blur-md text-xs text-card-foreground">
           <span className="flex h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
           <span className="font-medium text-foreground">
-            {flights.length} {flights.length === 1 ? "Voo mapeado" : "Voos mapeados"}
+            {flights.length}{" "}
+            {flights.length === 1
+              ? t("myFlights.mapFlightMapped", "Voo mapeado")
+              : t("myFlights.mapFlightsMapped", "Voos mapeados")}
           </span>
           <button
             type="button"
             onClick={handleResetBounds}
             className="ml-2 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors border border-border/60"
           >
-            Centralizar
+            {t("myFlights.mapCenter", "Centralizar")}
           </button>
         </div>
       ) : null}
@@ -444,7 +475,10 @@ export function FlightsMap({
       {flights.length === 0 && (
         <div className="absolute inset-0 z-[400] flex flex-col items-center justify-center bg-background/50 backdrop-blur-xs text-center p-4">
           <p className="text-sm font-medium text-muted-foreground">
-            Nenhum voo recente com coordenadas disponíveis para exibição no mapa.
+            {t(
+              "myFlights.mapNoCoords",
+              "Nenhum voo recente com coordenadas disponíveis para exibição no mapa."
+            )}
           </p>
         </div>
       )}
