@@ -64,8 +64,10 @@ func (s *slowAPI) sampled() map[int64]bool {
 
 func (s *slowAPI) SetBaseURL(string)             {}
 func (s *slowAPI) SetToken(string)               {}
+func (s *slowAPI) SetAPIKey(string)              {}
 func (s *slowAPI) BaseURL() string               { return "https://tenant.example" }
 func (s *slowAPI) Token() string                 { return "" }
+func (s *slowAPI) APIKey() string                { return "" }
 func (s *slowAPI) RawGet(string) ([]byte, error) { return nil, nil }
 func (s *slowAPI) OnUnauthorized(func())         {}
 

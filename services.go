@@ -73,6 +73,17 @@ func (s *AuthService) SetToken(token string) { s.app.SetToken(token) }
 
 type ChatService struct{ app *app.App }
 
+// NOTAMService exposes read-only company notices using the selected tenant.
+type NOTAMService struct{ app *app.App }
+
+func (s *NOTAMService) GetNOTAMs(page int) (*domain.NOTAMPage, error) {
+	return s.app.GetNOTAMs(page)
+}
+
+func (s *NOTAMService) GetNOTAM(id string) (*domain.NOTAMDetail, error) {
+	return s.app.GetNOTAM(id)
+}
+
 func (s *ChatService) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return s.app.GetMessages(page)
 }

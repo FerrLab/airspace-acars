@@ -1,15 +1,16 @@
 package domain
 
 type Settings struct {
-	Theme            string `json:"theme"`
-	SimType          string `json:"simType"`
-	XPlaneHost       string `json:"xplaneHost"`
-	XPlanePort       int    `json:"xplanePort"`
-	APIBaseURL       string `json:"apiBaseURL"`
-	LocalMode        bool   `json:"localMode"`
-	ChatSound        string `json:"chatSound"`
-	DiscordPresence  bool   `json:"discordPresence"`
-	Language         string `json:"language"`
+	Theme               string `json:"theme"`
+	SimType             string `json:"simType"`
+	XPlaneHost          string `json:"xplaneHost"`
+	XPlanePort          int    `json:"xplanePort"`
+	APIBaseURL          string `json:"apiBaseURL"`
+	APIKey              string `json:"apiKey"`
+	LocalMode           bool   `json:"localMode"`
+	ChatSound           string `json:"chatSound"`
+	DiscordPresence     bool   `json:"discordPresence"`
+	Language            string `json:"language"`
 	AutoStartFlight     bool   `json:"autoStartFlight"`
 	ConfirmCloseApp     bool   `json:"confirmCloseApp"`
 	ConfirmCancelFlight bool   `json:"confirmCancelFlight"`
@@ -27,6 +28,7 @@ func DefaultSettings() Settings {
 		XPlaneHost:          "127.0.0.1",
 		XPlanePort:          49000,
 		APIBaseURL:          "https://airspace.ferrlab.com",
+		APIKey:              "",
 		ChatSound:           "default",
 		DiscordPresence:     true,
 		Language:            "en",

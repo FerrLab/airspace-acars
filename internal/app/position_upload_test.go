@@ -49,8 +49,10 @@ func (f *fixedAPI) attempts() int {
 
 func (f *fixedAPI) SetBaseURL(string)             {}
 func (f *fixedAPI) SetToken(string)               {}
+func (f *fixedAPI) SetAPIKey(string)              {}
 func (f *fixedAPI) BaseURL() string               { return "https://tenant.example" }
 func (f *fixedAPI) Token() string                 { return "" }
+func (f *fixedAPI) APIKey() string                { return "" }
 func (f *fixedAPI) RawGet(string) ([]byte, error) { return nil, nil }
 func (f *fixedAPI) OnUnauthorized(func())         {}
 
