@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "@/context/theme-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,10 +8,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Volume2 } from "lucide-react";
+import { Volume2, VolumeX, Headphones, Speaker, RotateCw } from "lucide-react";
 import { SettingsService, UpdateService, DiscordService } from "../../bindings/airspace-acars";
 import { useDevMode } from "@/hooks/use-dev-mode";
 import { CHAT_SOUNDS, playNotificationPreview, type ChatSoundType } from "@/lib/notification-sounds";
+import {
+  getAudioOutputDevices,
+  getSelectedAudioDevice,
+  setSelectedAudioDevice,
+  playDeviceTestSound,
+  subscribeAudioDeviceChange,
+  type AudioOutputDeviceInfo,
+} from "@/lib/audio-manager";
 import { LANGUAGES } from "@/lib/i18n";
 
 interface SettingsTabProps {
@@ -34,6 +42,27 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const [language, setLanguage] = useState(i18n.language);
   const [loaded, setLoaded] = useState(false);
 
+  // Audio track and output device states
+  const [audioDevice, setAudioDevice] = useState(() => getSelectedAudioDevice());
+  const [audioDevices, setAudioDevices] = useState<AudioOutputDeviceInfo[]>([]);
+  const [refreshingAudio, setRefreshingAudio] = useState(false);
+  const [testingAudio, setTestingAudio] = useState(false);
+  const [volume, setVolume] = useState(() => {
+    const stored = typeof localStorage !== "undefined" ? localStorage.getItem("acars_volume") : null;
+    return stored ? parseInt(stored, 10) : 25;
+  });
+
+  const refreshAudioDevices = useCallback(async () => {
+    setRefreshingAudio(true);
+    try {
+      const defaultLabel = t("settings.audioDeviceDefault", "Padrão do Sistema");
+      const devs = await getAudioOutputDevices(defaultLabel, true);
+      setAudioDevices(devs);
+    } finally {
+      setRefreshingAudio(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     async function load() {
       try {
@@ -50,6 +79,10 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         if (settings.theme === "light" || settings.theme === "dark") {
           setTheme(settings.theme);
         }
+        if (settings.audioOutputDevice) {
+          setAudioDevice(settings.audioOutputDevice);
+          await setSelectedAudioDevice(settings.audioOutputDevice);
+        }
         setLoaded(true);
       } catch {
         setLoaded(true);
@@ -57,6 +90,29 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
     }
     load();
   }, [setTheme]);
+
+  useEffect(() => {
+    const defaultLabel = t("settings.audioDeviceDefault", "Padrão do Sistema");
+    getAudioOutputDevices(defaultLabel, true).then(setAudioDevices);
+
+    const unsubDevice = subscribeAudioDeviceChange((newDev) => {
+      setAudioDevice(newDev);
+      getAudioOutputDevices(defaultLabel, false).then(setAudioDevices);
+    });
+
+    const handleVolumeEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (typeof detail?.volume === "number") {
+        setVolume(detail.volume);
+      }
+    };
+    window.addEventListener("acars-volume-changed", handleVolumeEvent);
+
+    return () => {
+      unsubDevice();
+      window.removeEventListener("acars-volume-changed", handleVolumeEvent);
+    };
+  }, []);
 
   const handleThemeToggle = async (checked: boolean) => {
     const newTheme = checked ? "dark" : "light";
@@ -75,6 +131,30 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
       await SettingsService.UpdateSettings({ ...settings, chatSound: sound });
     } catch { /* ignore */ }
     playNotificationPreview(sound);
+  };
+
+  const handleAudioDeviceChange = async (value: string) => {
+    setAudioDevice(value);
+    await setSelectedAudioDevice(value);
+  };
+
+  const handleTestAudio = async () => {
+    setTestingAudio(true);
+    try {
+      await playDeviceTestSound(audioDevice, volume);
+    } finally {
+      setTimeout(() => setTestingAudio(false), 600);
+    }
+  };
+
+  const handleVolumeChange = (newVol: number) => {
+    setVolume(newVol);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("acars_volume", newVol.toString());
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("acars-volume-changed", { detail: { volume: newVol } }));
+    }
   };
 
   const handleDiscordToggle = async (checked: boolean) => {
@@ -243,10 +323,106 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 
       <Card className="border-border/50">
         <CardHeader>
-          <CardTitle className="text-sm font-medium">{t("settings.notifications")}</CardTitle>
+          <CardTitle className="text-sm font-medium">{t("settings.audio", "Áudio")}</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
+        <CardContent className="space-y-4">
+          {/* Audio Output Device Selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">{t("settings.audioOutputDevice", "Dispositivo de Saída de Áudio")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.audioOutputDeviceDesc", "Selecione o canal ou dispositivo por onde o áudio do aplicativo será reproduzido.")}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={audioDevice}
+                onValueChange={handleAudioDeviceChange}
+                onOpenChange={async (open) => {
+                  if (open) {
+                    await refreshAudioDevices();
+                  }
+                }}
+              >
+                <SelectTrigger className="w-[180px] sm:w-[220px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {audioDevices.map((d) => (
+                    <SelectItem key={d.deviceId} value={d.deviceId}>
+                      <div className="flex items-center gap-2 truncate max-w-[200px]">
+                        {d.isDefault ? (
+                          <Speaker className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+                        ) : (
+                          <Headphones className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <span className="truncate">{d.label}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                  {!audioDevices.some((d) => d.deviceId === audioDevice) && audioDevice !== "default" && (
+                    <SelectItem value={audioDevice}>
+                      <div className="flex items-center gap-2 truncate max-w-[200px]">
+                        <Headphones className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate">{audioDevice}</span>
+                      </div>
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0 text-xs border-border/80"
+                onClick={refreshAudioDevices}
+                disabled={refreshingAudio}
+                title={t("settings.audioRefresh", "Atualizar dispositivos")}
+              >
+                <RotateCw className={`h-3.5 w-3.5 ${refreshingAudio ? "animate-spin text-primary" : "text-muted-foreground"}`} />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-3 gap-1.5 text-xs border-border/80 shrink-0"
+                onClick={handleTestAudio}
+                disabled={testingAudio}
+                title={t("settings.audioTest", "Testar Áudio")}
+              >
+                <Volume2 className={`h-3.5 w-3.5 ${testingAudio ? "text-primary animate-pulse" : ""}`} />
+                <span>{t("settings.audioTest", "Testar")}</span>
+              </Button>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Master Audio Track Volume */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">{t("settings.audioVolume", "Volume Geral")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.audioVolumeDesc", "Ajuste o volume dos avisos de cabine e notificações.")}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 w-full sm:w-[240px]">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume}
+                onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+              <span className="font-mono text-xs w-9 text-right text-muted-foreground shrink-0">
+                {volume}%
+              </span>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Chat Notification Sound */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium">{t("settings.chatSound")}</p>
               <p className="text-xs text-muted-foreground">
@@ -255,7 +431,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
             </div>
             <div className="flex items-center gap-2">
               <Select value={chatSound} onValueChange={handleChatSoundChange}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-[140px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -272,6 +448,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
                 className="h-9 w-9"
                 onClick={() => playNotificationPreview(chatSound)}
                 disabled={chatSound === "none"}
+                title={t("settings.audioTest", "Testar")}
               >
                 <Volume2 className="h-4 w-4" />
               </Button>
