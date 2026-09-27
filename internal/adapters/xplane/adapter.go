@@ -167,7 +167,12 @@ func (x *Adapter) Connect() error {
 	x.stop = make(chan struct{})
 	go x.listenLoop()
 
-	slog.Info("X-Plane UDP connected", "addr", addr.String())
+	// Not "connected": UDP has no handshake, so DialUDP succeeds whether or
+	// not X-Plane is there, and these subscriptions are sends into the void
+	// until something answers. Saying connected here read as success in logs
+	// from pilots whose simulator was never running. The caller waits for
+	// data and reports on that; this line only claims what it did.
+	slog.Info("listening for X-Plane data", "addr", addr.String(), "datarefs", len(xplaneDatarefs))
 	return nil
 }
 
