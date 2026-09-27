@@ -3,7 +3,21 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* Quiet feedback for the flight controls; live readings never animate. */
+.acars-dashboard button {
+    transition-property: background-color, color, border-color, transform;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
 
+.acars-dashboard button:active:not(:disabled):not(:focus-visible) {
+    transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .acars-dashboard button { transition: none; }
+    .acars-dashboard button:active:not(:disabled):not(:focus-visible) { transform: none; }
+}
 
 @theme inline {
     --radius-sm: calc(var(--radius) - 4px);
