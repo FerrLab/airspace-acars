@@ -3,12 +3,9 @@ import { useTranslation } from "react-i18next";
 import {
   Activity,
   AlertTriangle,
-  ArrowDownUp,
   Check,
   CheckCircle2,
   Circle,
-  Compass,
-  Gauge,
   Headphones,
   Loader2,
   Plane,
@@ -87,16 +84,6 @@ export function AcarsDashboard(p: Props) {
     { label: t("acars.dashboard.stationary"), done: connected && p.groundSpeed < 1 },
   ];
   const ready = checklist.every((item) => item.done);
-  const number = (value?: number) =>
-    value == null || !Number.isFinite(value)
-      ? "—"
-      : new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(value);
-  const metrics = [
-    { key: "altitude", icon: ArrowDownUp, value: data?.position.altitude, unit: "ft" },
-    { key: "groundSpeed", icon: Gauge, value: data?.attitude.gs, unit: "kt" },
-    { key: "verticalSpeed", icon: Activity, value: data?.attitude.vs, unit: "ft/min" },
-    { key: "heading", icon: Compass, value: data?.attitude.headingMag, unit: "°" },
-  ];
 
   return (
     <div className="acars-dashboard space-y-5">
@@ -321,29 +308,6 @@ export function AcarsDashboard(p: Props) {
         </Card>
       </div>
 
-      {/* Telemetry Grid */}
-      <section aria-label={t("acars.dashboard.telemetry")}>
-        <div className="mb-2.5 flex items-center justify-between gap-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("acars.dashboard.telemetry")}</h3>
-          <span className="text-[11px] font-medium text-muted-foreground">{t(data ? "acars.dashboard.live" : "acars.dashboard.awaitingData")}</span>
-        </div>
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {metrics.map(({ key, icon: Icon, value, unit }) => (
-            <Card key={key} className="gap-0 py-3.5 px-4 bg-card/60 border-border/80 shadow-xs">
-              <dt className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <Icon className="h-3.5 w-3.5 text-muted-foreground/80" aria-hidden="true" />
-                {t(`acars.dashboard.${key}`)}
-              </dt>
-              <dd className="mt-2 flex items-baseline gap-1.5">
-                <span className="font-mono text-2xl font-bold tracking-tight text-foreground tabular-nums">
-                  {number(value)}
-                </span>
-                <span className="text-xs font-medium text-muted-foreground">{unit}</span>
-              </dd>
-            </Card>
-          ))}
-        </dl>
-      </section>
 
       {/* Cabin Audio Card */}
       <Card
