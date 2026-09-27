@@ -91,6 +91,7 @@ func main() {
 	authSvc := &AuthService{app: appInstance}
 	chatSvc := &ChatService{app: appInstance}
 	notamSvc := &NOTAMService{app: appInstance}
+	documentSvc := &DocumentService{app: appInstance}
 	audioSvc := &AudioService{app: appInstance}
 	settingsSvc := &SettingsService{app: appInstance}
 	updateSvc := &UpdateService{app: appInstance}
@@ -107,6 +108,7 @@ func main() {
 			application.NewService(authSvc),
 			application.NewService(chatSvc),
 			application.NewService(notamSvc),
+			application.NewService(documentSvc),
 			application.NewService(audioSvc),
 			application.NewService(settingsSvc),
 			application.NewService(updateSvc),
