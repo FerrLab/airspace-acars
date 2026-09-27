@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"airspace-acars/internal/domain"
+
+	"github.com/pkg/browser"
 )
 
 const documentsPath = "/api/v1/documents"
@@ -159,24 +161,11 @@ func (a *App) GetDocuments(page int, parentID string, search string) (*domain.Do
 	candidates := []string{
 		documentsPath + "?" + query.Encode(),
 		"/api/v2/acars/documents?" + query.Encode(),
-		"/api/v2/acars/documents",
 	}
 
-	var body []byte
-	var status string
-	var err error
-
-	for _, path := range candidates {
-		body, status, err = a.documentRequest(path)
-		if err != nil {
-			return nil, err
-		}
-		if status == "ok" {
-			break
-		}
-		if status == "localMode" || status == "noSession" {
-			break
-		}
+	body, status, err := executeCandidates(candidates, a.documentRequest)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &domain.DocumentPage{
@@ -235,21 +224,9 @@ func (a *App) GetDocument(id string) (*domain.DocumentDetail, error) {
 		"/api/v2/acars/documents/" + url.PathEscape(id),
 	}
 
-	var body []byte
-	var status string
-	var err error
-
-	for _, path := range candidates {
-		body, status, err = a.documentRequest(path)
-		if err != nil {
-			return nil, err
-		}
-		if status == "ok" {
-			break
-		}
-		if status == "localMode" || status == "noSession" {
-			break
-		}
+	body, status, err := executeCandidates(candidates, a.documentRequest)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &domain.DocumentDetail{Status: status}
@@ -277,4 +254,39 @@ func (a *App) GetDocument(id string) (*domain.DocumentDetail, error) {
 	}
 	result.Data = &doc
 	return result, nil
+}
+
+// OpenDocumentURL validates a server-provided document URL and opens it in the
+// default system browser. It resolves relative paths against the active tenant
+// base URL and strictly enforces http/https schemes.
+func (a *App) OpenDocumentURL(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return fmt.Errorf("empty URL")
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Resolve relative or scheme-less URL against tenant base URL
+	if !parsed.IsAbs() {
+		baseURL := a.Airspace.BaseURL()
+		if baseURL == "" {
+			return fmt.Errorf("cannot resolve relative URL: tenant base URL is not set")
+		}
+		baseParsed, err := url.Parse(baseURL)
+		if err != nil {
+			return fmt.Errorf("invalid tenant base URL: %w", err)
+		}
+		parsed = baseParsed.ResolveReference(parsed)
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("unsupported URL scheme: %s", scheme)
+	}
+
+	return browser.OpenURL(parsed.String())
 }

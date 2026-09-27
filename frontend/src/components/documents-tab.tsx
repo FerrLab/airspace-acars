@@ -286,8 +286,18 @@ function CompanyDocuments({
       : d.toLocaleDateString(i18n.language, { day: "numeric", month: "short", year: "numeric" });
   };
 
+  const handleOpenDocument = (rawUrl?: string) => {
+    if (!rawUrl) return;
+    DocumentService.OpenDocumentURL(rawUrl).catch((err) => {
+      console.warn("Failed to open document URL:", err);
+    });
+  };
+
   // Safe HTML content
-  const sanitizedHtml = activeDoc?.content ? sanitizeDocumentHtml(activeDoc.content) : "";
+  const sanitizedHtml = useMemo(
+    () => (activeDoc?.content ? sanitizeDocumentHtml(activeDoc.content) : ""),
+    [activeDoc?.content]
+  );
 
   return (
     <div className="flex h-full flex-col space-y-4" aria-label={t("documents.title", "Documentação")}>
@@ -518,7 +528,7 @@ function CompanyDocuments({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(activeDoc.file_url, "_blank")}
+                      onClick={() => handleOpenDocument(activeDoc.file_url)}
                       className="h-8 gap-1.5 text-xs border-border/80"
                     >
                       <Download className="h-3.5 w-3.5 text-primary" />
@@ -556,7 +566,7 @@ function CompanyDocuments({
                     {activeDoc.file_url && (
                       <Button
                         size="sm"
-                        onClick={() => window.open(activeDoc.file_url, "_blank")}
+                        onClick={() => handleOpenDocument(activeDoc.file_url)}
                         className="mt-5 gap-2"
                       >
                         <ExternalLink className="h-4 w-4" />
