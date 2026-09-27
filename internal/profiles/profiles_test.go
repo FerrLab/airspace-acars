@@ -544,13 +544,14 @@ func TestShippedProfilesSelectTheRightAircraft(t *testing.T) {
 		{title: "iFly 737 MAX 8", acType: "B38M", simulator: SimSimConnect, want: []string{"ifly-737max"}, reject: []string{"pmdg-737"}},
 		{title: "iniBuilds A350-900 Qatar", simulator: SimSimConnect, want: []string{"inibuilds-a350"}, reject: []string{"inibuilds-a300", "inibuilds-a310"}},
 		{title: "iniBuilds A310-300 Air Transat", simulator: SimSimConnect, want: []string{"inibuilds-a310"}, reject: []string{"inibuilds-a350"}},
-		{title: "TFDi Design MD-11 Lufthansa Cargo", simulator: SimSimConnect, want: []string{"tfdi-md11"}, reject: []string{"leonardo-md82"}},
+		{title: "TFDi Design MD-11 Lufthansa Cargo", simulator: SimSimConnect, want: []string{"tfdi-md11"}, reject: []string{"leonardo-md82", "rotate-md11"}},
+		{title: "Rotate MD-11F", acType: "MD11", simulator: SimXPlane, want: []string{"rotate-md11", "xplane-com-833"}, reject: []string{"tfdi-md11"}},
 		{title: "Leonardo MaddogX MD-82 Alitalia", simulator: SimSimConnect, want: []string{"leonardo-md82"}, reject: []string{"tfdi-md11"}},
 		{title: "Aerosoft CRJ 900 Lufthansa Regional", simulator: SimSimConnect, want: []string{"aerosoft-crj"}},
 		{title: "Salty 747-8i Lufthansa", simulator: SimSimConnect, want: []string{"salty-747"}},
 		{title: "Just Flight BAe 146-300 Flybe", simulator: SimSimConnect, want: []string{"justflight-bae146"}},
 		{title: "ATR 72-600 Aer Lingus Regional", simulator: SimSimConnect, want: []string{"msfs-atr72"}},
-		{title: "Boeing 737-800X Zibo mod", acType: "B738", simulator: SimXPlane, want: []string{"zibo-b738", "xplane-com-833"}, reject: []string{"pmdg-737"}},
+		{title: "Boeing 737-800X Zibo mod", acType: "B738", simulator: SimXPlane, want: []string{"zibo-b738", "xplane-com-833"}, reject: []string{"pmdg-737", "rotate-md11"}},
 	}
 
 	supported := map[string][]SourceKind{
@@ -864,6 +865,53 @@ func TestMD11ReportsItsFlightGuidance(t *testing.T) {
 	assert.Equal(t, 35000.0, fd.Autopilot.Altitude)
 	assert.Equal(t, -1800.0, fd.Autopilot.VS)
 	assert.Equal(t, 280.0, fd.Autopilot.Speed)
+}
+
+// The Rotate MD-11 moves its own flap handle and leaves the stock one at zero.
+// The server normalises flaps against the largest value in the flight, so a
+// flight that never reports flaps has no flap position at all, and every
+// approach failed the stabilised-approach check with the flaps "at unknown".
+// The two handles are combined with max because on X-Plane both are datarefs:
+// a dead one — the stock handle on the Rotate, the Rotate handle on any other
+// MD-11 — must not be able to zero the live one.
+func TestRotateMD11ReadsTheFlapHandle(t *testing.T) {
+	reg := NewRegistry()
+	ctx := Context{AircraftName: "Rotate MD-11F", AircraftType: "MD11", Simulator: SimXPlane, EngineCount: 3}
+	plan := reg.Resolve(ctx, []SourceKind{SourceDataRef})
+	require.Contains(t, plan.ProfileIDs(), "rotate-md11")
+
+	var flaps ResolvedBinding
+	for _, b := range plan.Bindings {
+		if b.Point == "controls.flaps" {
+			flaps = b
+		}
+	}
+	assert.Equal(t, ReduceMax, flaps.Reduce)
+	require.Len(t, flaps.Sources, 2)
+	assert.Equal(t, "Rotate/aircraft/controls/flap_handle", flaps.Sources[0].Name)
+	assert.Equal(t, "sim/cockpit2/controls/flap_ratio", flaps.Sources[1].Name)
+	handle, stock := flaps.Sources[0].Key, flaps.Sources[1].Key
+
+	cases := []struct {
+		name   string
+		values map[string]float64
+		want   float64
+	}{
+		{"the Rotate handle, with the stock one stuck at zero", map[string]float64{handle: 0.36, stock: 0}, 36},
+		// X-Plane sends float32: 0.35 arrives as 0.34999999, which the server's
+		// integer truncation would read as 34 — a retraction, if the previous
+		// sample said 35.
+		{"a detent reads as a whole percent", map[string]float64{handle: float64(float32(0.35)), stock: 0}, 35},
+		{"another MD-11 keeps its stock reading", map[string]float64{handle: 0, stock: 0.5}, 50},
+		{"a handle X-Plane never reports leaves the stock reading", map[string]float64{stock: 0.25}, 25},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fd := &domain.FlightData{}
+			plan.Apply(fd, tc.values)
+			assert.Equal(t, tc.want, fd.Controls.Flaps)
+		})
+	}
 }
 
 // A transform is a pipeline, so a second comparison operates on the 1 or 0 the
