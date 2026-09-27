@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Send, Plane, ChevronDown } from "lucide-react";
 import { ChatService, SettingsService } from "../../bindings/airspace-acars";
 import { generateNotificationSound, type ChatSoundType } from "@/lib/notification-sounds";
+import { applyAudioSink, subscribeAudioDeviceChange } from "@/lib/audio-manager";
 
 interface Message {
   id: number;
@@ -77,7 +78,9 @@ function usePingSound(soundType: ChatSoundType) {
 
     const url = URL.createObjectURL(blob);
     urlRef.current = url;
-    audioRef.current = new Audio(url);
+    const audio = new Audio(url);
+    applyAudioSink(audio);
+    audioRef.current = audio;
 
     return () => {
       if (urlRef.current) {
@@ -86,6 +89,14 @@ function usePingSound(soundType: ChatSoundType) {
       }
     };
   }, [soundType]);
+
+  useEffect(() => {
+    return subscribeAudioDeviceChange((newDeviceId) => {
+      if (audioRef.current) {
+        applyAudioSink(audioRef.current, newDeviceId);
+      }
+    });
+  }, []);
 
   return useCallback(() => {
     if (audioRef.current) {

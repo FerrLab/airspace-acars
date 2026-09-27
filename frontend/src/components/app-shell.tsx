@@ -52,9 +52,21 @@ export function AppShell() {
     };
   }, [localMode]);
 
+  useEffect(() => {
+    const handleVolumeEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (typeof detail?.volume === "number") {
+        setVolume(detail.volume);
+      }
+    };
+    window.addEventListener("acars-volume-changed", handleVolumeEvent);
+    return () => window.removeEventListener("acars-volume-changed", handleVolumeEvent);
+  }, []);
+
   const handleVolumeChange = (v: number) => {
     setVolume(v);
     localStorage.setItem("acars_volume", String(v));
+    window.dispatchEvent(new CustomEvent("acars-volume-changed", { detail: { volume: v } }));
   };
 
   const handleConfirmCloseApp = async () => {
