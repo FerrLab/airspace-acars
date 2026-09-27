@@ -107,18 +107,12 @@ describe("audio-manager", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it("requests media permission to unlock device enumeration when only default exists", async () => {
-    const stopMock = vi.fn();
-    const getUserMediaMock = vi.fn().mockResolvedValue({
-      getTracks: () => [{ stop: stopMock }],
-    });
-    const enumerateDevicesMock = vi
-      .fn()
-      .mockResolvedValueOnce([{ deviceId: "default", kind: "audiooutput", label: "" }])
-      .mockResolvedValueOnce([
-        { deviceId: "default", kind: "audiooutput", label: "Default - Realtek" },
-        { deviceId: "headset-1", kind: "audiooutput", label: "USB Headset" },
-      ]);
+  it("enumerates output devices without requesting microphone access", async () => {
+    const getUserMediaMock = vi.fn();
+    const enumerateDevicesMock = vi.fn().mockResolvedValue([
+      { deviceId: "default", kind: "audiooutput", label: "Default - Realtek" },
+      { deviceId: "headset-1", kind: "audiooutput", label: "USB Headset" },
+    ]);
 
     vi.stubGlobal("navigator", {
       mediaDevices: {
@@ -127,9 +121,8 @@ describe("audio-manager", () => {
       },
     });
 
-    const devices = await getAudioOutputDevices("Padrão do Sistema", true);
-    expect(getUserMediaMock).toHaveBeenCalled();
-    expect(stopMock).toHaveBeenCalled();
+    const devices = await getAudioOutputDevices("System Default");
+    expect(getUserMediaMock).not.toHaveBeenCalled();
     expect(devices).toHaveLength(2);
     expect(devices[1].deviceId).toBe("headset-1");
     expect(devices[1].label).toBe("USB Headset");

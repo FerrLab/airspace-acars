@@ -95,11 +95,24 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-export function playNotificationPreview(type: ChatSoundType) {
+export function getMasterVolume(): number {
+  if (typeof window === "undefined") return 0.8;
+  const stored = localStorage.getItem("acars_volume");
+  if (stored !== null) {
+    const val = parseInt(stored, 10);
+    if (!isNaN(val)) return Math.max(0, Math.min(100, val)) / 100;
+  }
+  return 0.8;
+}
+
+export function playNotificationPreview(type: ChatSoundType, volumePercent?: number) {
   const blob = generateNotificationSound(type);
   if (!blob) return;
+  const vol = volumePercent !== undefined ? volumePercent / 100 : getMasterVolume();
+  if (vol <= 0) return;
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
+  audio.volume = Math.max(0, Math.min(1, vol));
   applyAudioSink(audio).finally(() => {
     audio.play().catch(() => {});
   });
