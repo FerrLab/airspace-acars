@@ -44,35 +44,6 @@ export async function setSelectedAudioDevice(deviceId: string): Promise<void> {
   }
 }
 
-let hasRequestedPermissions = false;
-
-/**
- * Prompt/unlock media permissions in WebView2 / Chromium.
- * Once granted, navigator.mediaDevices.enumerateDevices() provides full device
- * labels and non-default device identifiers.
- */
-export async function requestMediaPermissions(): Promise<boolean> {
-  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-    return false;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach((track) => {
-      try {
-        track.stop();
-      } catch {
-        // ignore
-      }
-    });
-    hasRequestedPermissions = true;
-    return true;
-  } catch (err) {
-    console.debug("[audio-manager] getUserMedia permission request:", err);
-    return false;
-  }
-}
-
 /**
  * Prompts the native OS/browser audio output picker (Chrome 110+ / modern WebView2)
  * if available, returning the selected device.
@@ -87,7 +58,7 @@ export async function selectSystemAudioOutput(): Promise<AudioOutputDeviceInfo |
       if (dev && dev.kind === "audiooutput") {
         return {
           deviceId: dev.deviceId || "default",
-          label: dev.label || dev.deviceId || "Áudio",
+          label: dev.label || dev.deviceId || "Audio",
           isDefault: dev.deviceId === "default" || dev.deviceId === "",
         };
       }
@@ -102,33 +73,19 @@ export async function selectSystemAudioOutput(): Promise<AudioOutputDeviceInfo |
 
 /**
  * Enumerate all available audio output devices on the operating system.
- * Works seamlessly across Windows (WASAPI / WebView2) and macOS (CoreAudio / WebKit).
+ * Works seamlessly across Windows (WASAPI / WebView2) and macOS (CoreAudio / WebKit)
+ * without requesting microphone hardware access.
  */
 export async function getAudioOutputDevices(
-  defaultLabel = "Padrão do Sistema",
-  autoRequestPermission = true
+  defaultLabel = "System Default",
+  fallbackDeviceLabelPrefix = "Audio Output Device"
 ): Promise<AudioOutputDeviceInfo[]> {
   const result: AudioOutputDeviceInfo[] = [];
 
   if (typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
     try {
-      let devices = await navigator.mediaDevices.enumerateDevices();
-      let outputDevices = devices.filter((d) => d.kind === "audiooutput");
-
-      // In Chromium / WebView2, if permissions have not been granted,
-      // outputDevices will either contain only 1 item (default) or have empty labels.
-      const needsUnlock =
-        autoRequestPermission &&
-        !hasRequestedPermissions &&
-        (outputDevices.length <= 1 || outputDevices.some((d) => !d.label));
-
-      if (needsUnlock && navigator.mediaDevices.getUserMedia) {
-        const ok = await requestMediaPermissions();
-        if (ok) {
-          devices = await navigator.mediaDevices.enumerateDevices();
-          outputDevices = devices.filter((d) => d.kind === "audiooutput");
-        }
-      }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputDevices = devices.filter((d) => d.kind === "audiooutput");
 
       let unnamedCount = 1;
       for (const d of outputDevices) {
@@ -137,7 +94,7 @@ export async function getAudioOutputDevices(
 
         let label = rawLabel;
         if (!label) {
-          label = isDefault ? defaultLabel : `Dispositivo de Áudio ${unnamedCount++}`;
+          label = isDefault ? defaultLabel : `${fallbackDeviceLabelPrefix} ${unnamedCount++}`;
         }
 
         // Normalize deviceId for the default device
@@ -158,7 +115,7 @@ export async function getAudioOutputDevices(
   }
 
   // Ensure default entry is always present at index 0
-  if (!result.some((d) => d.deviceId === "default" || d.isDefault)) {
+  if (!result.some((r) => r.isDefault || r.deviceId === "default")) {
     result.unshift({
       deviceId: "default",
       label: defaultLabel,
@@ -168,6 +125,7 @@ export async function getAudioOutputDevices(
 
   return result;
 }
+
 
 /**
  * Apply the selected audio output device to an HTMLAudioElement or AudioContext.

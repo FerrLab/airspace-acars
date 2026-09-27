@@ -4,6 +4,7 @@ import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { SettingsService, DiscordService } from "../../bindings/airspace-acars";
 import { SettingsTab } from "./settings-tab";
+import { ThemeProvider } from "@/context/theme-context";
 import * as audioManager from "@/lib/audio-manager";
 import en from "@/locales/en.json";
 
@@ -17,9 +18,11 @@ await i18n.init({
 
 function view() {
   return (
-    <I18nextProvider i18n={i18n}>
-      <SettingsTab />
-    </I18nextProvider>
+    <ThemeProvider>
+      <I18nextProvider i18n={i18n}>
+        <SettingsTab />
+      </I18nextProvider>
+    </ThemeProvider>
   );
 }
 
@@ -31,7 +34,6 @@ beforeEach(() => {
     xplaneHost: "127.0.0.1",
     xplanePort: 49000,
     apiBaseURL: "https://airspace.ferrlab.com",
-    apiKey: "",
     localMode: false,
     chatSound: "default",
     discordPresence: true,
