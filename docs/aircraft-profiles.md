@@ -332,10 +332,18 @@ and hand-written:
 | `msfs-atr72` | ATR 42-600 / 72-600 | MSFS | 100 | 2 |
 | `pmdg-737` | PMDG 737 | MSFS | 100 | 11 |
 | `pmdg-777` | PMDG 777 | MSFS | 100 | 7 |
+| `rotate-md11` | Rotate MD-11 | X-Plane | 100 | 1 |
 | `salty-747` | Salty 747-8i | MSFS | 100 | 3 |
 | `tfdi-md11` | TFDi MD-11 | MSFS | 100 | 4 |
 | `xplane-com-833` | X-Plane 8.33 kHz radios | X-Plane | 10 | 2 |
 | `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 5 |
+
+`rotate-md11` is the exception to the first line. HubHop has nothing readable
+for the aircraft, so its flap handle variable comes from a shared-cockpit
+configuration for it, and the handle's scale is the one Rotate's MD-80 uses
+rather than one read in the simulator. Its `notes` say what to check. It also
+matches any X-Plane trijet, because the title the MD-11 reports has not been
+seen yet; an aircraft without the variable keeps its stock reading.
 
 ### Generated drafts
 

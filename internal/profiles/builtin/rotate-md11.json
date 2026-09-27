@@ -1,0 +1,77 @@
+{
+  "id": "rotate-md11",
+  "name": "Rotate MD-11",
+  "description": "Rotate MD-11F and MD-11P on X-Plane. The flap handle is the aircraft's own, so the flap position is read from Rotate/aircraft/controls/flap_handle rather than from the stock flap handle dataref, which this aircraft leaves at zero.",
+  "notes": "The stock handle dataref reads zero for the whole flight on this aircraft, and the server normalises flaps against the largest value it saw in the flight, so a flight that never reports flaps has no flap position at all: every approach fails the stabilised-approach check with the flaps \"at unknown\". HubHop has no readable Rotate MD-11 entries; the handle variable is the one the SmartCopilot shared-cockpit configuration for this aircraft synchronises (github.com/radonthetyrant/smartcopilot-rotate-md-11), next to flap_to_sel (the DIAL-A-FLAP thumbwheel) and flap_lim_sel. Its scale is taken to be a 0-1 ratio of handle travel, which is how Rotate's MD-80 publishes its handle (Rotate/md80/systems/flap_handle_drag_position_ratio); that has not been confirmed in the simulator, and if it proves to be degrees or a detent index only the scale step needs changing. On X-Plane every source is a dataref, so a candidate list would always use the first one, and a dataref X-Plane cannot resolve does not fail: it reports nothing, or zero. The handle and the stock dataref are therefore combined with max: whichever one the aircraft actually drives wins, and any other aircraft keeps its stock reading. That is also why the selector can afford to take every X-Plane trijet: the title and ICAO type the Rotate MD-11 reports have not been seen yet, because the flights that showed the fault ran a client that did not read them, and matching on the engine count as well means the profile does not depend on them. Both readings are rounded to a whole percent because the server truncates the value and treats any drop between two samples as the flaps retracting.",
+  "priority": 100,
+  "match": {
+    "all": [
+      {
+        "field": "simulator",
+        "op": "equals",
+        "value": "xplane"
+      },
+      {
+        "any": [
+          {
+            "field": "aircraftName",
+            "op": "matches",
+            "value": "md\\s*-?11"
+          },
+          {
+            "field": "aircraftType",
+            "op": "in",
+            "value": [
+              "MD11",
+              "MD1F"
+            ]
+          },
+          {
+            "field": "engineCount",
+            "op": "equals",
+            "value": 3
+          }
+        ]
+      }
+    ]
+  },
+  "mash": {
+    "controls.flaps": {
+      "reduce": "max",
+      "bindings": [
+        {
+          "sim": "xplane",
+          "source": {
+            "kind": "dataref",
+            "name": "Rotate/aircraft/controls/flap_handle"
+          },
+          "transform": [
+            {
+              "op": "scale",
+              "value": 100
+            },
+            {
+              "op": "round"
+            }
+          ]
+        },
+        {
+          "sim": "xplane",
+          "source": {
+            "kind": "dataref",
+            "name": "sim/cockpit2/controls/flap_ratio"
+          },
+          "transform": [
+            {
+              "op": "scale",
+              "value": 100
+            },
+            {
+              "op": "round"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
