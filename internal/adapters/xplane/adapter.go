@@ -351,7 +351,11 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 	case 29:
 		x.data.Radios.XpdrState = domain.TransponderStateString(float64(val))
 	case 30:
-		x.data.Autopilot.Master = val != 0
+		// autopilot_mode is 0 off, 1 flight director only, 2 autopilot on.
+		// Only 2 is the autopilot flying, which is what SimConnect's AUTOPILOT
+		// MASTER reports: counting the flight director as engaged took away
+		// the manual flying time of every pilot who hand-flies with it on.
+		x.data.Autopilot.Master = val >= 2
 	case 31:
 		x.data.Autopilot.Heading = float64(val)
 	case 32:
