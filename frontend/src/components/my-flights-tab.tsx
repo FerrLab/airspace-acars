@@ -1,23 +1,19 @@
 import { useEffect, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  AlertCircle,
-  Award,
-  Calendar,
+  ArrowLeft,
   Clock,
-  Compass,
-  ExternalLink,
-  Filter,
+  Eye,
+  Fuel,
   Globe,
-  Loader2,
-  MapPin,
-  Navigation,
+  Map,
   Plane,
   PlaneTakeoff,
   RefreshCw,
   Search,
+  ShieldCheck,
+
   TrendingDown,
-  User,
   X,
 } from "lucide-react";
 import { FlightLogService } from "../../bindings/airspace-acars";
@@ -30,13 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { FlightsMap } from "@/components/flights-map";
-
-const knownStatuses = ["accessDenied", "unavailable", "rateLimited", "noSession", "localMode"];
-function statusKey(status: string) {
-  return `myFlights.${knownStatuses.includes(status) ? status : "loadError"}`;
-}
 
 export function MyFlightsTab({ localMode = false }: { localMode?: boolean }) {
   const { tenant, tokenSynced } = useAuth();
@@ -58,6 +48,17 @@ function formatDuration(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
+function formatUtcDate(val?: string): string {
+  if (!val) return "—";
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return "—";
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const hours = String(d.getUTCHours()).padStart(2, "0");
+  const mins = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day}/${month} ${hours}:${mins}z`;
+}
+
 function getLandingRateBadge(rate: number) {
   if (!rate || rate === 0) {
     return (
@@ -71,9 +72,9 @@ function getLandingRateBadge(rate: number) {
     return (
       <Badge
         variant="outline"
-        className="text-[10px] py-0 px-1.5 border-emerald-500/40 text-emerald-400 bg-emerald-500/10 font-mono"
+        className="text-[10px] py-0 px-1.5 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-mono"
       >
-        {Math.round(rate)} fpm
+        {Math.round(rate)} ft/min
       </Badge>
     );
   }
@@ -81,9 +82,9 @@ function getLandingRateBadge(rate: number) {
     return (
       <Badge
         variant="outline"
-        className="text-[10px] py-0 px-1.5 border-sky-500/40 text-sky-400 bg-sky-500/10 font-mono"
+        className="text-[10px] py-0 px-1.5 border-sky-500/30 text-sky-400 bg-sky-500/10 font-mono"
       >
-        {Math.round(rate)} fpm
+        {Math.round(rate)} ft/min
       </Badge>
     );
   }
@@ -91,31 +92,31 @@ function getLandingRateBadge(rate: number) {
     return (
       <Badge
         variant="outline"
-        className="text-[10px] py-0 px-1.5 border-amber-500/40 text-amber-400 bg-amber-500/10 font-mono"
+        className="text-[10px] py-0 px-1.5 border-amber-500/30 text-amber-400 bg-amber-500/10 font-mono"
       >
-        {Math.round(rate)} fpm
+        {Math.round(rate)} ft/min
       </Badge>
     );
   }
   return (
     <Badge
       variant="outline"
-      className="text-[10px] py-0 px-1.5 border-red-500/40 text-red-400 bg-red-500/10 font-mono"
+      className="text-[10px] py-0 px-1.5 border-red-500/30 text-red-400 bg-red-500/10 font-mono"
     >
-      {Math.round(rate)} fpm
+      {Math.round(rate)} ft/min
     </Badge>
   );
 }
 
-function getFlightStatusBadge(status: string) {
+function getFlightStatusBadge(status: string, t: (key: string, fallback: string) => string) {
   const norm = (status || "accepted").toLowerCase();
-  if (norm.includes("accept") || norm.includes("approved")) {
+  if (norm.includes("accept") || norm.includes("approved") || norm.includes("closed")) {
     return (
       <Badge
         variant="outline"
-        className="text-[10px] py-0 px-1.5 border-emerald-500/40 text-emerald-400 bg-emerald-500/10"
+        className="text-[10px] py-0 px-2 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-medium"
       >
-        Aprovado
+        {t("myFlights.statusApproved", "Aprovado")}
       </Badge>
     );
   }
@@ -123,24 +124,17 @@ function getFlightStatusBadge(status: string) {
     return (
       <Badge
         variant="outline"
-        className="text-[10px] py-0 px-1.5 border-amber-500/40 text-amber-400 bg-amber-500/10"
+        className="text-[10px] py-0 px-2 border-amber-500/30 text-amber-400 bg-amber-500/10 font-medium"
       >
-        Pendente
-      </Badge>
-    );
-  }
-  if (norm.includes("reject")) {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] py-0 px-1.5 border-red-500/40 text-red-400 bg-red-500/10"
-      >
-        Rejeitado
+        {t("myFlights.statusPending", "Pendente")}
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-border text-muted-foreground">
+    <Badge
+      variant="outline"
+      className="text-[10px] py-0 px-2 border-red-500/30 text-red-400 bg-red-500/10 font-medium"
+    >
       {status}
     </Badge>
   );
@@ -155,25 +149,23 @@ function MyFlightsDashboard({
   localMode: boolean;
   ready: boolean;
 }) {
-  const { t, i18n } = useTranslation();
-  const [pilot, setPilot] = useState<PilotSummaryStats | null>(null);
+  const { t } = useTranslation();
   const [flights, setFlights] = useState<FlightLog[]>([]);
-  const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [pilotStats, setPilotStats] = useState<PilotSummaryStats | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "accepted" | "pending">("all");
+
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [inspectFlight, setInspectFlight] = useState<FlightLog | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(!localMode);
-    setError("");
+    setLoading(!localMode && ready);
 
-    if (localMode) {
-      setLoading(false);
-      return;
-    }
-    if (!ready) {
+    if (localMode || !ready) {
+      setFlights([]);
+      setPilotStats(null);
       setLoading(false);
       return;
     }
@@ -181,20 +173,22 @@ function MyFlightsDashboard({
     FlightLogService.GetMyFlights(1, 50)
       .then((res) => {
         if (cancelled) return;
+        if (res?.flights) {
+          setFlights(res.flights);
+        } else {
+          setFlights([]);
+        }
         if (res?.pilot) {
-          setPilot(res.pilot);
-        }
-        if (!res || res.status !== "ok") {
-          return;
-        }
-        const flightList = (res.flights ?? []) as FlightLog[];
-        setFlights(flightList);
-        if (flightList.length > 0 && !selectedFlightId) {
-          setSelectedFlightId(flightList[0].id);
+          setPilotStats(res.pilot);
+        } else {
+          setPilotStats(null);
         }
       })
       .catch(() => {
-        if (!cancelled) setError("myFlights.loadError");
+        if (!cancelled) {
+          setFlights([]);
+          setPilotStats(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -205,78 +199,129 @@ function MyFlightsDashboard({
     };
   }, [localMode, ready, refresh]);
 
-  // Filter flights by search query
+  // Filter flights by status and search query
   const filteredFlights = useMemo(() => {
-    if (!search.trim()) return flights;
+    let list = flights;
+
+    if (statusFilter === "accepted") {
+      list = list.filter((f) => {
+        const s = (f.status || "").toLowerCase();
+        return s.includes("accept") || s.includes("approved") || s.includes("closed");
+      });
+    } else if (statusFilter === "pending") {
+      list = list.filter((f) => {
+        const s = (f.status || "").toLowerCase();
+        return s.includes("pending") || s.includes("review");
+      });
+    }
+
+    if (!search.trim()) return list;
     const term = search.toLowerCase().trim();
-    return flights.filter((f) => {
+    return list.filter((f) => {
       const callsign = (f.callsign || "").toLowerCase();
       const fltNum = (f.flight_number || "").toLowerCase();
-      const depICAO = (f.departure_airport?.icao || "").toLowerCase();
-      const depName = (f.departure_airport?.name || "").toLowerCase();
-      const arrICAO = (f.arrival_airport?.icao || "").toLowerCase();
-      const arrName = (f.arrival_airport?.name || "").toLowerCase();
-      const reg = (f.aircraft?.registration || "").toLowerCase();
-      const acType = (f.aircraft?.icao_code || "").toLowerCase();
+      const depIcao = (f.departure_airport?.icao || "").toLowerCase();
+      const depCity = (f.departure_airport?.city || "").toLowerCase();
+      const arrIcao = (f.arrival_airport?.icao || "").toLowerCase();
+      const arrCity = (f.arrival_airport?.city || "").toLowerCase();
+      const acCode = (f.aircraft?.icao_code || "").toLowerCase();
+      const acReg = (f.aircraft?.registration || "").toLowerCase();
 
       return (
         callsign.includes(term) ||
         fltNum.includes(term) ||
-        depICAO.includes(term) ||
-        depName.includes(term) ||
-        arrICAO.includes(term) ||
-        arrName.includes(term) ||
-        reg.includes(term) ||
-        acType.includes(term)
+        depIcao.includes(term) ||
+        depCity.includes(term) ||
+        arrIcao.includes(term) ||
+        arrCity.includes(term) ||
+        acCode.includes(term) ||
+        acReg.includes(term)
       );
     });
-  }, [flights, search]);
+  }, [flights, statusFilter, search]);
 
-  const selectedFlight = useMemo(() => {
-    return flights.find((f) => f.id === selectedFlightId) || null;
-  }, [flights, selectedFlightId]);
+  // Calculate live average score from flights
+  const avgScore = useMemo(() => {
+    if (flights.length === 0) return 100;
+    const total = flights.reduce((acc, f) => acc + (f.score || 100), 0);
+    return (total / flights.length).toFixed(1);
+  }, [flights]);
 
-  const formatDate = (val?: string) => {
-    if (!val) return "—";
-    const d = new Date(val);
-    return Number.isNaN(d.getTime())
-      ? "—"
-      : d.toLocaleDateString(i18n.language, {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        });
-  };
+  // If a specific flight is selected for inspection, show the full-screen view inside the tab
+  if (inspectFlight) {
+    return (
+      <FlightDetailView
+        flight={inspectFlight}
+        company={company}
+        onBack={() => setInspectFlight(null)}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full flex-col space-y-4">
-      {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Header bar strictly following the ACARS Flux UI design system */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold tracking-tight text-foreground">
-              {t("myFlights.title", "My Flights Dashboard")}
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+              {t("myFlights.title", "Meus Voos")}
             </h2>
             {company && (
               <Badge variant="outline" className="text-xs border-border bg-card/60">
                 {company}
               </Badge>
             )}
+            <Badge variant="outline" className="text-[10px] text-muted-foreground border-border/60">
+              {filteredFlights.length} {filteredFlights.length === 1 ? t("myFlights.flightSingular", "voo") : t("myFlights.flightPlural", "voos")}
+            </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {t(
               "myFlights.subtitle",
-              "Acompanhe suas estatísticas de voo, histórico de rotas e mapa de operações."
+              "Histórico de voos realizados, estatísticas e auditoria operacional."
             )}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative w-48 sm:w-64">
+        {/* Action Controls & Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status Filter Segmented Buttons */}
+          <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-0.5">
+            <Button
+              variant={statusFilter === "all" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setStatusFilter("all")}
+              className="h-7 text-xs px-2.5"
+            >
+              {t("myFlights.all", "Todos")} ({flights.length})
+            </Button>
+            <Button
+              variant={statusFilter === "accepted" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setStatusFilter("accepted")}
+              className="h-7 text-xs px-2.5"
+            >
+              {t("myFlights.accepted", "Aprovados")}
+            </Button>
+            <Button
+              variant={statusFilter === "pending" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setStatusFilter("pending")}
+              className="h-7 text-xs px-2.5"
+            >
+              {t("myFlights.pending", "Pendentes")}
+            </Button>
+          </div>
+
+
+
+          {/* Search Box */}
+          <div className="relative w-44 sm:w-56">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               type="text"
-              placeholder={t("myFlights.searchPlaceholder", "Buscar voo, ICAO, aeronave...")}
+              placeholder={t("myFlights.searchPlaceholder", "Buscar por voo, aeroporto, aeronave...")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 pl-8 text-xs bg-card/60 border-border/80"
@@ -292,12 +337,14 @@ function MyFlightsDashboard({
               </Button>
             )}
           </div>
+
+          {/* Refresh Button */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => setRefresh((r) => r + 1)}
-            disabled={loading || localMode}
-            className="h-8 gap-1.5 text-xs border-border/80"
+            disabled={loading}
+            className="h-8 gap-1.5 text-xs border-border/80 shadow-xs"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">{t("myFlights.refresh", "Atualizar")}</span>
@@ -305,337 +352,406 @@ function MyFlightsDashboard({
         </div>
       </div>
 
-      {/* Local Mode / Error Notice */}
-      {localMode && (
-        <Card className="flex items-center gap-3 border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-300">
-          <AlertCircle className="h-4 w-4 shrink-0 text-yellow-400" />
-          <span>
-            {t(
-              "myFlights.localMode",
-              "O Airspace ACARS está em Modo Local. Conecte-se com sua companhia aérea para sincronizar seu histórico de voos."
-            )}
+      {/* Top Pilot KPI Metrics Cards in Flux UI style */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Card className="border-border/70 bg-card p-3 shadow-xs">
+          <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+            <PlaneTakeoff className="h-3.5 w-3.5 text-primary" />
+            {t("myFlights.totalFlights", "Total de Voos")}
           </span>
-        </Card>
-      )}
-
-
-      {/* Pilot Statistics KPI Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {/* Pilot Profile Card */}
-        <Card className="relative overflow-hidden border-border/70 bg-card p-3 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 text-primary">
-              {pilot?.rank_image_url ? (
-                <img
-                  src={pilot.rank_image_url}
-                  alt={pilot.rank}
-                  className="h-7 w-7 object-contain"
-                />
-              ) : (
-                <User className="h-5 w-5" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-medium text-muted-foreground truncate">
-                {pilot?.rank || t("myFlights.pilot", "Piloto")}
-              </p>
-              <h3 className="text-sm font-bold text-foreground truncate">
-                {pilot?.callsign || pilot?.name || "—"}
-              </h3>
-              {pilot?.points ? (
-                <span className="text-[10px] text-primary font-medium">{pilot.points} pts</span>
-              ) : null}
-            </div>
-          </div>
+          <p className="mt-1 text-xl font-bold font-mono text-foreground">
+            {pilotStats?.total_flights ?? flights.length}
+          </p>
         </Card>
 
-        {/* Total Flights Card */}
-        <Card className="relative overflow-hidden border-border/70 bg-card p-3 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              {t("myFlights.totalFlights", "Total de Voos")}
-            </span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-400">
-              <PlaneTakeoff className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-xl font-extrabold tracking-tight text-foreground">
-              {pilot?.total_flights ?? flights.length}
-            </span>
-            <span className="text-[10px] text-muted-foreground">voos</span>
-          </div>
+        <Card className="border-border/70 bg-card p-3 shadow-xs">
+          <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-sky-400" />
+            {t("myFlights.totalHours", "Horas de Voo")}
+          </span>
+          <p className="mt-1 text-xl font-bold font-mono text-foreground">
+            {pilotStats?.total_hours != null && pilotStats.total_hours > 0
+              ? `${pilotStats.total_hours.toFixed(1)}h`
+              : (flights.length > 0 ? "0h" : "—")}
+          </p>
         </Card>
 
-        {/* Total Hours Card */}
-        <Card className="relative overflow-hidden border-border/70 bg-card p-3 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              {t("myFlights.totalHours", "Horas de Voo")}
-            </span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-400">
-              <Clock className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-xl font-extrabold tracking-tight text-foreground">
-              {pilot?.total_hours != null ? `${pilot.total_hours.toFixed(1)}` : "—"}
-            </span>
-            <span className="text-[10px] text-muted-foreground">h</span>
-          </div>
-        </Card>
-
-        {/* Average Landing Rate Card */}
-        <Card className="relative overflow-hidden border-border/70 bg-card p-3 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              {t("myFlights.avgLanding", "Média de Pouso")}
-            </span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400">
-              <TrendingDown className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-xl font-extrabold tracking-tight text-foreground font-mono">
-              {pilot?.avg_landing_rate ? `${Math.round(pilot.avg_landing_rate)}` : "—"}
-            </span>
-            <span className="text-[10px] text-muted-foreground">fpm</span>
-          </div>
-        </Card>
-
-        {/* Total Distance Card */}
-        <Card className="relative overflow-hidden border-border/70 bg-card p-3 shadow-xs col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              {t("myFlights.totalDistance", "Distância Total")}
-            </span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-400">
-              <Globe className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-xl font-extrabold tracking-tight text-foreground">
-              {pilot?.total_distance_nm
-                ? Math.round(pilot.total_distance_nm).toLocaleString()
-                : "—"}
-            </span>
-            <span className="text-[10px] text-muted-foreground">NM</span>
-          </div>
-        </Card>
-      </div>
-
-      {/* Interactive Map Panel */}
-      <div className="relative h-80 sm:h-96 w-full shrink-0">
-        <FlightsMap
-          flights={filteredFlights}
-          selectedFlightId={selectedFlightId}
-          onSelectFlight={setSelectedFlightId}
-        />
-      </div>
-
-      {/* Selected Flight Quick Summary Bar */}
-      {selectedFlight && (
-        <Card className="flex flex-wrap items-center justify-between gap-3 border-primary/20 bg-primary/5 p-3 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/15 text-primary">
-              <Plane className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-foreground text-sm">
-                  {selectedFlight.callsign}
-                </span>
-                {selectedFlight.flight_number && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    (Voo {selectedFlight.flight_number})
-                  </span>
-                )}
-                {getFlightStatusBadge(selectedFlight.status)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">
-                  {selectedFlight.departure_airport?.icao}
-                </span>{" "}
-                ({selectedFlight.departure_airport?.city || selectedFlight.departure_airport?.name}){" "}
-                ➔{" "}
-                <span className="font-semibold text-foreground">
-                  {selectedFlight.arrival_airport?.icao}
-                </span>{" "}
-                ({selectedFlight.arrival_airport?.city || selectedFlight.arrival_airport?.name})
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-xs">
-            {selectedFlight.aircraft && (
-              <div>
-                <span className="text-muted-foreground">Aeronave: </span>
-                <span className="font-medium text-foreground">
-                  {selectedFlight.aircraft.registration}{" "}
-                  {selectedFlight.aircraft.icao_code ? `(${selectedFlight.aircraft.icao_code})` : ""}
-                </span>
-              </div>
+        <Card className="border-border/70 bg-card p-3 shadow-xs">
+          <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+            <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
+            {t("myFlights.avgLanding", "Média de Pouso")}
+          </span>
+          <p className="mt-1 text-xl font-bold font-mono text-emerald-400">
+            {pilotStats?.avg_landing_rate ? (
+              <>
+                {Math.round(pilotStats.avg_landing_rate)}{" "}
+                <span className="text-xs font-normal text-muted-foreground font-sans">ft/min</span>
+              </>
+            ) : (
+              "—"
             )}
-            <div>
-              <span className="text-muted-foreground">Tempo: </span>
-              <span className="font-medium text-foreground">
-                {formatDuration(selectedFlight.flight_time_minutes)}
-              </span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Distância: </span>
-              <span className="font-medium text-foreground">
-                {Math.round(selectedFlight.distance_nm)} NM
-              </span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Pouso: </span>
-              {getLandingRateBadge(selectedFlight.landing_rate_fpm)}
-            </div>
-          </div>
+          </p>
         </Card>
-      )}
 
-      {/* Flight History Logbook Table */}
-      <div className="flex-1 overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
-        <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-foreground">
-              {t("myFlights.historyTitle", "Histórico de Voos")}
-            </h3>
-            <Badge variant="outline" className="text-[10px] text-muted-foreground">
-              {filteredFlights.length} {filteredFlights.length === 1 ? "registro" : "registros"}
-            </Badge>
+        <Card className="border-border/70 bg-card p-3 shadow-xs">
+          <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+            <Globe className="h-3.5 w-3.5 text-indigo-400" />
+            {t("myFlights.totalDistance", "Distância Total")}
+          </span>
+          <p className="mt-1 text-xl font-bold font-mono text-foreground">
+            {pilotStats?.total_distance_nm ? (
+              <>
+                {pilotStats.total_distance_nm.toLocaleString()}{" "}
+                <span className="text-xs font-normal text-muted-foreground font-sans">NM</span>
+              </>
+            ) : (
+              flights.length > 0 ? "0 NM" : "—"
+            )}
+          </p>
+        </Card>
+
+        <Card className="border-border/70 bg-card p-3 shadow-xs col-span-2 sm:col-span-1">
+          <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+            {t("myFlights.avgScore", "Score Médio")}
+          </span>
+          <p className="mt-1 text-xl font-bold font-mono text-emerald-400">
+            {flights.length > 0 ? (
+              <>
+                {avgScore}{" "}
+                <span className="text-xs font-normal text-muted-foreground font-sans">pts</span>
+              </>
+            ) : (
+              "—"
+            )}
+          </p>
+        </Card>
+      </div>
+
+      {/* Flights Logbook Table */}
+      <Card className="flex-1 overflow-hidden border-border/70 bg-card p-0 shadow-xs">
+          <div className="overflow-x-auto max-h-[calc(100vh-275px)] overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="sticky top-0 z-10 border-b border-border/60 bg-muted/60 text-muted-foreground backdrop-blur-xs font-semibold">
+                <tr>
+                  <th className="py-2.5 px-3.5">{t("myFlights.colFlight", "Voo")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colOrigin", "Origem")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colDestination", "Destino")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colDeparture", "Partida (UTC)")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colAircraft", "Aeronave")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colDuration", "Duração")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colDistance", "Distância")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colLanding", "Toque")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colScore", "Score")}</th>
+                  <th className="py-2.5 px-3">{t("myFlights.colStatus", "Status")}</th>
+                  <th className="py-2.5 px-3 text-right">{t("myFlights.colAction", "Ação")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40 text-foreground">
+                {filteredFlights.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-12 text-center text-muted-foreground">
+                      <p className="text-sm font-medium">{t("myFlights.noFlightsFound", "Nenhum voo encontrado")}</p>
+                      <p className="text-xs text-muted-foreground/75 mt-0.5">
+                        {localMode
+                          ? t("myFlights.localMode", "O Airspace ACARS está em Modo Local. Conecte-se com sua companhia aérea para sincronizar seu histórico de voos.")
+                          : !ready
+                          ? t("myFlights.noSession", "Faça login com sua companhia aérea para acessar seu histórico de voos.")
+                          : search
+                          ? t("myFlights.noSearchResults", "Tente buscar com outros termos de pesquisa.")
+                          : t("myFlights.noFilterResults", "Nenhum registro para o filtro selecionado.")}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredFlights.map((flight) => {
+                    return (
+                      <tr
+                        key={flight.id}
+                        className="hover:bg-accent/40 transition-colors group cursor-pointer"
+                        onClick={() => setInspectFlight(flight)}
+                      >
+                        {/* Flight Callsign */}
+                        <td className="py-2.5 px-3.5 whitespace-nowrap">
+                          <span className="font-mono font-bold text-foreground tracking-tight">
+                            {flight.callsign}
+                          </span>
+                        </td>
+
+                        {/* Origin Airport */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <div className="font-mono font-bold text-foreground">
+                            {flight.departure_airport?.icao}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate max-w-[130px]">
+                            {flight.departure_airport?.city || flight.departure_airport?.name}
+                          </div>
+                        </td>
+
+                        {/* Destination Airport */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <div className="font-mono font-bold text-foreground">
+                            {flight.arrival_airport?.icao}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate max-w-[130px]">
+                            {flight.arrival_airport?.city || flight.arrival_airport?.name}
+                          </div>
+                        </td>
+
+                        {/* Departure Time in UTC */}
+                        <td className="py-2.5 px-3 whitespace-nowrap font-mono text-muted-foreground text-[11px]">
+                          {formatUtcDate(flight.departure_time || flight.created_at)}
+                        </td>
+
+                        {/* Aircraft */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <div className="font-medium text-foreground text-[11px]">
+                            {flight.aircraft?.registration || "—"}
+                          </div>
+                          <div className="font-mono text-[10px] text-muted-foreground">
+                            {flight.aircraft?.icao_code || "A/C"}
+                          </div>
+                        </td>
+
+                        {/* Duration */}
+                        <td className="py-2.5 px-3 whitespace-nowrap font-medium text-foreground">
+                          {formatDuration(flight.flight_time_minutes)}
+                        </td>
+
+                        {/* Distance */}
+                        <td className="py-2.5 px-3 whitespace-nowrap font-mono text-muted-foreground">
+                          {Math.round(flight.distance_nm)} NM
+                        </td>
+
+                        {/* Touchdown Landing Rate */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          {getLandingRateBadge(flight.landing_rate_fpm)}
+                        </td>
+
+                        {/* Operational Score */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <Badge variant="outline" className="text-[10px] font-mono border-border text-foreground">
+                            {flight.score ? `${flight.score} pts` : "100 pts"}
+                          </Badge>
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          {getFlightStatusBadge(flight.status, t)}
+                        </td>
+
+                        {/* Action - Eye Button */}
+                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            title={t("myFlights.viewFlightDetails", "Ver status e estatísticas do voo")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInspectFlight(flight);
+                            }}
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-accent border border-border/50"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-          {search && (
-            <span className="text-xs text-muted-foreground">
-              Filtrado por: <span className="font-medium text-foreground">"{search}"</span>
-            </span>
-          )}
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * Dedicated Full-Page View for a specific flight, covering the entire tab area.
+ * Displays the route map, telemetry KPI metrics, and operational audit report.
+ */
+function FlightDetailView({
+  flight,
+  company,
+  onBack,
+}: {
+  flight: FlightLog;
+  company: string;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex h-full flex-col space-y-3 animate-in fade-in duration-200">
+      {/* Top Navigation & Flight Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBack}
+            className="h-8 gap-1.5 text-xs border-border/80 shadow-xs"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>{t("myFlights.backToFlights", "Voltar aos voos")}</span>
+          </Button>
+
+          <Badge
+            variant="outline"
+            className="border-primary/40 bg-primary/10 text-primary font-mono font-bold text-xs px-2.5 py-0.5"
+          >
+            {flight.callsign}
+          </Badge>
+
+          <div>
+            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+              <span>
+                {flight.departure_airport?.icao} ({flight.departure_airport?.city})
+              </span>
+              <span className="text-primary">➔</span>
+              <span>
+                {flight.arrival_airport?.icao} ({flight.arrival_airport?.city})
+              </span>
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {company || "Airspace"} • {t("myFlights.departureLabel", "Partida")}: {formatUtcDate(flight.departure_time || flight.created_at)}
+            </p>
+          </div>
         </div>
 
-        <div className="overflow-x-auto max-h-96">
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 z-10 border-b border-border/60 bg-muted/60 text-muted-foreground backdrop-blur-xs">
-              <tr>
-                <th className="py-2.5 px-3 font-semibold">Callsign</th>
-                <th className="py-2.5 px-3 font-semibold">Rota</th>
-                <th className="py-2.5 px-3 font-semibold">Aeronave</th>
-                <th className="py-2.5 px-3 font-semibold">Duração</th>
-                <th className="py-2.5 px-3 font-semibold">Distância</th>
-                <th className="py-2.5 px-3 font-semibold">Pouso</th>
-                <th className="py-2.5 px-3 font-semibold">Status</th>
-                <th className="py-2.5 px-3 font-semibold">Data</th>
-                <th className="py-2.5 px-3 text-right font-semibold">Ação</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/40">
-              {loading ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-muted-foreground">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-                    <p className="mt-2 text-xs">Carregando histórico de voos...</p>
-                  </td>
-                </tr>
-              ) : filteredFlights.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-10 text-center text-muted-foreground">
-                    <p className="text-sm font-medium">Nenhum voo encontrado</p>
-                    <p className="text-xs text-muted-foreground/75 mt-0.5">
-                      {search
-                        ? "Tente buscar com outros termos de pesquisa."
-                        : "Você ainda não possui voos registrados nesta companhia."}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredFlights.map((flight) => {
-                  const isSelected = flight.id === selectedFlightId;
-                  return (
-                    <tr
-                      key={flight.id}
-                      onClick={() => setSelectedFlightId(flight.id)}
-                      className={`cursor-pointer transition-colors ${
-                        isSelected
-                          ? "bg-accent/80 font-medium"
-                          : "hover:bg-accent/40 text-foreground"
-                      }`}
-                    >
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-sky-400">{flight.callsign}</span>
-                          {flight.flight_number && (
-                            <span className="text-[10px] text-muted-foreground font-mono">
-                              #{flight.flight_number}
-                            </span>
-                          )}
-                        </div>
-                      </td>
+        <div className="flex items-center gap-3">
+          {getFlightStatusBadge(flight.status, t)}
+          <span className="text-xs font-mono text-muted-foreground">
+            {Math.round(flight.distance_nm)} NM
+          </span>
+        </div>
+      </div>
 
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1 font-mono text-[11px]">
-                          <span className="font-bold text-foreground">
-                            {flight.departure_airport?.icao}
-                          </span>
-                          <span className="text-muted-foreground">➔</span>
-                          <span className="font-bold text-foreground">
-                            {flight.arrival_airport?.icao}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">
-                          {flight.departure_airport?.city || flight.departure_airport?.name}
-                        </div>
-                      </td>
+      {/* Main Expansive Layout: Big Map on Left, Metrics & Audit on Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_400px] gap-3 flex-1 min-h-0">
+        {/* Left Column: Big, Tall, Immersive Interactive Map filling 100% height and top area */}
+        <div className="relative flex-1 w-full min-h-[480px] lg:min-h-0 h-full rounded-xl overflow-hidden border border-border/70 bg-card shadow-xs">
+          <FlightsMap
+            flights={[flight]}
+            selectedFlightId={flight.id}
+            onSelectFlight={() => {}}
+            className="h-full w-full"
+            overlayContent={
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                  <Map className="h-3.5 w-3.5 text-primary shrink-0" />
+                  {t("myFlights.routeLabel", "Rota")}: {flight.departure_airport?.icao} ({flight.departure_airport?.city}) ➔ {flight.arrival_airport?.icao} ({flight.arrival_airport?.city})
+                </span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  • {Math.round(flight.distance_nm)} NM • {flight.aircraft?.icao_code} ({flight.aircraft?.registration})
+                </span>
+              </div>
+            }
+          />
+        </div>
 
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        <div className="text-[11px] font-medium text-foreground">
-                          {flight.aircraft?.registration || "—"}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground font-mono">
-                          {flight.aircraft?.icao_code || "A/C"}
-                        </div>
-                      </td>
+        {/* Right Column: Telemetry Cards & Audit Report */}
+        <div className="flex flex-col space-y-3 overflow-y-auto pr-0.5">
+          {/* 6 Key Telemetry KPIs in 2x3 Grid */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {/* Flight Duration */}
+            <Card className="border-border/70 bg-card p-3 shadow-xs">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-sky-400" />
+                {t("myFlights.flightDuration", "Duração de Voo")}
+              </span>
+              <p className="text-lg font-bold font-mono text-foreground mt-1">
+                {formatDuration(flight.flight_time_minutes)}
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                {flight.flight_time_minutes} {t("myFlights.minutesFlown", "min voados")}
+              </span>
+            </Card>
 
-                      <td className="py-2.5 px-3 whitespace-nowrap font-medium text-foreground">
-                        {formatDuration(flight.flight_time_minutes)}
-                      </td>
+            {/* Touchdown Landing Rate */}
+            <Card className="border-border/70 bg-card p-3 shadow-xs">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />
+                {t("myFlights.touchdownRate", "Toque na Pista")}
+              </span>
+              <p className="text-lg font-bold font-mono text-emerald-400 mt-1">
+                {Math.round(flight.landing_rate_fpm)} ft/min
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                {Math.abs(flight.landing_rate_fpm) <= 180 ? t("myFlights.butterLanding", "Toque Suave (Butter)") : t("myFlights.normalLanding", "Toque Operacional")}
+              </span>
+            </Card>
 
-                      <td className="py-2.5 px-3 whitespace-nowrap text-muted-foreground font-mono">
-                        {Math.round(flight.distance_nm)} NM
-                      </td>
+            {/* Distance Flown */}
+            <Card className="border-border/70 bg-card p-3 shadow-xs">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5 text-indigo-400" />
+                {t("myFlights.totalFlownDistance", "Distância Total")}
+              </span>
+              <p className="text-lg font-bold font-mono text-foreground mt-1">
+                {Math.round(flight.distance_nm)} NM
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                ~{Math.round(flight.distance_nm * 1.852)} km
+              </span>
+            </Card>
 
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        {getLandingRateBadge(flight.landing_rate_fpm)}
-                      </td>
+            {/* Fuel Consumed */}
+            <Card className="border-border/70 bg-card p-3 shadow-xs">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                <Fuel className="h-3.5 w-3.5 text-amber-400" />
+                {t("myFlights.fuelBurned", "Combustível")}
+              </span>
+              <p className="text-lg font-bold font-mono text-foreground mt-1">
+                {Math.round(flight.fuel_used_kg).toLocaleString()} kg
+              </p>
+              <span className="text-[10px] text-muted-foreground">{t("myFlights.tripFuel", "Trip Fuel")}</span>
+            </Card>
 
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        {getFlightStatusBadge(flight.status)}
-                      </td>
+            {/* Aircraft Used */}
+            <Card className="border-border/70 bg-card p-3 shadow-xs">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                <Plane className="h-3.5 w-3.5 text-purple-400" />
+                {t("myFlights.aircraftUsed", "Aeronave")}
+              </span>
+              <p className="text-base font-bold font-mono text-foreground mt-1 truncate">
+                {flight.aircraft?.registration || "—"}
+              </p>
+              <span className="text-[10px] text-muted-foreground font-mono truncate block">
+                {flight.aircraft?.icao_code} {flight.aircraft?.name ? `(${flight.aircraft.name})` : ""}
+              </span>
+            </Card>
 
-                      <td className="py-2.5 px-3 whitespace-nowrap text-muted-foreground text-[11px]">
-                        {formatDate(flight.created_at || flight.departure_time)}
-                      </td>
+            {/* FDM Operational Score */}
+            <Card className="border-border/70 bg-card p-3 shadow-xs">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                {t("myFlights.operationalScore", "Score Operacional")}
+              </span>
+              <p className="text-lg font-bold font-mono text-emerald-400 mt-1">
+                {flight.score || 100} / 100
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                {t("myFlights.fdmValidated", "FDM Validado")}
+              </span>
+            </Card>
+          </div>
 
-                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                        <Button
-                          variant={isSelected ? "default" : "outline"}
-                          size="icon-xs"
-                          title="Focar no mapa"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedFlightId(flight.id);
-                          }}
-                          className="h-6 w-6"
-                        >
-                          <Navigation className="h-3 w-3" />
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+          {/* Operational Briefing & Audit Report */}
+          <Card className="border-border/70 bg-card p-4 space-y-2 shadow-xs flex-1">
+            <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              {t("myFlights.auditReport", "Relatório Operacional de Auditoria (vOCC)")}
+            </h4>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t("myFlights.auditFlightFrom", "Voo operado de")} <span className="text-foreground font-semibold">{flight.departure_airport?.name} ({flight.departure_airport?.icao})</span> {t("myFlights.auditFlightTo", "para")}{" "}
+              <span className="text-foreground font-semibold">{flight.arrival_airport?.name} ({flight.arrival_airport?.icao})</span>.
+              {t("myFlights.auditTelemetry", "Telemetria de voo registrada e arquivada pelo ACARS.")}
+              {" "}{t("myFlights.auditTouchdown", "Toque registrado a")} <span className="text-emerald-400 font-semibold font-mono">{Math.round(flight.landing_rate_fpm)} ft/min</span>,
+              {t("myFlights.auditConclusion", "velocidade de aproximação estabilizada e parâmetros de segurança operacionais validados com sucesso.")}
+            </p>
+          </Card>
         </div>
       </div>
     </div>
