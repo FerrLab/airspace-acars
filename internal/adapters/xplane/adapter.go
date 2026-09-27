@@ -385,7 +385,11 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 	case 44:
 		x.data.Controls.Flaps = float64(val) * 100
 	case 45:
-		x.data.Controls.Spoilers = float64(val) * 100
+		// speedbrake_ratio reads -0.5 while the speedbrakes are armed. Armed is
+		// not a deflection, and SimConnect's handle position has no such value:
+		// sent as -50 it met the server's ratio heuristic, which multiplies
+		// anything at or below 1 by 100, and was stored as -5000.
+		x.data.Controls.Spoilers = math.Max(0, float64(val)) * 100
 	case 46:
 		x.data.Controls.GearDown = val != 0
 	case 47:
