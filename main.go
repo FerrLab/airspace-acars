@@ -142,6 +142,11 @@ func main() {
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
+		Windows: application.WindowsWindow{
+			Permissions: map[application.CoreWebView2PermissionKind]application.CoreWebView2PermissionState{
+				application.CoreWebView2PermissionKindMicrophone: application.CoreWebView2PermissionStateAllow,
+			},
+		},
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
 	})
