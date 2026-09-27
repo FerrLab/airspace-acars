@@ -2,6 +2,7 @@ package app
 
 import (
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -74,6 +75,7 @@ type App struct {
 	streamStopCh      chan struct{}
 	reconnectAttempts int
 	lastReconnectAt   time.Time
+	simWaitFailures   int
 	userDisconnected  bool
 
 	// Recording state
@@ -161,6 +163,11 @@ func NewApp(
 	// and telling the frontend turns that into a single, one-time prompt to
 	// sign in again instead of an unbounded stream of 401s.
 	airspace.OnUnauthorized(func() {
+		// This is the one place the app signs a pilot out on its own, so it
+		// says so. A report of being dropped back to the tenant list is
+		// otherwise indistinguishable in the log from the app simply starting.
+		slog.Warn("auth: the server rejected our token; signing out",
+			"tenant", airspace.BaseURL())
 		a.SetToken("")
 		a.UI.EmitEvent("session-expired", true)
 	})

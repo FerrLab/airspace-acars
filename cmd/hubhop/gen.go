@@ -476,7 +476,7 @@ func buildMash(presets []preset, simulator string) map[string]any {
 // draft must not compete with one.
 var handWritten = re(`fenixsim|flight sim labs|fly by wire.*a320|pmdg.*(b737|b777)|` +
 	`inibuilds.*(a350|a300|a310)|tfdi|aerosoft.*crj|ifly|just flight.*(bae|avro)|` +
-	`leonardo|salty|zibo`)
+	`leonardo|salty|zibo|rotate.*md-?11`)
 
 // vendorPatterns maps a HubHop vendor onto the way its name actually appears
 // in an aircraft title. An empty pattern means the vendor is not distinctive

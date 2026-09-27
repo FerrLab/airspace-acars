@@ -17,6 +17,11 @@ const (
 	reconnectBaseDelay  = 5 * time.Second
 	reconnectMaxBackoff = 60 * time.Second
 	autoConnectInterval = 30 * time.Second
+
+	// simDataWait is how long a freshly opened adapter is given to send
+	// something before it is treated as not there. A UDP socket to X-Plane
+	// opens whether or not X-Plane is running, so data is the only proof.
+	simDataWait = 3 * time.Second
 )
 
 // ConnectSim connects to a flight simulator. simType can be "auto", "simconnect", or "xplane".
@@ -83,8 +88,8 @@ func (a *App) ConnectSim(simType string) (string, error) {
 	a.startDataStreamLocked()
 	a.simMu.Unlock()
 
-	// Wait up to 3 seconds for actual simulator data
-	deadline := time.After(3 * time.Second)
+	// Wait for actual simulator data: opening an adapter proves nothing.
+	deadline := time.After(simDataWait)
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 
@@ -93,6 +98,7 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		case <-deadline:
 			a.DisconnectSim()
 			err := fmt.Errorf("no data received from %s — is the simulator running?", connector.Name())
+			a.noteSimWaitFailed(connector.Name())
 			span.Expected(err)
 			return "", err
 		case <-tick.C:
@@ -100,10 +106,44 @@ func (a *App) ConnectSim(simType string) (string, error) {
 			active := a.simActive
 			a.simMu.Unlock()
 			if active {
-				slog.Info("connected to simulator", "adapter", connector.Name())
+				a.simMu.Lock()
+				missed := a.simWaitFailures
+				a.simWaitFailures = 0
+				a.simMu.Unlock()
+				slog.Info("connected to simulator",
+					"adapter", connector.Name(), "after_failed_attempts", missed)
 				return connector.Name(), nil
 			}
 		}
+	}
+}
+
+// noteSimWaitFailed reports that a simulator was opened but never sent
+// anything.
+//
+// The auto-connect loop retries every 30 seconds, so this cannot log every
+// attempt. It also cannot stay at Debug, which is where it was: that is not
+// in a pilot's log, so a log from someone whose simulator is not running read
+// exactly like a log from someone whose ACARS is broken, and the only line
+// that explained it was the one nobody had.
+//
+// So: the first one, and then every tenth, the way the position loop reports
+// a server it cannot reach.
+func (a *App) noteSimWaitFailed(adapter string) {
+	a.simMu.Lock()
+	a.simWaitFailures++
+	n := a.simWaitFailures
+	a.simMu.Unlock()
+
+	if n == 1 {
+		slog.Warn("no data from the simulator; will keep trying",
+			"adapter", adapter,
+			"waited", simDataWait.String(),
+			"retry_every", autoConnectInterval.String())
+		return
+	}
+	if n%10 == 0 {
+		slog.Warn("still no data from the simulator", "adapter", adapter, "attempts", n)
 	}
 }
 

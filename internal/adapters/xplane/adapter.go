@@ -167,7 +167,12 @@ func (x *Adapter) Connect() error {
 	x.stop = make(chan struct{})
 	go x.listenLoop()
 
-	slog.Info("X-Plane UDP connected", "addr", addr.String())
+	// Not "connected": UDP has no handshake, so DialUDP succeeds whether or
+	// not X-Plane is there, and these subscriptions are sends into the void
+	// until something answers. Saying connected here read as success in logs
+	// from pilots whose simulator was never running. The caller waits for
+	// data and reports on that; this line only claims what it did.
+	slog.Info("listening for X-Plane data", "addr", addr.String(), "datarefs", len(xplaneDatarefs))
 	return nil
 }
 
@@ -293,10 +298,16 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 		x.data.Position.Altitude = float64(val) * 3.28084
 	case 3:
 		x.data.Position.AltitudeAGL = float64(val) * 3.28084
+	// Pitch and bank are reported in SimConnect's sign, positive nose down and
+	// positive left wing down: that is what the server stores, and it negates
+	// every flight on the way to the PFD and the 3D model. theta and phi are
+	// the other way round, so X-Plane flights drew a climb as a descent and a
+	// right turn as a left one. Subtracted from zero rather than negated, so a
+	// level attitude reads 0 and not IEEE -0.
 	case 4:
-		x.data.Attitude.Pitch = float64(val)
+		x.data.Attitude.Pitch = 0 - float64(val)
 	case 5:
-		x.data.Attitude.Roll = float64(val)
+		x.data.Attitude.Roll = 0 - float64(val)
 	case 6:
 		x.data.Attitude.HeadingTrue = float64(val)
 	case 7:
@@ -346,7 +357,11 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 	case 29:
 		x.data.Radios.XpdrState = domain.TransponderStateString(float64(val))
 	case 30:
-		x.data.Autopilot.Master = val != 0
+		// autopilot_mode is 0 off, 1 flight director only, 2 autopilot on.
+		// Only 2 is the autopilot flying, which is what SimConnect's AUTOPILOT
+		// MASTER reports: counting the flight director as engaged took away
+		// the manual flying time of every pilot who hand-flies with it on.
+		x.data.Autopilot.Master = val >= 2
 	case 31:
 		x.data.Autopilot.Heading = float64(val)
 	case 32:
@@ -376,7 +391,11 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 	case 44:
 		x.data.Controls.Flaps = float64(val) * 100
 	case 45:
-		x.data.Controls.Spoilers = float64(val) * 100
+		// speedbrake_ratio reads -0.5 while the speedbrakes are armed. Armed is
+		// not a deflection, and SimConnect's handle position has no such value:
+		// sent as -50 it met the server's ratio heuristic, which multiplies
+		// anything at or below 1 by 100, and was stored as -5000.
+		x.data.Controls.Spoilers = math.Max(0, float64(val)) * 100
 	case 46:
 		x.data.Controls.GearDown = val != 0
 	case 47:
