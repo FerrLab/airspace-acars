@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Sidebar, type Tab } from "@/components/sidebar";
 import { AcarsTab } from "@/components/acars-tab";
-import { MyFlightsTab } from "@/components/my-flights-tab";
 import { ChatTab } from "@/components/chat-tab";
 import { NotamsTab } from "@/components/notams-tab";
 import { DocumentsTab } from "@/components/documents-tab";
+import { MyFlightsTab } from "@/components/my-flights-tab";
 import { FlightClocks } from "@/components/flight-clocks";
 import { DebugTab } from "@/components/debug-tab";
 import { SettingsTab } from "@/components/settings-tab";
@@ -78,10 +78,10 @@ export function AppShell() {
         <FlightClocks />
         <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "acars" && <AcarsTab localMode={localMode} volume={volume} onVolumeChange={handleVolumeChange} />}
-          {activeTab === "my-flights" && <MyFlightsTab localMode={localMode} />}
-          {activeTab === "documents" && <DocumentsTab localMode={localMode} />}
           {activeTab === "chat" && <ChatTab localMode={localMode} />}
           {activeTab === "notams" && <NotamsTab localMode={localMode} />}
+          {activeTab === "documents" && <DocumentsTab localMode={localMode} />}
+          {activeTab === "my-flights" && <MyFlightsTab localMode={localMode} />}
           {activeTab === "debug" && <DebugTab />}
           {activeTab === "settings" && <SettingsTab localMode={localMode} onLocalModeChange={setLocalMode} />}
         </main>
