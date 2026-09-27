@@ -1,3 +1,5 @@
+import { applyAudioSink } from "./audio-manager";
+
 export const CHAT_SOUNDS = ["default", "chime", "ding", "soft", "none"] as const;
 export type ChatSoundType = (typeof CHAT_SOUNDS)[number];
 
@@ -98,7 +100,9 @@ export function playNotificationPreview(type: ChatSoundType) {
   if (!blob) return;
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
-  audio.play().catch(() => {});
+  applyAudioSink(audio).finally(() => {
+    audio.play().catch(() => {});
+  });
   audio.addEventListener("ended", () => URL.revokeObjectURL(url));
 }
 
@@ -132,6 +136,8 @@ export function playAutoStartDing(volumePercent: number) {
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   audio.volume = Math.min(1, volumePercent / 100);
-  audio.play().catch(() => {});
+  applyAudioSink(audio).finally(() => {
+    audio.play().catch(() => {});
+  });
   audio.addEventListener("ended", () => URL.revokeObjectURL(url));
 }
