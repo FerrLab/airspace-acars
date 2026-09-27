@@ -19,10 +19,8 @@ import (
 type AirspaceAPI interface {
 	SetBaseURL(url string)
 	SetToken(token string)
-	SetAPIKey(key string)
 	BaseURL() string
 	Token() string
-	APIKey() string
 	DoRequest(method, path string, body interface{}) ([]byte, int, error)
 	// RawGet performs an unauthenticated GET to an absolute URL.
 	RawGet(url string) ([]byte, error)

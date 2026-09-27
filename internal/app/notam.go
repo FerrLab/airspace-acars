@@ -26,7 +26,7 @@ func (a *App) notamRequest(path string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	slog.Info("notamRequest", "path", path, "status", status, "body", string(body))
+	slog.Info("notamRequest", "path", path, "status", status)
 	switch status {
 	case 401, 403:
 		return nil, "accessDenied", nil
@@ -87,25 +87,11 @@ func (a *App) GetNOTAMs(page int) (*domain.NOTAMPage, error) {
 		companyNOTAMPath + "?" + query.Encode(),
 		"/api/v2/acars/notams?" + query.Encode(),
 		"/api/v2/acars/company-notams?" + query.Encode(),
-		"/api/v2/acars/notams",
-		"/api/v2/acars/company-notams",
 	}
 
-	var body []byte
-	var status string
-	var err error
-
-	for _, path := range candidates {
-		body, status, err = a.notamRequest(path)
-		if err != nil {
-			return nil, err
-		}
-		if status == "ok" {
-			break
-		}
-		if status == "localMode" || status == "noSession" {
-			break
-		}
+	body, status, err := executeCandidates(candidates, a.notamRequest)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &domain.NOTAMPage{Status: status, Data: []domain.CompanyNOTAM{}, CurrentPage: page, LastPage: page}
@@ -156,21 +142,9 @@ func (a *App) GetNOTAM(id string) (*domain.NOTAMDetail, error) {
 		"/api/v2/acars/company-notams/" + url.PathEscape(id),
 	}
 
-	var body []byte
-	var status string
-	var err error
-
-	for _, path := range candidates {
-		body, status, err = a.notamRequest(path)
-		if err != nil {
-			return nil, err
-		}
-		if status == "ok" {
-			break
-		}
-		if status == "localMode" || status == "noSession" {
-			break
-		}
+	body, status, err := executeCandidates(candidates, a.notamRequest)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &domain.NOTAMDetail{Status: status}
