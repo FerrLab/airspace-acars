@@ -341,7 +341,9 @@ and hand-written:
 `rotate-md11` is the exception to the first line. HubHop has nothing readable
 for the aircraft, so its flap handle variable comes from a shared-cockpit
 configuration for it, and the handle's scale is the one Rotate's MD-80 uses
-rather than one read in the simulator. Its `notes` say what to check.
+rather than one read in the simulator. Its `notes` say what to check. It also
+matches any X-Plane trijet, because the title the MD-11 reports has not been
+seen yet; an aircraft without the variable keeps its stock reading.
 
 ### Generated drafts
 

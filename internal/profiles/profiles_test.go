@@ -902,7 +902,7 @@ func TestRotateMD11ReadsTheFlapHandle(t *testing.T) {
 		// integer truncation would read as 34 — a retraction, if the previous
 		// sample said 35.
 		{"a detent reads as a whole percent", map[string]float64{handle: float64(float32(0.35)), stock: 0}, 35},
-		{"another MD-11 keeps its stock reading", map[string]float64{handle: 0, stock: 0.5}, 50},
+		{"any other aircraft keeps its stock reading", map[string]float64{handle: 0, stock: 0.5}, 50},
 		{"a handle X-Plane never reports leaves the stock reading", map[string]float64{stock: 0.25}, 25},
 	}
 	for _, tc := range cases {
@@ -912,6 +912,23 @@ func TestRotateMD11ReadsTheFlapHandle(t *testing.T) {
 			assert.Equal(t, tc.want, fd.Controls.Flaps)
 		})
 	}
+}
+
+// The flights that showed the fault ran a client that did not read the X-Plane
+// title or ICAO type at all, so what the Rotate MD-11 reports for them has not
+// been seen. The engine count does not depend on either.
+func TestRotateMD11MatchesWithoutItsName(t *testing.T) {
+	reg := NewRegistry()
+	xp := []SourceKind{SourceDataRef}
+
+	assert.Contains(t, reg.Resolve(Context{Simulator: SimXPlane, EngineCount: 3}, xp).ProfileIDs(),
+		"rotate-md11", "an X-Plane trijet with no title or type")
+	assert.Contains(t, reg.Resolve(Context{AircraftType: "MD1F", Simulator: SimXPlane}, xp).ProfileIDs(),
+		"rotate-md11", "the freighter's type before the engine count has arrived")
+	assert.NotContains(t, reg.Resolve(Context{Simulator: SimXPlane, EngineCount: 2}, xp).ProfileIDs(),
+		"rotate-md11", "an X-Plane twin with no title or type")
+	assert.NotContains(t, reg.Resolve(Context{AircraftName: "TFDi Design MD-11", Simulator: SimSimConnect, EngineCount: 3},
+		[]SourceKind{SourceSimVar, SourceLVar}).ProfileIDs(), "rotate-md11", "the MSFS MD-11")
 }
 
 // A transform is a pipeline, so a second comparison operates on the 1 or 0 the
