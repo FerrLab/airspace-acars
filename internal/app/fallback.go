@@ -1,6 +1,12 @@
 package app
 
-import "airspace-acars/internal/domain"
+import (
+	"airspace-acars/internal/domain"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+)
 
 // executeCandidates probes candidate paths in order and returns the first
 // successful response. It preserves meaningful statuses (accessDenied, rateLimited)
@@ -11,7 +17,6 @@ func executeCandidates(
 	candidates []string,
 	requestFn func(path string) ([]byte, string, error),
 ) ([]byte, string, error) {
-	var bestBody []byte
 	bestStatus := "unavailable"
 	var lastErr error
 
@@ -45,7 +50,7 @@ func executeCandidates(
 	if bestStatus == "unavailable" && lastErr != nil {
 		return nil, bestStatus, lastErr
 	}
-	return bestBody, bestStatus, nil
+	return nil, bestStatus, nil
 }
 
 // executeRequest performs an authenticated request and maps the HTTP status.
@@ -62,6 +67,7 @@ func (a *App) executeRequest(path string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	slog.Info("executeRequest", "path", path, "status", status)
 	switch status {
 	case 200, 201, 202:
 		return body, "ok", nil
@@ -74,4 +80,20 @@ func (a *App) executeRequest(path string) ([]byte, string, error) {
 	default:
 		return nil, "error", domain.NewStatusError("GET", path, status, body)
 	}
+}
+
+// parseRawID extracts string or numeric ID from JSON raw message.
+func parseRawID(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		return strings.TrimSpace(str), nil
+	}
+	var num json.Number
+	if err := json.Unmarshal(raw, &num); err == nil {
+		return num.String(), nil
+	}
+	return "", fmt.Errorf("invalid id format")
 }

@@ -4,12 +4,9 @@ import {
   AlertCircle,
   BookOpen,
   Calendar,
-  CheckCircle2,
   ChevronRight,
   Download,
   ExternalLink,
-  Eye,
-  FileCode,
   FileText,
   Folder,
   FolderOpen,
@@ -28,7 +25,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { sanitizeDocumentHtml } from "@/lib/document-sanitize";
 
 export interface DocItem {
@@ -117,13 +113,27 @@ function CompanyDocuments({
     if (localMode || !ready) return;
 
     DocumentService.GetDocuments(1, "", "")
-      .then((result) => {
+      .then(async (result) => {
         if (cancelled) return;
         if (!result || result.status !== "ok") {
           setError(statusKey(result?.status ?? ""));
           return;
         }
-        const items = (result.data ?? []) as DocItem[];
+        let items = (result.data ?? []) as DocItem[];
+        const lastPage = result.last_page ?? 1;
+        if (lastPage > 1) {
+          const pagePromises: Promise<any>[] = [];
+          for (let p = 2; p <= lastPage; p++) {
+            pagePromises.push(DocumentService.GetDocuments(p, "", ""));
+          }
+          const nextPages = await Promise.all(pagePromises);
+          if (cancelled) return;
+          for (const pageResult of nextPages) {
+            if (pageResult?.status === "ok" && Array.isArray(pageResult.data)) {
+              items = items.concat(pageResult.data as DocItem[]);
+            }
+          }
+        }
         setDocuments(items);
 
         // Select first non-folder document by default if nothing selected
@@ -253,27 +263,27 @@ function CompanyDocuments({
     if (doc.is_auto_generated) {
       return (
         <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-emerald-500/40 text-emerald-400 bg-emerald-500/10">
-          Auto
+          {t("documents.badgeAuto", "Auto")}
         </Badge>
       );
     }
     if (doc.type === "pdf" || doc.file_url) {
       return (
         <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-red-500/40 text-red-400 bg-red-500/10">
-          PDF
+          {t("documents.badgePdf", "PDF")}
         </Badge>
       );
     }
     if (doc.type === "folder") {
       return (
         <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-amber-500/40 text-amber-400 bg-amber-500/10">
-          Folder
+          {t("documents.badgeFolder", "Folder")}
         </Badge>
       );
     }
     return (
       <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-border text-muted-foreground">
-        HTML
+        {t("documents.badgeHtml", "HTML")}
       </Badge>
     );
   };
@@ -298,6 +308,17 @@ function CompanyDocuments({
     () => (activeDoc?.content ? sanitizeDocumentHtml(activeDoc.content) : ""),
     [activeDoc?.content]
   );
+
+  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
+    if (!anchor) return;
+    const href = anchor.getAttribute("href");
+    if (!href) return;
+    if (href.startsWith("#")) return;
+    e.preventDefault();
+    void DocumentService.OpenDocumentURL(href);
+  };
 
   return (
     <div className="flex h-full flex-col space-y-4" aria-label={t("documents.title", "Documentação")}>
@@ -600,7 +621,9 @@ function CompanyDocuments({
                   </div>
                 ) : sanitizedHtml ? (
                   <div
-                    className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-xs [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:p-2 [&_th]:bg-muted/40 [&_td]:border [&_td]:border-border [&_td]:p-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                    className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-xs [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:p-2 [&_th]:bg-muted/40 [&_td]:border [&_td]:border-border [&_td]:p-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [contain:paint]"
+                    style={{ contain: "paint" }}
+                    onClick={handleContentClick}
                     dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
                   />
                 ) : (

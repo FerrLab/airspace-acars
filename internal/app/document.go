@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -14,33 +13,6 @@ import (
 )
 
 const documentsPath = "/api/v1/documents"
-
-// documentRequest handles authenticated requests to tenant document endpoints.
-func (a *App) documentRequest(path string) ([]byte, string, error) {
-	if a.GetSettings().LocalMode {
-		return nil, "localMode", nil
-	}
-	if a.Airspace.Token() == "" || a.Airspace.BaseURL() == "" {
-		return nil, "noSession", nil
-	}
-	body, status, err := a.Airspace.DoRequest("GET", path, nil)
-	if err != nil {
-		return nil, "", err
-	}
-	slog.Info("documentRequest", "path", path, "status", status)
-	switch status {
-	case 401, 403:
-		return nil, "accessDenied", nil
-	case 404, 405:
-		return nil, "unavailable", nil
-	case 429:
-		return nil, "rateLimited", nil
-	}
-	if err := domain.NewStatusError("GET", path, status, body); err != nil {
-		return nil, "", err
-	}
-	return body, "ok", nil
-}
 
 type documentWire struct {
 	ID              json.RawMessage `json:"id"`
@@ -61,20 +33,6 @@ type documentWire struct {
 	UpdatedAt       string          `json:"updated_at"`
 }
 
-func parseRawID(raw json.RawMessage) (string, error) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return "", nil
-	}
-	var str string
-	if err := json.Unmarshal(raw, &str); err == nil {
-		return str, nil
-	}
-	var num json.Number
-	if err := json.Unmarshal(raw, &num); err == nil {
-		return num.String(), nil
-	}
-	return "", fmt.Errorf("invalid id format")
-}
 
 func parseBoolLike(v interface{}) bool {
 	switch val := v.(type) {
@@ -163,7 +121,7 @@ func (a *App) GetDocuments(page int, parentID string, search string) (*domain.Do
 		"/api/v2/acars/documents?" + query.Encode(),
 	}
 
-	body, status, err := executeCandidates(candidates, a.documentRequest)
+	body, status, err := executeCandidates(candidates, a.executeRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +182,7 @@ func (a *App) GetDocument(id string) (*domain.DocumentDetail, error) {
 		"/api/v2/acars/documents/" + url.PathEscape(id),
 	}
 
-	body, status, err := executeCandidates(candidates, a.documentRequest)
+	body, status, err := executeCandidates(candidates, a.executeRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -256,36 +214,50 @@ func (a *App) GetDocument(id string) (*domain.DocumentDetail, error) {
 	return result, nil
 }
 
-// OpenDocumentURL validates a server-provided document URL and opens it in the
-// default system browser. It resolves relative paths against the active tenant
-// base URL and strictly enforces http/https schemes.
-func (a *App) OpenDocumentURL(rawURL string) error {
+// validateDocumentURL parses, resolves relative references against baseURL, and
+// ensures the scheme is strictly http or https.
+func validateDocumentURL(rawURL string, baseURL string) (*url.URL, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return fmt.Errorf("empty URL")
+		return nil, fmt.Errorf("empty URL")
 	}
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
+		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
 	// Resolve relative or scheme-less URL against tenant base URL
 	if !parsed.IsAbs() {
-		baseURL := a.Airspace.BaseURL()
 		if baseURL == "" {
-			return fmt.Errorf("cannot resolve relative URL: tenant base URL is not set")
+			return nil, fmt.Errorf("cannot resolve relative URL: tenant base URL is not set")
 		}
 		baseParsed, err := url.Parse(baseURL)
 		if err != nil {
-			return fmt.Errorf("invalid tenant base URL: %w", err)
+			return nil, fmt.Errorf("invalid tenant base URL: %w", err)
 		}
 		parsed = baseParsed.ResolveReference(parsed)
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return fmt.Errorf("unsupported URL scheme: %s", scheme)
+		return nil, fmt.Errorf("unsupported URL scheme: %s", scheme)
+	}
+
+	return parsed, nil
+}
+
+// OpenDocumentURL validates a server-provided document URL and opens it in the
+// default system browser. It resolves relative paths against the active tenant
+// base URL and strictly enforces http/https schemes.
+func (a *App) OpenDocumentURL(rawURL string) error {
+	baseURL := ""
+	if a.Airspace != nil {
+		baseURL = a.Airspace.BaseURL()
+	}
+	parsed, err := validateDocumentURL(rawURL, baseURL)
+	if err != nil {
+		return err
 	}
 
 	return browser.OpenURL(parsed.String())

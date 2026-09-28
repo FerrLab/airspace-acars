@@ -43,6 +43,16 @@ describe("sanitizeDocumentHtml", () => {
     const cleanedStyle = sanitizeDocumentHtml(styleOverlay);
     expect(cleanedStyle).not.toContain("position:fixed");
     expect(cleanedStyle).not.toContain("z-index");
+
+    // Overlay via Tailwind classes and data attributes
+    const classOverlay = '<div class="fixed inset-0 z-50 bg-black" data-overlay="true">Overlay</div>';
+    const cleanedClass = sanitizeDocumentHtml(classOverlay);
+    expect(cleanedClass).not.toContain("fixed");
+    expect(cleanedClass).not.toContain("inset-0");
+    expect(cleanedClass).not.toContain("z-50");
+    expect(cleanedClass).not.toContain("class=");
+    expect(cleanedClass).not.toContain("data-overlay");
+    expect(cleanedClass).toContain("<div>Overlay</div>");
   });
 
   it("handles empty or null input gracefully", () => {

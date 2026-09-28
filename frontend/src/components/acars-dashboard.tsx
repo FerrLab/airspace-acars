@@ -54,7 +54,7 @@ interface Props {
 }
 
 export function AcarsDashboard(p: Props) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const lastVolume = useRef(25);
   if (p.volume > 0) lastVolume.current = p.volume;
   const connected = !!p.connectedAdapter;

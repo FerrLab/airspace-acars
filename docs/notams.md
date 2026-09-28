@@ -24,8 +24,10 @@ The field mapping above still needs verification against a real tenant.
 
 The [Private API v1](https://airspace.ferrlab.com/manual/es/api/private-api-v1)
 documents an integration API key. Acceptance of the ACARS pilot token is **not
-confirmed**. This client attempts read-only access with its existing session;
-it never embeds an administrative API key or guesses undocumented endpoints.
+confirmed**. This client attempts read-only access with its existing pilot
+session and probes known company and ACARS candidate routes (`/api/v1/company-notams`,
+`/api/v2/acars/notams`, `/api/v2/acars/company-notams`). It never embeds an
+administrative API key and halts candidate probing immediately on 401/403 or 429.
 
 A 401/403 shows an access message in the tab. It must not trigger ACARS logout:
 the HTTP adapter only treats a 401 from `/api/v2/acars/` as session expiration.

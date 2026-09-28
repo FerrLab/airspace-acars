@@ -24,7 +24,8 @@ export function sanitizeDocumentHtml(dirty: string): string {
       "base",
       "applet",
     ],
-    FORBID_ATTR: ["style"],
+    FORBID_ATTR: ["style", "class"],
+    ALLOW_DATA_ATTR: false,
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }

@@ -57,6 +57,7 @@ export function mockDocumentService() {
           updated_at?: string;
         } | null,
       }),
+    OpenDocumentURL: (_url: string) => Promise.resolve(),
   };
 }
 
@@ -69,7 +70,6 @@ export function mockSettingsService() {
         xplaneHost: "127.0.0.1",
         xplanePort: 49000,
         apiBaseURL: "https://airspace.ferrlab.com",
-        apiKey: "",
         localMode: false,
         chatSound: "default",
         discordPresence: true,

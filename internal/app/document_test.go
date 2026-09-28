@@ -79,3 +79,87 @@ func TestDocumentDetailAndSecurity(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateDocumentURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		baseURL string
+		wantURL string
+		wantErr bool
+	}{
+		{
+			name:    "valid https URL",
+			rawURL:  "https://airspace.ferrlab.com/docs/sop.pdf",
+			baseURL: "https://airspace.ferrlab.com",
+			wantURL: "https://airspace.ferrlab.com/docs/sop.pdf",
+		},
+		{
+			name:    "valid http URL",
+			rawURL:  "http://example.com/briefing.html",
+			baseURL: "https://airspace.ferrlab.com",
+			wantURL: "http://example.com/briefing.html",
+		},
+		{
+			name:    "valid relative URL resolved against base URL",
+			rawURL:  "/storage/documents/manual.pdf",
+			baseURL: "https://airline.example.com",
+			wantURL: "https://airline.example.com/storage/documents/manual.pdf",
+		},
+		{
+			name:    "empty URL returns error",
+			rawURL:  "",
+			baseURL: "https://airline.example.com",
+			wantErr: true,
+		},
+		{
+			name:    "whitespace only returns error",
+			rawURL:  "   ",
+			baseURL: "https://airline.example.com",
+			wantErr: true,
+		},
+		{
+			name:    "relative URL with empty baseURL returns error",
+			rawURL:  "/docs/guide.pdf",
+			baseURL: "",
+			wantErr: true,
+		},
+		{
+			name:    "disallow javascript pseudo-protocol",
+			rawURL:  "javascript:alert(1)",
+			baseURL: "https://airline.example.com",
+			wantErr: true,
+		},
+		{
+			name:    "disallow file URI scheme",
+			rawURL:  "file:///C:/Windows/System32/cmd.exe",
+			baseURL: "https://airline.example.com",
+			wantErr: true,
+		},
+		{
+			name:    "disallow data URI scheme",
+			rawURL:  "data:text/html,<script>alert(1)</script>",
+			baseURL: "https://airline.example.com",
+			wantErr: true,
+		},
+		{
+			name:    "disallow ftp scheme",
+			rawURL:  "ftp://ftp.example.com/doc.pdf",
+			baseURL: "https://airline.example.com",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := validateDocumentURL(tt.rawURL, tt.baseURL)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateDocumentURL(%q, %q) error = %v, wantErr %v", tt.rawURL, tt.baseURL, err, tt.wantErr)
+			}
+			if !tt.wantErr && parsed.String() != tt.wantURL {
+				t.Errorf("validateDocumentURL(%q, %q) = %q, want %q", tt.rawURL, tt.baseURL, parsed.String(), tt.wantURL)
+			}
+		})
+	}
+}
+

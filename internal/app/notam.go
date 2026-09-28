@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -12,34 +11,6 @@ import (
 )
 
 const companyNOTAMPath = "/api/v1/company-notams"
-
-// This is the documented company API. A tenant may reject the pilot token;
-// that means this feature is unavailable, not that the ACARS session expired.
-func (a *App) notamRequest(path string) ([]byte, string, error) {
-	if a.GetSettings().LocalMode {
-		return nil, "localMode", nil
-	}
-	if a.Airspace.Token() == "" || a.Airspace.BaseURL() == "" {
-		return nil, "noSession", nil
-	}
-	body, status, err := a.Airspace.DoRequest("GET", path, nil)
-	if err != nil {
-		return nil, "", err
-	}
-	slog.Info("notamRequest", "path", path, "status", status)
-	switch status {
-	case 401, 403:
-		return nil, "accessDenied", nil
-	case 404, 405:
-		return nil, "unavailable", nil
-	case 429:
-		return nil, "rateLimited", nil
-	}
-	if err := domain.NewStatusError("GET", path, status, body); err != nil {
-		return nil, "", err
-	}
-	return body, "ok", nil
-}
 
 // The manual documents pagination but not the complete notice schema. Accept
 // the common text fields without exposing arbitrary server HTML to the webview.
@@ -53,16 +24,9 @@ type notamWire struct {
 }
 
 func (n notamWire) notice() (domain.CompanyNOTAM, error) {
-	var id string
-	if json.Unmarshal(n.ID, &id) != nil {
-		var number json.Number
-		if err := json.Unmarshal(n.ID, &number); err != nil {
-			return domain.CompanyNOTAM{}, fmt.Errorf("invalid NOTAM id")
-		}
-		id = number.String()
-	}
-	if id == "" {
-		return domain.CompanyNOTAM{}, fmt.Errorf("missing NOTAM id")
+	id, err := parseRawID(n.ID)
+	if err != nil || id == "" {
+		return domain.CompanyNOTAM{}, fmt.Errorf("invalid NOTAM id")
 	}
 	content := n.Content
 	if content == "" {
@@ -89,7 +53,7 @@ func (a *App) GetNOTAMs(page int) (*domain.NOTAMPage, error) {
 		"/api/v2/acars/company-notams?" + query.Encode(),
 	}
 
-	body, status, err := executeCandidates(candidates, a.notamRequest)
+	body, status, err := executeCandidates(candidates, a.executeRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +106,7 @@ func (a *App) GetNOTAM(id string) (*domain.NOTAMDetail, error) {
 		"/api/v2/acars/company-notams/" + url.PathEscape(id),
 	}
 
-	body, status, err := executeCandidates(candidates, a.notamRequest)
+	body, status, err := executeCandidates(candidates, a.executeRequest)
 	if err != nil {
 		return nil, err
 	}

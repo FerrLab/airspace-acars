@@ -83,3 +83,33 @@ func TestExecuteCandidates(t *testing.T) {
 		}
 	})
 }
+
+func TestParseRawID(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{name: "string id", raw: `"doc_42"`, want: "doc_42"},
+		{name: "numeric id", raw: `101`, want: "101"},
+		{name: "large numeric id", raw: `9223372036854775807`, want: "9223372036854775807"},
+		{name: "null id", raw: `null`, want: ""},
+		{name: "empty id", raw: ``, want: ""},
+		{name: "whitespace padded string", raw: `"  abc  "`, want: "abc"},
+		{name: "invalid object id", raw: `{"id":1}`, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRawID([]byte(tt.raw))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseRawID(%s) error = %v, wantErr %v", tt.raw, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("parseRawID(%s) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+

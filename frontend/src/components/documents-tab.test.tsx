@@ -158,3 +158,80 @@ it("does not call API in local mode", () => {
 
   expect(DocumentService.GetDocuments).not.toHaveBeenCalled();
 });
+
+it("intercepts link clicks inside document content and routes through OpenDocumentURL", async () => {
+  const docWithLink: DocItem = {
+    id: "doc-link",
+    title: "Document with Link",
+    type: "html",
+    is_auto_generated: false,
+    content: '<p>See <a href="https://airspace.ferrlab.com/sop/b737">Flight Manual</a> for details.</p>',
+    sort_order: 1,
+  };
+  vi.spyOn(DocumentService, "GetDocuments").mockResolvedValue({
+    status: "ok",
+    data: [docWithLink],
+    current_page: 1,
+    last_page: 1,
+  });
+  vi.spyOn(DocumentService, "GetDocument").mockResolvedValue({
+    status: "ok",
+    data: docWithLink,
+  });
+  const openUrlSpy = vi.spyOn(DocumentService, "OpenDocumentURL").mockResolvedValue();
+
+  render(view());
+
+  const link = await screen.findByRole("link", { name: "Flight Manual" });
+  expect(link).toBeInTheDocument();
+
+  await act(async () => {
+    fireEvent.click(link);
+  });
+
+  expect(openUrlSpy).toHaveBeenCalledWith("https://airspace.ferrlab.com/sop/b737");
+});
+
+it("pages through to last_page when multiple pages exist", async () => {
+  const page1Doc: DocItem = {
+    id: "doc-p1",
+    title: "Page 1 Document",
+    type: "html",
+    is_auto_generated: false,
+    content: "<p>Page 1 content</p>",
+    sort_order: 1,
+  };
+  const page2Doc: DocItem = {
+    id: "doc-p2",
+    title: "Page 2 Document",
+    type: "html",
+    is_auto_generated: false,
+    content: "<p>Page 2 content</p>",
+    sort_order: 2,
+  };
+
+  const getDocsSpy = vi.spyOn(DocumentService, "GetDocuments").mockImplementation((page: number) => {
+    if (page === 1) {
+      return Promise.resolve({
+        status: "ok",
+        data: [page1Doc],
+        current_page: 1,
+        last_page: 2,
+      });
+    }
+    return Promise.resolve({
+      status: "ok",
+      data: [page2Doc],
+      current_page: 2,
+      last_page: 2,
+    });
+  });
+
+  render(view());
+
+  expect(await screen.findByText("Page 1 Document")).toBeInTheDocument();
+  expect(await screen.findByText("Page 2 Document")).toBeInTheDocument();
+  expect(getDocsSpy).toHaveBeenCalledWith(1, "", "");
+  expect(getDocsSpy).toHaveBeenCalledWith(2, "", "");
+});
+
