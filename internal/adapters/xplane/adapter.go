@@ -117,6 +117,8 @@ type Adapter struct {
 	// datarefs (see profile.go).
 	icaoChars    [icaoChars]byte
 	descripChars [descripChars]byte
+	uiNameChars  [uiNameChars]byte
+	authorChars  [authorChars]byte
 
 	// Active aircraft profile and the extra dataref readings it needs.
 	plan        *profiles.Plan

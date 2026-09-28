@@ -72,7 +72,7 @@ A condition reads one field and applies one operator:
 
 | Field | Value |
 |---|---|
-| `aircraftName` | The simulator title — MSFS `TITLE`, X-Plane `acf_descrip` |
+| `aircraftName` | The simulator title — MSFS `TITLE`; on X-Plane the author and the name the aircraft is listed under (`acf_author`, `acf_ui_name`), or the description (`acf_descrip`) on X-Plane 11, which has no UI name |
 | `aircraftType` | ICAO type — MSFS `ATC MODEL`, X-Plane `acf_ICAO` |
 | `simulator` | `simconnect` or `xplane` |
 | `engineCount` | Number of engines fitted |
@@ -432,8 +432,8 @@ beacon — the ACARS starts a flight off it.
 | A profile `id` | Pin that profile, ignoring its selector |
 
 Pinning is useful when the ACARS cannot identify the aircraft — X-Plane reports
-the aircraft description character by character and some builds do not serve it
-at all.
+the aircraft's name character by character and some builds do not serve it at
+all.
 
 ## Writing your own
 
