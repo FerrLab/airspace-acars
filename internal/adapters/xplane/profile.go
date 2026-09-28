@@ -93,6 +93,7 @@ func (x *Adapter) subscribeExtras(plan *profiles.Plan) error {
 	x.extraByIdx = map[int]string{}
 	x.extraValues = map[string]float64{}
 	x.extraRefs = nil
+	x.unproven = map[string]bool{}
 
 	if plan == nil || x.conn == nil {
 		return nil
@@ -112,6 +113,9 @@ func (x *Adapter) subscribeExtras(plan *profiles.Plan) error {
 		}
 		x.extraByIdx[next] = v.Key
 		x.extraRefs = append(x.extraRefs, subscribedRef{index: next, dataref: v.Name})
+		if !strings.HasPrefix(v.Name, "sim/") {
+			x.unproven[v.Key] = true
+		}
 		next++
 	}
 
@@ -196,12 +200,27 @@ func composeAircraftName(author, uiName, descrip string) string {
 func (x *Adapter) handleReading(idx int, val float64) {
 	switch {
 	case idx >= extraIndexBase:
-		if key, ok := x.extraByIdx[idx]; ok {
-			if x.extraValues == nil {
-				x.extraValues = map[string]float64{}
-			}
-			x.extraValues[key] = val
+		key, ok := x.extraByIdx[idx]
+		if !ok {
+			return
 		}
+		// A dataref X-Plane cannot resolve does not fail its subscription: it
+		// reports nothing, or a permanent zero. So, as the SimConnect adapter
+		// does for local variables, an aircraft's own dataref is withheld until
+		// it has been seen non-zero once: until it proves it is real, the data
+		// point keeps what the adapter read by its own route. Stock datarefs
+		// always exist, and their zeros count from the start.
+		if x.unproven[key] {
+			if val == 0 {
+				return
+			}
+			delete(x.unproven, key)
+			slog.Debug("profile dataref is live", "key", key)
+		}
+		if x.extraValues == nil {
+			x.extraValues = map[string]float64{}
+		}
+		x.extraValues[key] = val
 	case idx >= authorIndexBase && idx < authorIndexBase+authorChars:
 		x.authorChars[idx-authorIndexBase] = byteFromReading(val)
 		x.data.AircraftName = x.aircraftName()

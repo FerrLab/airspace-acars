@@ -165,6 +165,11 @@ non-zero once: until it proves it is real, the data point keeps whatever the
 adapter read for it by its own route. A binding that never fires is a name to
 check, not a silent wrong reading.
 
+X-Plane has the same trap in another form: a dataref it cannot resolve does not
+fail the subscription, it reports nothing or zero. The X-Plane adapter withholds
+an aircraft's own dataref — anything outside `sim/` — the same way. Stock
+datarefs always exist, so their zeros count from the start.
+
 ### Transforms
 
 A transform is a pipeline: each step takes the number the previous one produced.

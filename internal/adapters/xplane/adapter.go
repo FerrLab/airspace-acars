@@ -125,6 +125,7 @@ type Adapter struct {
 	extraByIdx  map[int]string
 	extraValues map[string]float64
 	extraRefs   []subscribedRef
+	unproven    map[string]bool
 }
 
 // NewAdapter creates a new X-Plane adapter.
