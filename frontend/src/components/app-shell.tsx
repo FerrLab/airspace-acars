@@ -6,6 +6,7 @@ import { ChatTab } from "@/components/chat-tab";
 import { NotamsTab } from "@/components/notams-tab";
 import { DocumentsTab } from "@/components/documents-tab";
 import { FlightClocks } from "@/components/flight-clocks";
+import { MyFlightsTab } from "@/components/my-flights-tab";
 import { DebugTab } from "@/components/debug-tab";
 import { SettingsTab } from "@/components/settings-tab";
 import { useUnreadChat } from "@/hooks/use-unread-chat";
@@ -80,6 +81,7 @@ export function AppShell() {
           {activeTab === "documents" && <DocumentsTab localMode={localMode} />}
           {activeTab === "chat" && <ChatTab localMode={localMode} />}
           {activeTab === "notams" && <NotamsTab localMode={localMode} />}
+          {activeTab === "my-flights" && <MyFlightsTab localMode={localMode} />}
           {activeTab === "debug" && <DebugTab />}
           {activeTab === "settings" && <SettingsTab localMode={localMode} onLocalModeChange={setLocalMode} />}
         </main>

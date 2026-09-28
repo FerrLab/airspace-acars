@@ -98,6 +98,13 @@ func (s *DocumentService) GetDocument(id string) (*domain.DocumentDetail, error)
 func (s *DocumentService) OpenDocumentURL(rawURL string) error {
 	return s.app.OpenDocumentURL(rawURL)
 }
+
+// FlightLogService exposes read-only pilot flights history and logbook stats.
+type FlightLogService struct{ app *app.App }
+
+func (s *FlightLogService) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, error) {
+	return s.app.GetMyFlights(page, limit)
+}
 func (s *ChatService) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return s.app.GetMessages(page)
 }
