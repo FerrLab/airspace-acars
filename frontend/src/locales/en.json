@@ -132,6 +132,7 @@
   "settings.audioOutputDevice": "Audio Output Device",
   "settings.audioOutputDeviceDesc": "Select the device or audio track where cabin alerts and notifications will play.",
   "settings.audioDeviceDefault": "System Default",
+  "settings.audioDeviceUnnamed": "Audio Output Device",
   "settings.audioTest": "Test Audio",
   "settings.audioRefresh": "Refresh devices",
   "settings.audioVolume": "Master Volume",

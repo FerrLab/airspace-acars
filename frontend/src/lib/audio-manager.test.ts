@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   getSelectedAudioDevice,
   setSelectedAudioDevice,
+  hydrateAudioOutputDevice,
+  playDeviceTestSound,
   getAudioOutputDevices,
   applyAudioSink,
   subscribeAudioDeviceChange,
@@ -127,5 +129,57 @@ describe("audio-manager", () => {
     expect(devices[1].deviceId).toBe("headset-1");
     expect(devices[1].label).toBe("USB Headset");
   });
+
+  it("hydrates audio output device from backend settings and notifies listeners", () => {
+    const listener = vi.fn();
+    const unsub = subscribeAudioDeviceChange(listener);
+
+    hydrateAudioOutputDevice("speakers-surround");
+    expect(getSelectedAudioDevice()).toBe("speakers-surround");
+    expect(localStorage.getItem(AUDIO_DEVICE_STORAGE_KEY)).toBe("speakers-surround");
+    expect(listener).toHaveBeenCalledWith("speakers-surround");
+
+    unsub();
+  });
+
+  it("formats unnamed devices with the provided fallback label prefix", async () => {
+    const mockDevices: MediaDeviceInfo[] = [
+      {
+        deviceId: "unnamed-1",
+        groupId: "group-1",
+        kind: "audiooutput",
+        label: "",
+        toJSON: () => ({}),
+      },
+    ];
+
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        enumerateDevices: vi.fn().mockResolvedValue(mockDevices),
+      },
+    });
+
+    const devices = await getAudioOutputDevices("System Default", "Dispositivo de Áudio");
+    expect(devices).toHaveLength(2);
+    expect(devices[0].deviceId).toBe("default");
+    expect(devices[1].deviceId).toBe("unnamed-1");
+    expect(devices[1].label).toBe("Dispositivo de Áudio 1");
+  });
+
+  it("does not play test sound when volume is 0 or less", async () => {
+    const playSpy = vi.fn();
+    vi.stubGlobal("Audio", vi.fn().mockImplementation(() => ({
+      play: playSpy,
+      addEventListener: vi.fn(),
+      setSinkId: vi.fn().mockResolvedValue(undefined),
+    })));
+
+    await playDeviceTestSound("default", 0);
+    expect(playSpy).not.toHaveBeenCalled();
+
+    await playDeviceTestSound("default", -10);
+    expect(playSpy).not.toHaveBeenCalled();
+  });
 });
+
 

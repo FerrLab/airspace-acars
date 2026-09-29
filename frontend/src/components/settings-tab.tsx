@@ -8,10 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Volume2, VolumeX, Headphones, Speaker, RotateCw } from "lucide-react";
+import { Volume2, Headphones, Speaker, RotateCw } from "lucide-react";
 import { SettingsService, UpdateService, DiscordService } from "../../bindings/airspace-acars";
 import { useDevMode } from "@/hooks/use-dev-mode";
-import { CHAT_SOUNDS, playNotificationPreview, type ChatSoundType } from "@/lib/notification-sounds";
+import {
+  CHAT_SOUNDS,
+  playNotificationPreview,
+  getStoredVolumePercent,
+  type ChatSoundType,
+} from "@/lib/notification-sounds";
 import {
   getAudioOutputDevices,
   getSelectedAudioDevice,
@@ -47,16 +52,14 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const [audioDevices, setAudioDevices] = useState<AudioOutputDeviceInfo[]>([]);
   const [refreshingAudio, setRefreshingAudio] = useState(false);
   const [testingAudio, setTestingAudio] = useState(false);
-  const [volume, setVolume] = useState(() => {
-    const stored = typeof localStorage !== "undefined" ? localStorage.getItem("acars_volume") : null;
-    return stored ? parseInt(stored, 10) : 25;
-  });
+  const [volume, setVolume] = useState(() => getStoredVolumePercent());
 
   const refreshAudioDevices = useCallback(async () => {
     setRefreshingAudio(true);
     try {
       const defaultLabel = t("settings.audioDeviceDefault", "Padrão do Sistema");
-      const devs = await getAudioOutputDevices(defaultLabel, true);
+      const unnamedPrefix = t("settings.audioDeviceUnnamed", "Dispositivo de Áudio");
+      const devs = await getAudioOutputDevices(defaultLabel, unnamedPrefix);
       setAudioDevices(devs);
     } finally {
       setRefreshingAudio(false);
@@ -81,7 +84,6 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         }
         if (settings.audioOutputDevice) {
           setAudioDevice(settings.audioOutputDevice);
-          await setSelectedAudioDevice(settings.audioOutputDevice);
         }
         setLoaded(true);
       } catch {
@@ -93,11 +95,12 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
 
   useEffect(() => {
     const defaultLabel = t("settings.audioDeviceDefault", "Padrão do Sistema");
-    getAudioOutputDevices(defaultLabel, true).then(setAudioDevices);
+    const unnamedPrefix = t("settings.audioDeviceUnnamed", "Dispositivo de Áudio");
+    getAudioOutputDevices(defaultLabel, unnamedPrefix).then(setAudioDevices);
 
     const unsubDevice = subscribeAudioDeviceChange((newDev) => {
       setAudioDevice(newDev);
-      getAudioOutputDevices(defaultLabel, false).then(setAudioDevices);
+      getAudioOutputDevices(defaultLabel, unnamedPrefix).then(setAudioDevices);
     });
 
     const handleVolumeEvent = (e: Event) => {
@@ -112,7 +115,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
       unsubDevice();
       window.removeEventListener("acars-volume-changed", handleVolumeEvent);
     };
-  }, []);
+  }, [t]);
 
   const handleThemeToggle = async (checked: boolean) => {
     const newTheme = checked ? "dark" : "light";

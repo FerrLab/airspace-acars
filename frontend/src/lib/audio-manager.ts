@@ -9,12 +9,31 @@ export interface AudioOutputDeviceInfo {
 
 export const AUDIO_DEVICE_STORAGE_KEY = "acars_audio_device";
 
+let cachedAudioDevice: string | null = null;
+
 /**
- * Retrieve the current configured audio output device ID from localStorage or settings.
+ * Retrieve the current configured audio output device ID from module cache or localStorage.
  */
 export function getSelectedAudioDevice(): string {
+  if (cachedAudioDevice !== null) return cachedAudioDevice;
   if (typeof localStorage === "undefined") return "default";
   return localStorage.getItem(AUDIO_DEVICE_STORAGE_KEY) || "default";
+}
+
+/**
+ * Hydrates the audio output device from backend settings once at application startup.
+ */
+export function hydrateAudioOutputDevice(deviceId?: string): void {
+  const normalized = deviceId || "default";
+  cachedAudioDevice = normalized;
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(AUDIO_DEVICE_STORAGE_KEY, normalized);
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("acars-audio-device-changed", { detail: { deviceId: normalized } })
+    );
+  }
 }
 
 /**
@@ -22,6 +41,7 @@ export function getSelectedAudioDevice(): string {
  */
 export async function setSelectedAudioDevice(deviceId: string): Promise<void> {
   const normalized = deviceId || "default";
+  cachedAudioDevice = normalized;
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(AUDIO_DEVICE_STORAGE_KEY, normalized);
   }
@@ -32,8 +52,8 @@ export async function setSelectedAudioDevice(deviceId: string): Promise<void> {
     if (s && s.audioOutputDevice !== normalized) {
       await SettingsService.UpdateSettings({ ...s, audioOutputDevice: normalized });
     }
-  } catch {
-    // ignore backend sync error
+  } catch (e) {
+    console.warn("[audio-manager] Failed to persist audio output device to settings:", e);
   }
 
   // Dispatch custom event to notify all active AudioContexts and Audio elements
@@ -222,10 +242,11 @@ export async function playDeviceTestSound(
   deviceId?: string,
   volumePercent = 60
 ): Promise<void> {
+  if (volumePercent <= 0) return;
   const blob = generateNotificationSound("chime");
   if (!blob) return;
 
-  const volume = Math.min(1, Math.max(0.1, volumePercent / 100));
+  const volume = Math.max(0, Math.min(1, volumePercent / 100));
   const { audio } = await createManagedAudio(blob, volume);
 
   if (deviceId !== undefined) {

@@ -132,6 +132,7 @@
   "settings.audioOutputDevice": "Dispositivo de Saída de Áudio",
   "settings.audioOutputDeviceDesc": "Selecione o dispositivo ou faixa de áudio por onde os alertas de cabine e notificações serão reproduzidos.",
   "settings.audioDeviceDefault": "Padrão do Sistema",
+  "settings.audioDeviceUnnamed": "Dispositivo de Áudio",
   "settings.audioTest": "Testar Áudio",
   "settings.audioRefresh": "Atualizar dispositivos",
   "settings.audioVolume": "Volume Geral",

@@ -30,14 +30,11 @@ export function useSoundPlayer(volume: number, active: boolean) {
     return { ctx: ctxRef.current, gain: gainRef.current! };
   }
 
-  // Dynamically switch output device on the active AudioContext and Audio element
+  // Dynamically switch output device on the active AudioContext
   useEffect(() => {
     return subscribeAudioDeviceChange((newDeviceId) => {
       if (ctxRef.current) {
         applyAudioSink(ctxRef.current, newDeviceId);
-      }
-      if (audioRef.current) {
-        applyAudioSink(audioRef.current, newDeviceId);
       }
     });
   }, []);
@@ -110,7 +107,6 @@ export function useSoundPlayer(volume: number, active: boolean) {
 
             const audio = new Audio(url);
             audioRef.current = audio;
-            await applyAudioSink(audio);
 
             // Route through GainNode for reliable volume control
             const source = ctx.createMediaElementSource(audio);

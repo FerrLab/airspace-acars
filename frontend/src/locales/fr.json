@@ -132,6 +132,7 @@
   "settings.audioOutputDevice": "Périphérique de Sortie Audio",
   "settings.audioOutputDeviceDesc": "Sélectionnez le périphérique ou la piste audio où les alertes de cabine et notifications seront diffusées.",
   "settings.audioDeviceDefault": "Par Défaut du Système",
+  "settings.audioDeviceUnnamed": "Périphérique Audio",
   "settings.audioTest": "Tester l'Audio",
   "settings.audioRefresh": "Actualiser les périphériques",
   "settings.audioVolume": "Volume Principal",
