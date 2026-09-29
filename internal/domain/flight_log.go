@@ -39,14 +39,14 @@ type FlightLog struct {
 
 // PilotSummaryStats holds aggregated statistics for the pilot.
 type PilotSummaryStats struct {
-	PilotID         string  `json:"pilot_id"`
-	Name            string  `json:"name"`
-	Callsign        string  `json:"callsign"`
-	Rank            string  `json:"rank"`
-	RankImageURL    string  `json:"rank_image_url,omitempty"`
-	TotalFlights    int     `json:"total_flights"`
-	TotalHours      float64 `json:"total_hours"`
-	AvgLandingRate  float64 `json:"avg_landing_rate"`
+	PilotID              string  `json:"pilot_id"`
+	Name                 string  `json:"name"`
+	Callsign             string  `json:"callsign"`
+	Rank                 string  `json:"rank"`
+	RankImageURL         string  `json:"rank_image_url,omitempty"`
+	TotalFlights         int     `json:"total_flights"`
+	TotalHours           float64 `json:"total_hours"`
+	AvgLandingRate       float64 `json:"avg_landing_rate"`
 	TotalDistanceNM      float64 `json:"total_distance_nm"`
 	Points               int     `json:"points"`
 	HasGlobalDistance    bool    `json:"has_global_distance,omitempty"`

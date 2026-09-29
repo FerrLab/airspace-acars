@@ -160,7 +160,6 @@ export function FlightsMap({
         isDark ? ARCGIS_DARK_BASE : ARCGIS_LIGHT_BASE,
         {
           maxZoom: 16,
-          subdomains: ["server", "services"],
         }
       ).addTo(map);
 
@@ -211,6 +210,8 @@ export function FlightsMap({
     tileLayersRef.current.base.setUrl(isDark ? ARCGIS_DARK_BASE : ARCGIS_LIGHT_BASE);
     tileLayersRef.current.ref.setUrl(isDark ? ARCGIS_DARK_REF : ARCGIS_LIGHT_REF);
   }, [isDark]);
+
+  const isSingleFlight = flights.length === 1;
 
   // Update routes, polylines, and markers when flights, selection, or theme change
   useEffect(() => {
@@ -404,10 +405,11 @@ export function FlightsMap({
 
     // Fit view bounds with generous padding so the route breathes
     if (selectedFlightBounds) {
+      const bounds: L.LatLngBounds = selectedFlightBounds;
       setTimeout(() => {
         if (mapRef.current) {
           mapRef.current.invalidateSize();
-          mapRef.current.fitBounds(selectedFlightBounds, {
+          mapRef.current.fitBounds(bounds, {
             padding: [70, 70],
             maxZoom: 7,
             animate: true,
@@ -429,7 +431,7 @@ export function FlightsMap({
         }, 100);
       }
     }
-  }, [flights, selectedFlightId, onSelectFlight, isDark, t]);
+  }, [flights, selectedFlightId, onSelectFlight, isDark, isSingleFlight, t]);
 
   const handleResetBounds = () => {
     if (!mapRef.current || !layersGroupRef.current) return;
@@ -438,8 +440,6 @@ export function FlightsMap({
       mapRef.current.fitBounds(bounds, { padding: [50, 50], animate: true });
     }
   };
-
-  const isSingleFlight = flights.length === 1;
 
   return (
     <div className={cn("relative h-full w-full overflow-hidden bg-card", className)}>

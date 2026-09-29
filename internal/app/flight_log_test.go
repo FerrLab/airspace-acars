@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"net/url"
 	"testing"
 )
@@ -290,3 +291,19 @@ func TestPageSumDoesNotMasqueradeAsGlobalStats(t *testing.T) {
 	}
 }
 
+func TestFlightWireRejectsNonFiniteNumbers(t *testing.T) {
+	var w flightWire
+	if err := json.Unmarshal([]byte(`{"id":1,"distance":"NaN","landing_rate":"1e999","flight_time":"Inf","score":"-1e999","fuel_used":"abc"}`), &w); err != nil {
+		t.Fatal(err)
+	}
+	fl, err := w.toDomain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fl.DistanceNM != 0 || fl.LandingRateFPM != 0 || fl.FlightTimeMinutes != 0 || fl.Score != 0 || fl.FuelUsedKG != 0 {
+		t.Fatalf("non-finite inputs must become 0, got %+v", fl)
+	}
+	if _, err := json.Marshal(fl); err != nil {
+		t.Fatalf("flight must stay serialisable: %v", err)
+	}
+}

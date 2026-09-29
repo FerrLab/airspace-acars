@@ -415,6 +415,12 @@ it("labels distance as Page Distance when global flag is false and total flights
   render(view());
   await screen.findByText("SXB1265");
 
-  expect(screen.getByText(en["myFlights.pageDistance"])).toBeInTheDocument();
+  // The label names how many flights the figure covers, and the figure is the
+  // sum of those flights, not the backend's "unknown" zero.
+  const label = en["myFlights.pageDistance"].replace("{{count}}", String(sampleFlights.length));
+  expect(screen.getByText(label)).toBeInTheDocument();
   expect(screen.queryByText(en["myFlights.totalDistance"])).not.toBeInTheDocument();
+  const pageSum = Math.round(sampleFlights.reduce((sum, f) => sum + (f.distance_nm || 0), 0));
+  expect(screen.getByText(pageSum.toLocaleString())).toBeInTheDocument();
+  expect(screen.queryByText("0 NM")).not.toBeInTheDocument();
 });

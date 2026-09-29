@@ -126,11 +126,37 @@ func parseFloat(v interface{}) float64 {
 	case int64:
 		return float64(val)
 	case string:
-		f, _ := strconv.ParseFloat(val, 64)
-		return f
+		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		if err != nil {
+			return 0
+		}
+		return finiteOrZero(f)
 	default:
 		return 0
 	}
+}
+
+// finiteOrZero drops NaN and ±Inf. A tenant can put "NaN" or "1e999" in a
+// numeric field; encoding/json refuses to marshal those, which would make the
+// whole response fail and take the logbook down for that pilot.
+func finiteOrZero(f float64) float64 {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	return f
+}
+
+// clampInt converts a float to int without the undefined wrap-around that
+// int(f) gives for values outside the int range.
+func clampInt(f float64) int {
+	f = finiteOrZero(f)
+	if f > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if f < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int(f)
 }
 
 func (a flightWireAirport) toDomain() domain.AirportInfo {
@@ -224,12 +250,12 @@ func (f flightWire) toDomain() (domain.FlightLog, error) {
 		arrAirport.Latitude, arrAirport.Longitude = resolveCoordinates(arrAirport.ICAO, 0, 0)
 	}
 
-	flightTime := int(parseFloat(f.FlightTime))
+	flightTime := clampInt(parseFloat(f.FlightTime))
 	if flightTime == 0 {
-		flightTime = int(parseFloat(f.DurationMinutes))
+		flightTime = clampInt(parseFloat(f.DurationMinutes))
 	}
 	if flightTime == 0 {
-		flightTime = int(parseFloat(f.Duration))
+		flightTime = clampInt(parseFloat(f.Duration))
 	}
 
 	dist := parseFloat(f.Distance)
@@ -239,7 +265,7 @@ func (f flightWire) toDomain() (domain.FlightLog, error) {
 
 	landingRate := parseFloat(f.LandingRate)
 	fuelUsed := parseFloat(f.FuelUsed)
-	score := int(parseFloat(f.Score))
+	score := clampInt(parseFloat(f.Score))
 
 	status := f.Status
 
@@ -436,7 +462,8 @@ func (a *App) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, erro
 	}
 
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Data == nil {
-		slog.Debug("could not parse flight collection envelope", "body", string(body))
+		// The body carries pilot names and callsigns, so log its size, not its contents.
+		slog.Debug("could not parse flight collection envelope", "bytes", len(body), "err", err)
 		return response, nil
 	}
 

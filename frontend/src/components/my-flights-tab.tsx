@@ -21,6 +21,7 @@ import {
 import { FlightLogService } from "../../bindings/airspace-acars";
 import type {
   FlightLog,
+  MyFlightsResponse,
   PilotSummaryStats,
 } from "../../bindings/airspace-acars/internal/domain/models";
 import { useAuth } from "@/context/auth-context";
@@ -191,6 +192,15 @@ function MyFlightsDashboard({
   const [refresh, setRefresh] = useState(0);
   const [inspectFlight, setInspectFlight] = useState<FlightLog | null>(null);
 
+  // The backend only reports a total distance when it knows the whole
+  // history (a profile aggregate, or every flight fitting on this page).
+  // Otherwise the tile shows the sum of the flights on screen and says so.
+  const distanceIsPartial =
+    !pilotStats?.has_global_distance && (pilotStats?.total_flights ?? flights.length) > flights.length;
+  const shownDistanceNm = distanceIsPartial
+    ? flights.reduce((sum, f) => sum + (f.distance_nm || 0), 0)
+    : pilotStats?.total_distance_nm ?? 0;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(!localMode && ready);
@@ -206,7 +216,7 @@ function MyFlightsDashboard({
     }
 
     FlightLogService.GetMyFlights(page, 50)
-      .then((res: any) => {
+      .then((res: MyFlightsResponse | null) => {
         if (cancelled) return;
         if (res?.status && res.status !== "ok") {
           if (res.status === "localMode" || res.status === "noSession") {
@@ -494,18 +504,21 @@ function MyFlightsDashboard({
         <Card className="border-border/70 bg-card p-3 shadow-xs">
           <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
             <Globe className="h-3.5 w-3.5 text-indigo-400" />
-            {pilotStats?.has_global_distance || (pilotStats?.total_flights ?? flights.length) <= flights.length
-              ? t("myFlights.totalDistance", "Distância Total")
-              : t("myFlights.pageDistance", "Distância da Página")}
+            {distanceIsPartial
+              ? t("myFlights.pageDistance", {
+                  count: flights.length,
+                  defaultValue: "Distância (últimos {{count}} voos)",
+                })
+              : t("myFlights.totalDistance", "Distância Total")}
           </span>
           <p className="mt-1 text-xl font-bold font-mono text-foreground">
-            {pilotStats?.total_distance_nm ? (
+            {shownDistanceNm > 0 ? (
               <>
-                {pilotStats.total_distance_nm.toLocaleString()}{" "}
+                {Math.round(shownDistanceNm).toLocaleString()}{" "}
                 <span className="text-xs font-normal text-muted-foreground font-sans">NM</span>
               </>
             ) : (
-              flights.length > 0 ? "0 NM" : "—"
+              "—"
             )}
           </p>
         </Card>
