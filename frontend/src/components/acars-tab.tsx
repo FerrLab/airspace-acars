@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Slider } from "@/components/ui/slider";
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
-import { Plug, Unplug, Plane, Square, CheckCircle2, TriangleAlert, Zap, AlertTriangle } from "lucide-react";
+import { Square, CheckCircle2, Zap, AlertTriangle } from "lucide-react";
+import { AcarsDashboard } from "@/components/acars-dashboard";
 import { RecordingControls } from "@/components/recording-controls";
 import { useFlightData } from "@/hooks/use-flight-data";
 import { useDevMode } from "@/hooks/use-dev-mode";
@@ -22,7 +21,10 @@ interface AcarsTabProps {
 
 export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTabProps) {
   const { t } = useTranslation();
-  const { isRecording } = useFlightData();
+  const { isRecording, flightData } = useFlightData();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [refreshingBooking, setRefreshingBooking] = useState(false);
+  const [bookingError, setBookingError] = useState(false);
   const devMode = useDevMode();
   const [connectedAdapter, setConnectedAdapter] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -90,7 +92,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     const cancelFinishFailed = Events.On("flight-finish-failed", (event: any) => {
       const reason = event?.data?.reason ?? "";
       setFinishPending(null);
-      alert(t("acars.finishFailedWithReason", { reason }));
+      setActionError(t("acars.finishFailedWithReason", { reason }));
     });
     const cancelResume = Events.On("flight-outbox-resuming", (event: any) => {
       const pending = event?.data?.pending ?? 0;
@@ -114,14 +116,16 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     try {
       const result = await FlightService.GetBooking();
       setBooking(result);
+      setBookingError(false);
     } catch {
       setBooking(null);
+      setBookingError(true);
     }
   }, []);
 
   // Poll booking every 10s when idle and connected (skip in local mode)
   useEffect(() => {
-    if (localMode || !isConnected || flightState === "active") return;
+    if (localMode || !isConnected || flightState !== "idle") return;
     fetchBooking();
     const interval = setInterval(fetchBooking, 10_000);
     return () => clearInterval(interval);
@@ -129,11 +133,12 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
 
   // Fetch active flight info when flight becomes active
   useEffect(() => {
-    if (localMode || flightState !== "active") {
+    if (localMode || flightState === "idle") {
       setActiveFlightInfo(null);
       setFinishCooldown(0);
       return;
     }
+    if (flightState === "finishing") return;
     FlightService.GetActiveFlightInfo()
       .then((info: any) => {
         setActiveFlightInfo(info);
@@ -143,13 +148,14 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   }, [localMode, flightState]);
 
   const handleConnect = async () => {
+    setActionError(null);
     setConnecting(true);
     try {
       const adapter = await FlightDataService.ConnectSim("auto");
       setConnectedAdapter(adapter);
     } catch (e: any) {
       console.error("Failed to connect:", e);
-      alert(translateError(t, "Failed to connect: " + e));
+      setActionError(translateError(t, "Failed to connect: " + e));
     } finally {
       setConnecting(false);
     }
@@ -157,7 +163,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
 
   const handleDisconnect = async () => {
     try {
-      FlightDataService.DisconnectSim();
+      await FlightDataService.DisconnectSim();
       setConnectedAdapter("");
     } catch (e: any) {
       console.error("Failed to disconnect:", e);
@@ -166,6 +172,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
 
   const handleStartFlight = async () => {
     if (!booking) return;
+    setActionError(null);
     setStartingFlight(true);
     try {
       const callsign = booking.callsign ?? booking.flight_number ?? "";
@@ -174,18 +181,19 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       const bookingID = String(booking.id ?? "");
       await FlightService.StartFlight(callsign, departure, arrival, bookingID);
     } catch (e: any) {
-      alert(translateError(t, "Failed to start flight: " + e));
+      setActionError(translateError(t, "Failed to start flight: " + e));
     } finally {
       setStartingFlight(false);
     }
   };
 
   const handleStopFlight = async () => {
+    setActionError(null);
     setEndingFlight(true);
     try {
       await FlightService.StopFlight();
     } catch (e: any) {
-      alert(translateError(t, "Failed to stop flight: " + e));
+      setActionError(translateError(t, "Failed to stop flight: " + e));
     } finally {
       setEndingFlight(false);
     }
@@ -193,11 +201,12 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
 
   const handleFinishFlight = async () => {
     if (finishCooldown > 0) return;
+    setActionError(null);
     setEndingFlight(true);
     try {
       await FlightService.FinishFlight();
     } catch (e: any) {
-      alert(translateError(t, "Failed to finish flight: " + e));
+      setActionError(translateError(t, "Failed to finish flight: " + e));
     } finally {
       setEndingFlight(false);
     }
@@ -275,231 +284,27 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     }
   };
 
-  const handleVolumeChange = (v: number) => {
-    onVolumeChange(v);
+  const refreshBooking = async () => {
+    setRefreshingBooking(true);
+    try { await fetchBooking(); } finally { setRefreshingBooking(false); }
   };
 
   return (
-    <div className="space-y-6 relative">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">{t("acars.title")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t("acars.subtitle")}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge variant={isConnected ? "default" : "secondary"}>
-            {isConnected ? t("acars.connectedTo", { adapter: connectedAdapter }) : t("acars.disconnected")}
-          </Badge>
-          {!isConnected ? (
-            <Button size="sm" onClick={handleConnect} disabled={connecting} className="gap-2">
-              <Plug className="h-3 w-3" />
-              {connecting ? t("acars.connecting") : t("acars.connect")}
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={handleDisconnect} className="gap-2">
-              <Unplug className="h-3 w-3" />
-              {t("acars.disconnect")}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Auto-flight notification */}
-      {autoNotification && (
-        <div className="rounded-lg border border-primary/30 bg-primary/10 p-3 flex items-center gap-2 animate-in fade-in duration-300">
-          <Zap className="h-4 w-4 text-primary shrink-0" />
-          <span className="text-sm font-medium">{autoNotification}</span>
-        </div>
-      )}
-
-      {resumeNotice && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-          {resumeNotice}
-        </div>
-      )}
-
-      {/* Local Mode indicator */}
-      {localMode && (
-        <div className="rounded-lg border border-dashed border-yellow-500/50 bg-yellow-500/5 p-4 text-center">
-          <Badge variant="outline" className="mb-2 border-yellow-500/50 text-yellow-500">
-            {t("acars.localMode")}
-          </Badge>
-          <p className="text-sm text-muted-foreground">
-            {t("acars.localModeDesc")}
-          </p>
-        </div>
-      )}
-
-      {/* Flight Controls */}
-      {!localMode && isConnected && (
-        <div className="space-y-4">
-          {flightState === "idle" && booking && (
-            <div className="rounded-lg border border-border p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Plane className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">{t("acars.activeBooking")}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-xs text-muted-foreground block">{t("acars.callsign")}</span>
-                  <span className="font-mono font-medium">
-                    {booking.callsign ?? booking.flight_number ?? "---"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground block">{t("acars.departure")}</span>
-                  <span className="font-mono font-medium">
-                    {booking.departure_airport?.icao ?? "---"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground block">{t("acars.arrival")}</span>
-                  {booking.alternate_airport ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono font-medium line-through text-muted-foreground">
-                        {booking.arrival_airport?.icao ?? "---"}
-                      </span>
-                      <TriangleAlert className="h-3 w-3 text-yellow-500" />
-                      <span className="font-mono font-medium text-yellow-500 animate-pulse">
-                        {booking.alternate_airport?.icao ?? "---"}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="font-mono font-medium">
-                      {booking.arrival_airport?.icao ?? "---"}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <Button
-                size="sm"
-                onClick={handleStartFlight}
-                disabled={startingFlight || !onGround || groundSpeed >= 1}
-                className="gap-2"
-              >
-                <Plane className="h-3 w-3" />
-                {startingFlight ? t("acars.starting") : t("acars.startFlight")}
-              </Button>
-              {(!onGround || groundSpeed >= 1) && (
-                <p className="text-xs text-muted-foreground">
-                  {t("acars.groundRequired")}
-                </p>
-              )}
-            </div>
-          )}
-
-          {flightState === "idle" && !booking && (
-            <div className="rounded-lg border border-dashed border-border p-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                {t("acars.noBooking")}
-              </p>
-            </div>
-          )}
-
-          {(flightState === "active" || flightState === "finishing") && (
-            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-sm font-medium">{t("acars.flightActive")}</span>
-                <Badge variant="outline" className="ml-auto text-xs">
-                  {t("acars.positionReporting")}
-                </Badge>
-              </div>
-              {activeFlightInfo && (
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-xs text-muted-foreground block">{t("acars.callsign")}</span>
-                    <span className="font-mono font-medium">
-                      {activeFlightInfo.callsign || "---"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">{t("acars.departure")}</span>
-                    <span className="font-mono font-medium">
-                      {activeFlightInfo.departure || "---"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">{t("acars.arrival")}</span>
-                    <span className="font-mono font-medium">
-                      {activeFlightInfo.arrival || "---"}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {flightState === "active" && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={requestFinishFlight}
-                    disabled={endingFlight || finishCooldown > 0}
-                    className="gap-2"
-                  >
-                    <CheckCircle2 className="h-3 w-3" />
-                    {endingFlight
-                      ? t("acars.finishing")
-                      : finishCooldown > 0
-                        ? t("acars.finishCooldown", { seconds: finishCooldown })
-                        : t("acars.finishFlight")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={requestStopFlight}
-                    disabled={endingFlight}
-                    className="gap-2"
-                  >
-                    <Square className="h-3 w-3" />
-                    {t("acars.cancel")}
-                  </Button>
-                </div>
-              )}
-
-              {flightState === "finishing" && (
-                <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
-                  <p>
-                    {finishPending !== null && finishPending > 0
-                      ? t("acars.finishingDrain", { count: finishPending })
-                      : t("acars.finishing")}
-                  </p>
-                  <Button size="sm" variant="outline" onClick={handleCancelFinish}>
-                    {t("acars.cancelFinish")}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      <Separator />
-
-      {/* Volume Control */}
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground w-28">
-          {t("acars.cabinAudio")}
-        </span>
-        <Slider
-          min={0}
-          max={100}
-          step={1}
-          value={[volume]}
-          onValueChange={([v]) => handleVolumeChange(v)}
-          className="flex-1"
-        />
-        <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
-          {volume}%
-        </span>
-      </div>
-
-      <Separator />
-
-      {devMode && <RecordingControls isRecording={isRecording} isConnected={isConnected} />}
+    <div className="relative space-y-4">
+      {autoNotification && <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm"><Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{autoNotification}</div>}
+      {resumeNotice && <div role="status" className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm">{resumeNotice}</div>}
+      <AcarsDashboard
+        localMode={localMode} connectedAdapter={connectedAdapter} connecting={connecting}
+        flightState={flightState} booking={booking} activeFlightInfo={activeFlightInfo}
+        flightData={flightData} onGround={onGround} groundSpeed={groundSpeed}
+        starting={startingFlight} ending={endingFlight} finishCooldown={finishCooldown}
+        finishPending={finishPending} volume={volume} refreshing={refreshingBooking}
+        bookingError={bookingError} error={actionError} onDismissError={() => setActionError(null)}
+        onConnect={handleConnect} onDisconnect={handleDisconnect} onRefresh={refreshBooking}
+        onStart={handleStartFlight} onStop={requestStopFlight} onFinish={requestFinishFlight}
+        onCancelFinish={handleCancelFinish} onVolumeChange={onVolumeChange}
+      />
+      {devMode && <><Separator /><RecordingControls isRecording={isRecording} isConnected={isConnected} /></>}
 
       {/* Confirmation Modal Overlay */}
       {confirmModal !== "none" && (

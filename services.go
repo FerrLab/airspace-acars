@@ -73,6 +73,31 @@ func (s *AuthService) SetToken(token string) { s.app.SetToken(token) }
 
 type ChatService struct{ app *app.App }
 
+// NOTAMService exposes read-only company notices using the selected tenant.
+type NOTAMService struct{ app *app.App }
+
+func (s *NOTAMService) GetNOTAMs(page int) (*domain.NOTAMPage, error) {
+	return s.app.GetNOTAMs(page)
+}
+
+func (s *NOTAMService) GetNOTAM(id string) (*domain.NOTAMDetail, error) {
+	return s.app.GetNOTAM(id)
+}
+
+// DocumentService exposes read-only company documents, manuals, and briefings using the selected tenant.
+type DocumentService struct{ app *app.App }
+
+func (s *DocumentService) GetDocuments(page int, parentID string, search string) (*domain.DocumentPage, error) {
+	return s.app.GetDocuments(page, parentID, search)
+}
+
+func (s *DocumentService) GetDocument(id string) (*domain.DocumentDetail, error) {
+	return s.app.GetDocument(id)
+}
+
+func (s *DocumentService) OpenDocumentURL(rawURL string) error {
+	return s.app.OpenDocumentURL(rawURL)
+}
 func (s *ChatService) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return s.app.GetMessages(page)
 }

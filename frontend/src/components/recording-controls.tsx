@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Circle, Square, Download } from "lucide-react";
 import { FlightDataService } from "../../bindings/airspace-acars";
 
@@ -74,51 +75,54 @@ export function RecordingControls({ isRecording, isConnected }: RecordingControl
   };
 
   return (
-    <div className="flex items-center gap-3">
-      {!isRecording ? (
-        <Button
-          size="sm"
-          onClick={handleStart}
-          disabled={!isConnected}
-          className="gap-2"
-        >
-          <Circle className="h-3 w-3 fill-current" />
-          {t("recording.startRecording")}
-        </Button>
-      ) : (
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={handleStop}
-          className="gap-2"
-        >
-          <Square className="h-3 w-3 fill-current" />
-          {t("recording.stop")}
-        </Button>
-      )}
+    <Card className="gap-0 flex-row flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-border/80 bg-card shadow-xs">
+      <div className="flex items-center gap-3">
+        {!isRecording ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleStart}
+            disabled={!isConnected}
+            className="gap-2 shadow-xs"
+          >
+            <Circle className="h-2.5 w-2.5 fill-emerald-500 text-emerald-500" />
+            {t("recording.startRecording")}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleStop}
+            className="gap-2 shadow-xs"
+          >
+            <Square className="h-3 w-3 fill-current" />
+            {t("recording.stop")}
+          </Button>
+        )}
 
-      {isRecording && (
-        <>
-          <Badge variant="outline" className="gap-1.5 tabular-nums font-mono">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-            {formatDuration(duration)}
-          </Badge>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {t("recording.points", { count: dataCount })}
-          </span>
-        </>
-      )}
+        {isRecording && (
+          <>
+            <Badge variant="outline" className="gap-1.5 tabular-nums font-mono border-destructive/30 bg-destructive/10 text-destructive">
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
+              {formatDuration(duration)}
+            </Badge>
+            <span className="text-xs font-medium text-muted-foreground tabular-nums">
+              {t("recording.points", { count: dataCount })}
+            </span>
+          </>
+        )}
+      </div>
 
       <Button
         size="sm"
         variant="outline"
         onClick={handleExport}
         disabled={isRecording}
-        className="gap-2 ml-auto"
+        className="gap-2 shadow-xs ml-auto"
       >
-        <Download className="h-3 w-3" />
+        <Download className="h-3.5 w-3.5" />
         {t("recording.exportCsv")}
       </Button>
-    </div>
+    </Card>
   );
 }
