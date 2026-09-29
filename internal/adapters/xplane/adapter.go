@@ -117,12 +117,15 @@ type Adapter struct {
 	// datarefs (see profile.go).
 	icaoChars    [icaoChars]byte
 	descripChars [descripChars]byte
+	uiNameChars  [uiNameChars]byte
+	authorChars  [authorChars]byte
 
 	// Active aircraft profile and the extra dataref readings it needs.
 	plan        *profiles.Plan
 	extraByIdx  map[int]string
 	extraValues map[string]float64
 	extraRefs   []subscribedRef
+	unproven    map[string]bool
 }
 
 // NewAdapter creates a new X-Plane adapter.
