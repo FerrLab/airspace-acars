@@ -1,3 +1,5 @@
+import { applyAudioSink } from "./audio-manager";
+
 export const CHAT_SOUNDS = ["default", "chime", "ding", "soft", "none"] as const;
 export type ChatSoundType = (typeof CHAT_SOUNDS)[number];
 
@@ -93,12 +95,36 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-export function playNotificationPreview(type: ChatSoundType) {
+export const DEFAULT_VOLUME_PERCENT = 25;
+export const DEFAULT_VOLUME_RATIO = DEFAULT_VOLUME_PERCENT / 100; // 0.25
+
+export function getStoredVolumePercent(): number {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") {
+    return DEFAULT_VOLUME_PERCENT;
+  }
+  const stored = localStorage.getItem("acars_volume");
+  if (stored !== null) {
+    const val = parseInt(stored, 10);
+    if (!isNaN(val)) return Math.max(0, Math.min(100, val));
+  }
+  return DEFAULT_VOLUME_PERCENT;
+}
+
+export function getMasterVolume(): number {
+  return getStoredVolumePercent() / 100;
+}
+
+export function playNotificationPreview(type: ChatSoundType, volumePercent?: number) {
   const blob = generateNotificationSound(type);
   if (!blob) return;
+  const vol = volumePercent !== undefined ? volumePercent / 100 : getMasterVolume();
+  if (vol <= 0) return;
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
-  audio.play().catch(() => {});
+  audio.volume = Math.max(0, Math.min(1, vol));
+  applyAudioSink(audio).finally(() => {
+    audio.play().catch(() => {});
+  });
   audio.addEventListener("ended", () => URL.revokeObjectURL(url));
 }
 
@@ -132,6 +158,8 @@ export function playAutoStartDing(volumePercent: number) {
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   audio.volume = Math.min(1, volumePercent / 100);
-  audio.play().catch(() => {});
+  applyAudioSink(audio).finally(() => {
+    audio.play().catch(() => {});
+  });
   audio.addEventListener("ended", () => URL.revokeObjectURL(url));
 }

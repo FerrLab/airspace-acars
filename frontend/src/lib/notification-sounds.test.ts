@@ -3,6 +3,10 @@ import {
   generateNotificationSound,
   CHAT_SOUNDS,
   CHAT_SOUND_LABELS,
+  DEFAULT_VOLUME_PERCENT,
+  DEFAULT_VOLUME_RATIO,
+  getStoredVolumePercent,
+  getMasterVolume,
   type ChatSoundType,
 } from "./notification-sounds";
 
@@ -81,3 +85,35 @@ describe("CHAT_SOUND_LABELS", () => {
     }
   });
 });
+
+describe("volume defaults and storage", () => {
+  it("exports DEFAULT_VOLUME_PERCENT as 25 and DEFAULT_VOLUME_RATIO as 0.25", () => {
+    expect(DEFAULT_VOLUME_PERCENT).toBe(25);
+    expect(DEFAULT_VOLUME_RATIO).toBe(0.25);
+  });
+
+  it("defaults to 25% when localStorage is empty", () => {
+    localStorage.clear();
+    expect(getStoredVolumePercent()).toBe(25);
+    expect(getMasterVolume()).toBe(0.25);
+  });
+
+  it("reads and clamps volume from localStorage", () => {
+    localStorage.setItem("acars_volume", "50");
+    expect(getStoredVolumePercent()).toBe(50);
+    expect(getMasterVolume()).toBe(0.5);
+
+    localStorage.setItem("acars_volume", "150");
+    expect(getStoredVolumePercent()).toBe(100);
+    expect(getMasterVolume()).toBe(1.0);
+
+    localStorage.setItem("acars_volume", "-10");
+    expect(getStoredVolumePercent()).toBe(0);
+    expect(getMasterVolume()).toBe(0);
+
+    localStorage.setItem("acars_volume", "invalid");
+    expect(getStoredVolumePercent()).toBe(25);
+    expect(getMasterVolume()).toBe(0.25);
+  });
+});
+

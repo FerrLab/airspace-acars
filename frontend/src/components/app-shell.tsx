@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, LogOut } from "lucide-react";
 import { SettingsService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
+import { getStoredVolumePercent } from "@/lib/notification-sounds";
+import { hydrateAudioOutputDevice } from "@/lib/audio-manager";
 
 export function AppShell() {
   const { t } = useTranslation();
@@ -25,17 +27,19 @@ export function AppShell() {
   const [showCloseModal, setShowCloseModal] = useState(false);
 
   const [flightState, setFlightState] = useState<"idle" | "active">("idle");
-  const [volume, setVolume] = useState(() => {
-    const stored = localStorage.getItem("acars_volume");
-    return stored ? parseInt(stored, 10) : 25;
-  });
+  const [volume, setVolume] = useState(() => getStoredVolumePercent());
 
   // Sound player lives here so it persists across tab switches
   useSoundPlayer(volume, flightState === "active" && !localMode);
 
   useEffect(() => {
     SettingsService.GetSettings()
-      .then((s) => setLocalMode(s.localMode ?? false))
+      .then((s) => {
+        setLocalMode(s.localMode ?? false);
+        if (s.audioOutputDevice) {
+          hydrateAudioOutputDevice(s.audioOutputDevice);
+        }
+      })
       .catch(() => {});
 
     if (!localMode) {
@@ -56,9 +60,21 @@ export function AppShell() {
     };
   }, [localMode]);
 
+  useEffect(() => {
+    const handleVolumeEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (typeof detail?.volume === "number") {
+        setVolume(detail.volume);
+      }
+    };
+    window.addEventListener("acars-volume-changed", handleVolumeEvent);
+    return () => window.removeEventListener("acars-volume-changed", handleVolumeEvent);
+  }, []);
+
   const handleVolumeChange = (v: number) => {
     setVolume(v);
     localStorage.setItem("acars_volume", String(v));
+    window.dispatchEvent(new CustomEvent("acars-volume-changed", { detail: { volume: v } }));
   };
 
   const handleConfirmCloseApp = async () => {

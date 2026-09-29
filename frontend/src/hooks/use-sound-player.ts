@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AudioService } from "../../bindings/airspace-acars";
+import { applyAudioSink, subscribeAudioDeviceChange } from "@/lib/audio-manager";
 
 interface SoundInstruction {
   type: string;
@@ -19,6 +20,7 @@ export function useSoundPlayer(volume: number, active: boolean) {
   function ensureAudioGraph() {
     if (!ctxRef.current) {
       const ctx = new AudioContext();
+      applyAudioSink(ctx);
       const gain = ctx.createGain();
       gain.gain.value = volumeRef.current / 100;
       gain.connect(ctx.destination);
@@ -27,6 +29,15 @@ export function useSoundPlayer(volume: number, active: boolean) {
     }
     return { ctx: ctxRef.current, gain: gainRef.current! };
   }
+
+  // Dynamically switch output device on the active AudioContext
+  useEffect(() => {
+    return subscribeAudioDeviceChange((newDeviceId) => {
+      if (ctxRef.current) {
+        applyAudioSink(ctxRef.current, newDeviceId);
+      }
+    });
+  }, []);
 
   // Update volume via GainNode
   useEffect(() => {
