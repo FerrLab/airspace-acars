@@ -67,16 +67,20 @@ type App struct {
 	Discord  DiscordPresence
 
 	// Sim connection state
-	simMu             sync.Mutex
-	connector         domain.SimConnector
-	simActive         bool
-	adapterName       string
-	streaming         bool
-	streamStopCh      chan struct{}
-	reconnectAttempts int
-	lastReconnectAt   time.Time
-	simWaitFailures   int
-	userDisconnected  bool
+	simMu            sync.Mutex
+	connector        domain.SimConnector
+	simActive        bool
+	adapterName      string
+	streaming        bool
+	streamStopCh     chan struct{}
+	simWaitFailures  int
+	simWaitNotedAt   time.Time
+	userDisconnected bool
+
+	// connectMu is held for the whole of a connection attempt, so the
+	// auto-connect loop and the pilot's Connect button never run one at the
+	// same time and pull each other's adapter out from under them.
+	connectMu sync.Mutex
 
 	// Recording state
 	recording    bool
