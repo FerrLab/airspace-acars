@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -48,7 +49,7 @@ func TestSimulatorSilenceIsReported(t *testing.T) {
 	logs := captureLogs(t)
 	a := &App{}
 
-	a.noteSimWaitFailed("X-Plane")
+	a.noteSimAttemptFailed("X-Plane", errors.New("no data received from X-Plane"))
 
 	records := logs()
 	if len(records) != 1 {
@@ -60,21 +61,40 @@ func TestSimulatorSilenceIsReported(t *testing.T) {
 	if got := records[0]["adapter"]; got != "X-Plane" {
 		t.Errorf("adapter = %v, want X-Plane", got)
 	}
+	if got, _ := records[0]["error"].(string); !strings.Contains(got, "no data received") {
+		t.Errorf("error = %q, want the reason the attempt failed", got)
+	}
 }
 
-// The auto-connect loop retries every 30 seconds for as long as the app is
-// open, so this cannot be one line per attempt.
+// The auto-connect loop retries every second for as long as the app is open,
+// so this cannot be one line per attempt — nor one every ten, which at that
+// rate is still a line every half minute. After the first, it is a reminder
+// every few minutes.
 func TestSimulatorSilenceIsRateLimited(t *testing.T) {
 	logs := captureLogs(t)
 	a := &App{}
+	err := errors.New("no data received from X-Plane")
 
-	for i := 0; i < 30; i++ {
-		a.noteSimWaitFailed("X-Plane")
+	// Five minutes of attempts at one a second, all inside the window.
+	for i := 0; i < 300; i++ {
+		a.noteSimAttemptFailed("X-Plane", err)
+	}
+	if got := len(logs()); got != 1 {
+		t.Fatalf("300 failed attempts logged %d lines, want 1: %v", got, messages(logs()))
 	}
 
-	// The first, then every tenth: 1, 10, 20, 30.
-	if got := len(logs()); got != 4 {
-		t.Errorf("30 failed attempts logged %d lines, want 4: %v", got, messages(logs()))
+	// Once the window has passed, the next failure says how many it has been.
+	a.simMu.Lock()
+	a.simWaitNotedAt = a.simWaitNotedAt.Add(-simRetryReminder)
+	a.simMu.Unlock()
+	a.noteSimAttemptFailed("X-Plane", err)
+
+	records := logs()
+	if len(records) != 2 {
+		t.Fatalf("logged %d lines once the window had passed, want 2: %v", len(records), messages(records))
+	}
+	if got := records[1]["attempts"]; got != float64(301) {
+		t.Errorf("reminder attempts = %v, want 301", got)
 	}
 }
 
@@ -82,8 +102,9 @@ func TestSimulatorSilenceIsRateLimited(t *testing.T) {
 // is reported from the beginning rather than swallowed by the old streak.
 func TestSimulatorSilenceCountResets(t *testing.T) {
 	a := &App{}
+	err := errors.New("no data received from X-Plane")
 	for i := 0; i < 5; i++ {
-		a.noteSimWaitFailed("X-Plane")
+		a.noteSimAttemptFailed("X-Plane", err)
 	}
 
 	a.simMu.Lock()
@@ -91,7 +112,7 @@ func TestSimulatorSilenceCountResets(t *testing.T) {
 	a.simMu.Unlock()
 
 	logs := captureLogs(t)
-	a.noteSimWaitFailed("X-Plane")
+	a.noteSimAttemptFailed("X-Plane", err)
 
 	if got := len(logs()); got != 1 {
 		t.Errorf("the first failure after a recovery logged %d lines, want 1", got)

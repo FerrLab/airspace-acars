@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -13,29 +14,87 @@ import (
 )
 
 const (
-	stalenessThreshold  = 10 * time.Second
-	reconnectBaseDelay  = 5 * time.Second
-	reconnectMaxBackoff = 60 * time.Second
-	autoConnectInterval = 30 * time.Second
+	// stalenessThreshold is how long a connection may go without hearing from
+	// the simulator before it is given up on and replaced. A stutter or a
+	// loading screen shorter than this is ridden out on the same connection.
+	stalenessThreshold = 10 * time.Second
+
+	// autoConnectInterval is how often the auto-connect loop checks on the
+	// simulator and, when nothing is connected, tries again. A simulator that
+	// drops out mid-flight — a long stutter, a loading screen — is picked back
+	// up as soon as it answers, not up to half a minute later.
+	autoConnectInterval = time.Second
 
 	// simDataWait is how long a freshly opened adapter is given to send
 	// something before it is treated as not there. A UDP socket to X-Plane
 	// opens whether or not X-Plane is running, so data is the only proof.
 	simDataWait = 3 * time.Second
+
+	// simRetryReminder is how often a simulator that is still not answering
+	// is mentioned in the log again, once the first failure has been.
+	simRetryReminder = 5 * time.Minute
 )
 
-// ConnectSim connects to a flight simulator. simType can be "auto", "simconnect", or "xplane".
+// errNoSimConnect is returned when SimConnect is asked for on a platform that
+// does not have it.
+var errNoSimConnect = errors.New("SimConnect not available on this platform")
+
+// ConnectSim connects to a flight simulator at the pilot's request. simType can
+// be "auto", "simconnect", or "xplane". It also ends a manual disconnect: the
+// auto-connect loop picks up again whether or not this attempt succeeds.
 func (a *App) ConnectSim(simType string) (string, error) {
 	_, span := observability.Start(context.Background(), "sim.connect",
 		"sim.type", simType)
 	defer span.Finish()
 
+	// An auto-connect attempt already under way is let finish, rather than
+	// having its adapter closed while it waits.
+	a.connectMu.Lock()
+	defer a.connectMu.Unlock()
+
 	a.simMu.Lock()
 	a.userDisconnected = false
+	// The pilot asking is a fresh start, so this attempt is logged in full
+	// even in the middle of a streak of failed auto-connects.
+	a.simWaitFailures = 0
+	a.simMu.Unlock()
 
-	if a.connector != nil {
-		a.stopDataStreamLocked()
-		a.connector.Disconnect()
+	adapter, err := a.connectSim(simType)
+	if adapter != "" {
+		span.Set("sim.adapter", adapter)
+	}
+	if errors.Is(err, errNoSimConnect) {
+		span.Fail(err)
+		return "", err
+	}
+	if err != nil {
+		span.Expected(err)
+		return "", err
+	}
+	return adapter, nil
+}
+
+// connectSim opens an adapter for simType, replacing whatever connection there
+// was, and waits for the simulator to answer through it. It is the whole of one
+// attempt, for the pilot's Connect button and the auto-connect loop alike, and
+// it leaves the pilot's choice to connect or disconnect alone: a failed attempt
+// is only a failed attempt, and the loop tries again.
+//
+// It returns the adapter it tried, when it got as far as choosing one, even on
+// failure. Callers hold connectMu.
+func (a *App) connectSim(simType string) (string, error) {
+	a.simMu.Lock()
+
+	// Once a streak of failures has been explained in the log, the attempts
+	// that follow keep their steps to Debug: at one a second they would
+	// otherwise bury everything else in it.
+	level := slog.LevelInfo
+	if a.simWaitFailures > 0 {
+		level = slog.LevelDebug
+	}
+
+	if a.closeSimLocked() {
+		a.UI.EmitEvent("connection-state", "")
 	}
 
 	var connector domain.SimConnector
@@ -48,9 +107,8 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		connector = a.NewSimConnectAdapter()
 		if connector == nil {
 			a.simMu.Unlock()
-			err := fmt.Errorf("SimConnect not available on this platform")
-			span.Fail(err)
-			return "", err
+			a.noteSimAttemptFailed("SimConnect", errNoSimConnect)
+			return "", errNoSimConnect
 		}
 	default: // "auto"
 		sc := a.NewSimConnectAdapter()
@@ -59,7 +117,8 @@ func (a *App) ConnectSim(simType string) (string, error) {
 				connector = sc
 				connected = true
 			} else {
-				slog.Info("SimConnect not available, trying X-Plane", "error", err)
+				slog.Log(context.Background(), level,
+					"SimConnect not available, trying X-Plane", "error", err)
 			}
 		}
 		if connector == nil {
@@ -67,23 +126,19 @@ func (a *App) ConnectSim(simType string) (string, error) {
 		}
 	}
 
-	span.Set("sim.adapter", connector.Name())
-
 	if !connected {
 		if err := connector.Connect(); err != nil {
 			a.simMu.Unlock()
 			err = fmt.Errorf("connect to %s: %w", connector.Name(), err)
-			span.Expected(err)
-			return "", err
+			a.noteSimAttemptFailed(connector.Name(), err)
+			return connector.Name(), err
 		}
 	}
 
 	a.connector = connector
-	a.simActive = false
 	a.adapterName = connector.Name()
-	a.reconnectAttempts = 0
-	a.lastReconnectAt = time.Time{}
-	slog.Info("adapter opened, waiting for data", "adapter", connector.Name())
+	slog.Log(context.Background(), level,
+		"adapter opened, waiting for data", "adapter", connector.Name())
 
 	a.startDataStreamLocked()
 	a.simMu.Unlock()
@@ -96,20 +151,19 @@ func (a *App) ConnectSim(simType string) (string, error) {
 	for {
 		select {
 		case <-deadline:
-			a.DisconnectSim()
+			a.dropSim(connector)
 			err := fmt.Errorf("no data received from %s — is the simulator running?", connector.Name())
-			a.noteSimWaitFailed(connector.Name())
-			span.Expected(err)
-			return "", err
+			a.noteSimAttemptFailed(connector.Name(), err)
+			return connector.Name(), err
 		case <-tick.C:
 			a.simMu.Lock()
-			active := a.simActive
+			active := a.simActive && a.connector == connector
+			missed := a.simWaitFailures
+			if active {
+				a.simWaitFailures = 0
+			}
 			a.simMu.Unlock()
 			if active {
-				a.simMu.Lock()
-				missed := a.simWaitFailures
-				a.simWaitFailures = 0
-				a.simMu.Unlock()
 				slog.Info("connected to simulator",
 					"adapter", connector.Name(), "after_failed_attempts", missed)
 				return connector.Name(), nil
@@ -118,36 +172,43 @@ func (a *App) ConnectSim(simType string) (string, error) {
 	}
 }
 
-// noteSimWaitFailed reports that a simulator was opened but never sent
-// anything.
+// noteSimAttemptFailed reports an attempt to reach the simulator that came to
+// nothing: an adapter that would not open, or one that opened and never heard
+// back.
 //
-// The auto-connect loop retries every 30 seconds, so this cannot log every
-// attempt. It also cannot stay at Debug, which is where it was: that is not
-// in a pilot's log, so a log from someone whose simulator is not running read
-// exactly like a log from someone whose ACARS is broken, and the only line
-// that explained it was the one nobody had.
+// The auto-connect loop tries again every second, so this cannot log every
+// attempt. It also cannot stay at Debug, which is where it was: that is not in
+// a pilot's log, so a log from someone whose simulator is not running read
+// exactly like a log from someone whose ACARS is broken, and the only line that
+// explained it was the one nobody had.
 //
-// So: the first one, and then every tenth, the way the position loop reports
-// a server it cannot reach.
-func (a *App) noteSimWaitFailed(adapter string) {
+// So: the first one, and then a reminder every few minutes saying how many
+// attempts it stands for. The reminder goes by the clock rather than by a
+// count, because how long an attempt takes depends on why it failed.
+func (a *App) noteSimAttemptFailed(adapter string, err error) {
 	a.simMu.Lock()
 	a.simWaitFailures++
 	n := a.simWaitFailures
+	remind := n > 1 && time.Since(a.simWaitNotedAt) >= simRetryReminder
+	if n == 1 || remind {
+		a.simWaitNotedAt = time.Now()
+	}
 	a.simMu.Unlock()
 
-	if n == 1 {
-		slog.Warn("no data from the simulator; will keep trying",
+	switch {
+	case n == 1:
+		slog.Warn("simulator not answering; will keep trying",
 			"adapter", adapter,
-			"waited", simDataWait.String(),
+			"error", err,
 			"retry_every", autoConnectInterval.String())
-		return
-	}
-	if n%10 == 0 {
-		slog.Warn("still no data from the simulator", "adapter", adapter, "attempts", n)
+	case remind:
+		slog.Warn("simulator still not answering",
+			"adapter", adapter, "attempts", n, "error", err)
 	}
 }
 
-// DisconnectSim disconnects from the simulator.
+// DisconnectSim disconnects from the simulator at the pilot's request, and
+// stands the auto-connect loop down until they connect again.
 func (a *App) DisconnectSim() {
 	_, span := observability.Start(context.Background(), "sim.disconnect")
 	defer span.Finish()
@@ -157,20 +218,47 @@ func (a *App) DisconnectSim() {
 
 	span.Set("sim.adapter", a.adapterName)
 
-	a.stopDataStreamLocked()
+	a.closeSimLocked()
+	a.userDisconnected = true
+	a.UI.EmitEvent("connection-state", "")
+}
 
+// dropSim closes connector, if it is still the one in use, without it being
+// the pilot's doing: the auto-connect loop finds nothing connected and opens a
+// fresh adapter within a second. It is how a connection attempt that never
+// heard back and a connection that has gone quiet both end.
+func (a *App) dropSim(connector domain.SimConnector) {
+	a.simMu.Lock()
+	defer a.simMu.Unlock()
+
+	if a.connector != connector {
+		return
+	}
+	if a.closeSimLocked() {
+		a.UI.EmitEvent("connection-state", "")
+	}
+}
+
+// closeSimLocked closes the adapter and stops its data stream, and reports
+// whether the connection was live, for the caller to tell the UI. Every way a
+// connection ends comes through here. Callers hold simMu.
+func (a *App) closeSimLocked() bool {
+	wasActive := a.simActive
+
+	a.stopDataStreamLocked()
 	if a.connector != nil {
 		a.connector.Disconnect()
 		a.connector = nil
 	}
-
 	a.simActive = false
 	a.adapterName = ""
-	a.reconnectAttempts = 0
-	a.lastReconnectAt = time.Time{}
-	a.userDisconnected = true
+
+	// The next adapter starts without the aircraft profile installed. Unless
+	// the profile is forgotten here, the next connection finds the same
+	// aircraft, takes it for no change, and never hands the profile over.
 	a.clearAircraftProfile()
-	a.UI.EmitEvent("connection-state", "")
+
+	return wasActive
 }
 
 // IsConnected returns whether the simulator is actively sending data.
@@ -208,7 +296,7 @@ func (a *App) startDataStreamLocked() {
 	}
 	a.streaming = true
 	a.streamStopCh = make(chan struct{})
-	go a.dataStreamLoop()
+	go a.dataStreamLoop(a.streamStopCh)
 }
 
 func (a *App) stopDataStreamLocked() {
@@ -219,7 +307,12 @@ func (a *App) stopDataStreamLocked() {
 	close(a.streamStopCh)
 }
 
-func (a *App) dataStreamLoop() {
+// dataStreamLoop reads the simulator once a second until stop is closed.
+//
+// It is handed its stop channel rather than reading a.streamStopCh, which the
+// next connection replaces: a loop stopped while it was mid-tick would
+// otherwise come back around to its successor's channel and run on beside it.
+func (a *App) dataStreamLoop(stop <-chan struct{}) {
 	defer observability.Recover()
 
 	ticker := time.NewTicker(time.Second)
@@ -227,7 +320,7 @@ func (a *App) dataStreamLoop() {
 
 	for {
 		select {
-		case <-a.streamStopCh:
+		case <-stop:
 			return
 		case <-ticker.C:
 			a.simMu.Lock()
@@ -255,9 +348,13 @@ func (a *App) dataStreamLoop() {
 
 			if !wasActive {
 				a.simMu.Lock()
+				if a.connector != connector {
+					// Replaced while this tick was reading it; the new
+					// connection has a loop of its own.
+					a.simMu.Unlock()
+					return
+				}
 				a.simActive = true
-				a.reconnectAttempts = 0
-				a.lastReconnectAt = time.Time{}
 				a.simMu.Unlock()
 				a.UI.EmitEvent("connection-state", connector.Name())
 				slog.Info("simulator data received", "adapter", connector.Name())
@@ -282,127 +379,78 @@ func (a *App) dataStreamLoop() {
 			// Auto-flight detection
 			a.checkAutoFlight(data)
 
-			// Staleness check
+			// Staleness check. A connection that has gone quiet is dropped,
+			// and the auto-connect loop opens a fresh one within a second.
+			// SimConnect goes on returning its last reading after the
+			// simulator stops answering, so this is how that is noticed.
 			if wasActive && !connector.LastReceived().IsZero() &&
 				time.Since(connector.LastReceived()) > stalenessThreshold {
-
-				a.simMu.Lock()
-				backoff := time.Duration(1<<uint(a.reconnectAttempts)) * reconnectBaseDelay
-				if backoff > reconnectMaxBackoff {
-					backoff = reconnectMaxBackoff
-				}
-				if time.Since(a.lastReconnectAt) < backoff {
-					a.simMu.Unlock()
-					continue
-				}
-
-				a.lastReconnectAt = time.Now()
-				a.simActive = false
-				attempt := a.reconnectAttempts + 1
-				a.simMu.Unlock()
-
-				a.UI.EmitEvent("connection-state", "")
 				observability.Count("sim.staleness_detected", "adapter", adapterName)
 				slog.Warn("simulator connection stale, reconnecting",
 					"adapter", adapterName,
-					"lastData", connector.LastReceived(),
-					"attempt", attempt)
-
-				err := a.reconnectSim()
-				observability.Count("sim.reconnect_attempts",
-					"adapter", adapterName,
-					"success", err == nil)
-				if err != nil {
-					a.simMu.Lock()
-					a.reconnectAttempts++
-					attempts := a.reconnectAttempts
-					a.simMu.Unlock()
-					slog.Warn("reconnect failed",
-						"adapter", adapterName,
-						"attempt", attempts,
-						"error", err)
-				} else {
-					slog.Info("reconnected successfully", "adapter", adapterName)
-				}
+					"lastData", connector.LastReceived())
+				a.dropSim(connector)
+				return
 			}
 		}
 	}
 }
 
-// AutoConnectLoop tries to connect to the simulator every 30 seconds when not connected.
-// It should be called as a goroutine. The first attempt happens immediately.
+// AutoConnectLoop keeps the simulator connected: every second, if nothing is,
+// it tries again, until the pilot disconnects by hand. It should be called as a
+// goroutine. The first attempt happens immediately.
 func (a *App) AutoConnectLoop() {
 	defer observability.Recover()
-
-	settings := a.GetSettings()
-	if adapter, err := a.ConnectSim(settings.SimType); err != nil {
-		slog.Debug("auto-connect: initial attempt failed", "error", err)
-	} else {
-		slog.Info("auto-connected to simulator", "adapter", adapter)
-	}
 
 	ticker := time.NewTicker(autoConnectInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		a.simMu.Lock()
-		skip := a.simActive || a.userDisconnected
-		a.simMu.Unlock()
-		if skip {
-			continue
-		}
-		settings := a.GetSettings()
-		if adapter, err := a.ConnectSim(settings.SimType); err != nil {
-			slog.Debug("auto-connect: attempt failed", "error", err)
-		} else {
-			slog.Info("auto-connected to simulator", "adapter", adapter)
-		}
+	for {
+		a.autoConnect()
+		<-ticker.C
 	}
 }
 
-func (a *App) reconnectSim() error {
+// autoConnect is one turn of the auto-connect loop: an attempt, when nothing
+// is connected, the pilot has not disconnected, and no connection is still
+// riding out a stall.
+//
+// Its attempts are not traced one by one. At one a second, a span each would
+// ship a steady stream of sampled transactions and fill the breadcrumb buffer
+// with "is the simulator running?"; noteSimAttemptFailed keeps the log of the
+// streak instead, and the pilot's own Connect is still traced.
+func (a *App) autoConnect() {
+	// A connection the pilot started is still waiting for data; leave it be.
+	if !a.connectMu.TryLock() {
+		return
+	}
+	defer a.connectMu.Unlock()
+
 	a.simMu.Lock()
-	old := a.connector
-	a.connector = nil
-	a.simActive = false
-	name := a.adapterName
+	skip := a.simActive || a.userDisconnected
+	connector := a.connector
 	a.simMu.Unlock()
-
-	_, span := observability.Start(context.Background(), "sim.reconnect",
-		"sim.adapter", name)
-	defer span.Finish()
-
-	if old != nil {
-		old.Disconnect()
+	if skip {
+		return
 	}
 
-	var connector domain.SimConnector
-	switch name {
-	case "SimConnect":
-		connector = a.NewSimConnectAdapter()
-		if connector == nil {
-			err := fmt.Errorf("SimConnect not available")
-			span.Fail(err)
-			return err
+	// A connection that has only just gone quiet — X-Plane stops sending in a
+	// long stutter — is given as long to come back as a live one would be. Its
+	// adapter is still subscribed and listening, so it picks the simulator up
+	// the moment it answers; replacing it sooner would only pile a new set of
+	// subscriptions onto a simulator that is not reading them.
+	if connector != nil {
+		if last := connector.LastReceived(); !last.IsZero() && time.Since(last) < stalenessThreshold {
+			return
 		}
-	case "X-Plane":
-		connector = a.NewXPlaneAdapter("127.0.0.1", 49000)
-	default:
-		err := fmt.Errorf("unknown adapter: %s", name)
-		span.Fail(err)
-		return err
 	}
 
-	if err := connector.Connect(); err != nil {
-		err = fmt.Errorf("reconnect %s: %w", name, err)
-		span.Expected(err)
-		return err
+	adapter, err := a.connectSim(a.GetSettings().SimType)
+	if err != nil {
+		slog.Debug("auto-connect: attempt failed", "error", err)
+		return
 	}
-
-	a.simMu.Lock()
-	a.connector = connector
-	a.simMu.Unlock()
-	return nil
+	slog.Info("auto-connected to simulator", "adapter", adapter)
 }
 
 // checkAutoFlight evaluates conditions for auto-start.

@@ -7,10 +7,22 @@ import (
 	"math"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"airspace-acars/internal/domain"
 	"airspace-acars/internal/profiles"
+)
+
+// While X-Plane is not answering, the auto-connect loop opens a fresh adapter
+// every few seconds. These keep the lines that would otherwise repeat on each
+// of them to one apiece.
+var (
+	// listenLogged is the address "listening for X-Plane data" last named.
+	listenLogged atomic.Value
+	// listenFailing is set while opening the listener fails, so the failure
+	// is reported once instead of on every attempt.
+	listenFailing atomic.Bool
 )
 
 var xplaneDatarefs = []string{
@@ -175,7 +187,9 @@ func (x *Adapter) Connect() error {
 	// until something answers. Saying connected here read as success in logs
 	// from pilots whose simulator was never running. The caller waits for
 	// data and reports on that; this line only claims what it did.
-	slog.Info("listening for X-Plane data", "addr", addr.String(), "datarefs", len(xplaneDatarefs))
+	if prev, _ := listenLogged.Swap(addr.String()).(string); prev != addr.String() {
+		slog.Info("listening for X-Plane data", "addr", addr.String(), "datarefs", len(xplaneDatarefs))
+	}
 	return nil
 }
 
@@ -248,9 +262,12 @@ func (x *Adapter) listenLoop() {
 	localAddr := x.conn.LocalAddr().(*net.UDPAddr)
 	listener, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
-		slog.Error("failed to listen for X-Plane responses", "error", err)
+		if !listenFailing.Swap(true) {
+			slog.Error("failed to listen for X-Plane responses", "error", err)
+		}
 		return
 	}
+	listenFailing.Store(false)
 	defer listener.Close()
 
 	listener.SetReadDeadline(time.Now().Add(2 * time.Second))
