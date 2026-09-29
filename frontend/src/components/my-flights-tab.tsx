@@ -128,6 +128,18 @@ export function getFlightStatusBadge(status: string | undefined, t: (key: string
       </Badge>
     );
   }
+  // The platform auto-accepts flights that raised FDM warnings under
+  // warningSystem / warningStaff; they count as accepted.
+  if (norm.includes("warning")) {
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] py-0 px-2 border-amber-500/30 text-amber-400 bg-amber-500/10 font-medium"
+      >
+        {t("myFlights.statusWarning", "Aceito com aviso")}
+      </Badge>
+    );
+  }
   if (norm.includes("accept") || norm.includes("approved") || norm.includes("closed")) {
     return (
       <Badge
@@ -274,7 +286,7 @@ function MyFlightsDashboard({
     if (statusFilter === "accepted") {
       list = list.filter((f) => {
         const s = normalizeFlightStatus(f.status);
-        return s.includes("accept") || s.includes("approved") || s.includes("closed");
+        return s.includes("accept") || s.includes("approved") || s.includes("closed") || s.includes("warning");
       });
     } else if (statusFilter === "pending") {
       list = list.filter((f) => {

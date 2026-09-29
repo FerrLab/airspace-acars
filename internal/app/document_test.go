@@ -31,7 +31,7 @@ func TestDocumentListPaginationAndQuery(t *testing.T) {
 	}
 	u, _ := url.Parse(api.path)
 	q := u.Query()
-	if u.Path != documentsPath || q.Get("filter[parent_id]") != "folder_5" || q.Get("filter[title]") != "SOP" {
+	if u.Path != "/api/v2/acars/documents" || q.Get("filter[parent_id]") != "folder_5" || q.Get("filter[title]") != "SOP" {
 		t.Fatalf("wrong request: %s", api.path)
 	}
 }

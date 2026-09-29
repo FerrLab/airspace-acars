@@ -98,6 +98,7 @@
   "myFlights.normalLanding": "Operational Touchdown",
   "myFlights.tripFuel": "Trip Fuel",
   "myFlights.statusRejected": "Rejected",
+  "myFlights.statusWarning": "Accepted with warning",
   "myFlights.paginationPrevious": "Previous",
   "myFlights.paginationNext": "Next",
   "myFlights.paginationPageOf": "Page {{page}} of {{lastPage}}",

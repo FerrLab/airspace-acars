@@ -425,10 +425,10 @@ func (a *App) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, erro
 		"filter[user_id]": {pilotUserID},
 	}
 
+	// Only the ACARS pilot route: it takes the pilot token and scopes to it
+	// server-side. The private v1 API is for integration keys, not pilots.
 	candidates := []string{
-		"/api/v1/flights?" + query.Encode(),
 		"/api/v2/acars/pilot/flights?" + query.Encode(),
-		"/api/v2/acars/flights?" + query.Encode(),
 	}
 
 	body, status, err := executeCandidates(candidates, a.executeRequest)

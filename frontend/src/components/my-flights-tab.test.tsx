@@ -424,3 +424,25 @@ it("labels distance as Page Distance when global flag is false and total flights
   expect(screen.getByText(pageSum.toLocaleString())).toBeInTheDocument();
   expect(screen.queryByText("0 NM")).not.toBeInTheDocument();
 });
+
+it("treats warningSystem / warningStaff as accepted with its own badge", async () => {
+  vi.spyOn(FlightLogService, "GetMyFlights").mockResolvedValueOnce({
+    status: "ok",
+    pilot: samplePilotStats,
+    flights: [{ ...sampleFlights[0], status: "warningSystem" }, sampleFlights[3]],
+    current_page: 1,
+    last_page: 1,
+    total: 2,
+  });
+
+  render(view());
+  await screen.findByText("SXB1265");
+  expect(screen.getByText(en["myFlights.statusWarning"])).toBeInTheDocument();
+
+  // The Accepted filter keeps the warned flight and drops the pending one.
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: en["myFlights.accepted"] }));
+  });
+  expect(screen.getByText("SXB1265")).toBeInTheDocument();
+  expect(screen.queryByText("SXB8105")).not.toBeInTheDocument();
+});

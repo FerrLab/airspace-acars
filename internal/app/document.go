@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/browser"
 )
 
-const documentsPath = "/api/v1/documents"
+const documentsPath = "/api/v2/acars/documents"
 
 type documentWire struct {
 	ID              json.RawMessage `json:"id"`
@@ -32,7 +32,6 @@ type documentWire struct {
 	CreatedAt       string          `json:"created_at"`
 	UpdatedAt       string          `json:"updated_at"`
 }
-
 
 func parseBoolLike(v interface{}) bool {
 	switch val := v.(type) {
@@ -118,7 +117,6 @@ func (a *App) GetDocuments(page int, parentID string, search string) (*domain.Do
 
 	candidates := []string{
 		documentsPath + "?" + query.Encode(),
-		"/api/v2/acars/documents?" + query.Encode(),
 	}
 
 	body, status, err := executeCandidates(candidates, a.executeRequest)
@@ -179,7 +177,6 @@ func (a *App) GetDocument(id string) (*domain.DocumentDetail, error) {
 
 	candidates := []string{
 		documentsPath + "/" + url.PathEscape(id),
-		"/api/v2/acars/documents/" + url.PathEscape(id),
 	}
 
 	body, status, err := executeCandidates(candidates, a.executeRequest)

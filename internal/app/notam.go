@@ -10,7 +10,7 @@ import (
 	"airspace-acars/internal/domain"
 )
 
-const companyNOTAMPath = "/api/v1/company-notams"
+const companyNOTAMPath = "/api/v2/acars/notams"
 
 // The manual documents pagination but not the complete notice schema. Accept
 // the common text fields without exposing arbitrary server HTML to the webview.
@@ -49,8 +49,6 @@ func (a *App) GetNOTAMs(page int) (*domain.NOTAMPage, error) {
 
 	candidates := []string{
 		companyNOTAMPath + "?" + query.Encode(),
-		"/api/v2/acars/notams?" + query.Encode(),
-		"/api/v2/acars/company-notams?" + query.Encode(),
 	}
 
 	body, status, err := executeCandidates(candidates, a.executeRequest)
@@ -102,8 +100,6 @@ func (a *App) GetNOTAM(id string) (*domain.NOTAMDetail, error) {
 
 	candidates := []string{
 		companyNOTAMPath + "/" + url.PathEscape(id),
-		"/api/v2/acars/notams/" + url.PathEscape(id),
-		"/api/v2/acars/company-notams/" + url.PathEscape(id),
 	}
 
 	body, status, err := executeCandidates(candidates, a.executeRequest)
