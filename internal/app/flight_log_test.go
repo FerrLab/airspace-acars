@@ -7,18 +7,22 @@ import (
 
 type flightLogAPI struct {
 	stubAPI
-	path      string
-	pilotBody []byte
+	path        string
+	pilotBody   []byte
+	pilotStatus int
 }
 
 func (*flightLogAPI) Token() string { return "pilot-token" }
 func (s *flightLogAPI) DoRequest(method, path string, body interface{}) ([]byte, int, error) {
 	s.path = path
 	if path == "/api/v2/acars/pilot" {
+		if s.pilotStatus != 0 {
+			return s.pilotBody, s.pilotStatus, nil
+		}
 		if s.pilotBody != nil {
 			return s.pilotBody, 200, nil
 		}
-		return []byte(`{"id": 42, "name": "Pilot 42", "callsign": "GLO1234"}`), 200, nil
+		return []byte(`{"id": 42, "name": "Pilot 42", "callsign": "GLO1234", "landing_rate_avg": -161.25, "flight_hours": 2.5, "total_distance": 196.0}`), 200, nil
 	}
 	return s.stubAPI.DoRequest(method, path, body)
 }
@@ -176,6 +180,33 @@ func TestGetMyFlightsErrorStatuses(t *testing.T) {
 	}
 }
 
+func TestGetMyFlightsPilotProfileErrors(t *testing.T) {
+	for status, want := range map[int]string{
+		401: "accessDenied",
+		403: "accessDenied",
+		404: "unavailable",
+		429: "rateLimited",
+	} {
+		api := &flightLogAPI{pilotStatus: status, pilotBody: []byte("error")}
+		a := &App{Airspace: api}
+		res, err := a.GetMyFlights(1, 20)
+		if err != nil {
+			t.Fatalf("pilot status %d: unexpected error %v", status, err)
+		}
+		if res.Status != want {
+			t.Errorf("pilot status %d: got status %q, want %q", status, res.Status, want)
+		}
+	}
+
+	// 500 or network error should return err so the UI displays retryable banner
+	serverErrAPI := &flightLogAPI{pilotStatus: 500, pilotBody: []byte("internal server error")}
+	a := &App{Airspace: serverErrAPI}
+	_, err := a.GetMyFlights(1, 20)
+	if err == nil {
+		t.Fatal("expected error on 500 pilot profile response, got nil")
+	}
+}
+
 func TestGetMyFlightsFailsWithoutPilotID(t *testing.T) {
 	// If /api/v2/acars/pilot returns no id, user_id or pilot_id, GetMyFlights must fail
 	// and never issue an unfiltered request.
@@ -204,3 +235,58 @@ func TestNullIslandDistanceGuard(t *testing.T) {
 		t.Errorf("expected 0 distance when origin is (0,0), got %v", d2)
 	}
 }
+
+func TestPageSumDoesNotMasqueradeAsGlobalStats(t *testing.T) {
+	// When pilot profile lacks aggregates and total flights (100) > page flights (1),
+	// fallback must not claim the 1-flight distance/hours is the pilot's global total.
+	payloadIncomplete := `{
+		"data": [{
+			"id": 1,
+			"callsign": "GLO1",
+			"flight_time": 60,
+			"distance": 200,
+			"landing_rate": -150
+		}],
+		"meta": {"total": 100, "current_page": 1, "last_page": 5}
+	}`
+	apiIncomplete := &flightLogAPI{
+		stubAPI:   stubAPI{status: 200, body: []byte(payloadIncomplete)},
+		pilotBody: []byte(`{"id": 42, "name": "Pilot 42", "callsign": "GLO42"}`),
+	}
+	a := &App{Airspace: apiIncomplete}
+	res, err := a.GetMyFlights(1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pilot.HasGlobalDistance {
+		t.Error("expected HasGlobalDistance to be false")
+	}
+	if res.Pilot.TotalDistanceNM != 0 {
+		t.Errorf("expected TotalDistanceNM 0 for incomplete history, got %v", res.Pilot.TotalDistanceNM)
+	}
+
+	// Conversely, when total flights (1) == page flights (1), the page IS the full history.
+	payloadComplete := `{
+		"data": [{
+			"id": 1,
+			"callsign": "GLO1",
+			"flight_time": 60,
+			"distance": 200,
+			"landing_rate": -150
+		}],
+		"meta": {"total": 1, "current_page": 1, "last_page": 1}
+	}`
+	apiComplete := &flightLogAPI{
+		stubAPI:   stubAPI{status: 200, body: []byte(payloadComplete)},
+		pilotBody: []byte(`{"id": 42, "name": "Pilot 42", "callsign": "GLO42"}`),
+	}
+	a = &App{Airspace: apiComplete}
+	resComplete, err := a.GetMyFlights(1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resComplete.Pilot.TotalDistanceNM != 200 {
+		t.Errorf("expected TotalDistanceNM 200 for complete history, got %v", resComplete.Pilot.TotalDistanceNM)
+	}
+}
+

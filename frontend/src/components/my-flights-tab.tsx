@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Eye,
   Fuel,
@@ -108,8 +110,23 @@ function getLandingRateBadge(rate: number) {
   );
 }
 
-function getFlightStatusBadge(status: string, t: (key: string, fallback: string) => string) {
-  const norm = (status || "accepted").toLowerCase();
+export function normalizeFlightStatus(status?: string): string {
+  if (!status || !status.trim()) return "unknown";
+  return status.trim().toLowerCase();
+}
+
+export function getFlightStatusBadge(status: string | undefined, t: (key: string, fallback: string) => string) {
+  const norm = normalizeFlightStatus(status);
+  if (norm === "unknown") {
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] py-0 px-2 border-border text-muted-foreground bg-muted/20 font-medium"
+      >
+        —
+      </Badge>
+    );
+  }
   if (norm.includes("accept") || norm.includes("approved") || norm.includes("closed")) {
     return (
       <Badge
@@ -127,6 +144,16 @@ function getFlightStatusBadge(status: string, t: (key: string, fallback: string)
         className="text-[10px] py-0 px-2 border-amber-500/30 text-amber-400 bg-amber-500/10 font-medium"
       >
         {t("myFlights.statusPending", "Pendente")}
+      </Badge>
+    );
+  }
+  if (norm.includes("reject") || norm.includes("denied")) {
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] py-0 px-2 border-red-500/30 text-red-400 bg-red-500/10 font-medium"
+      >
+        {t("myFlights.statusRejected", "Rejeitado")}
       </Badge>
     );
   }
@@ -155,6 +182,10 @@ function MyFlightsDashboard({
   const [statusFilter, setStatusFilter] = useState<"all" | "accepted" | "pending">("all");
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
+  const [page, setPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [totalFlights, setTotalFlights] = useState(0);
+
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -169,22 +200,28 @@ function MyFlightsDashboard({
       setPilotStats(null);
       setErrorStatus(null);
       setLoading(false);
+      setLastPage(1);
+      setTotalFlights(0);
       return;
     }
 
-    FlightLogService.GetMyFlights(1, 50)
-      .then((res) => {
+    FlightLogService.GetMyFlights(page, 50)
+      .then((res: any) => {
         if (cancelled) return;
         if (res?.status && res.status !== "ok") {
           if (res.status === "localMode" || res.status === "noSession") {
             setErrorStatus(null);
             setFlights([]);
             setPilotStats(null);
+            setLastPage(1);
+            setTotalFlights(0);
             return;
           }
           setErrorStatus(res.status);
           setFlights([]);
           setPilotStats(null);
+          setLastPage(1);
+          setTotalFlights(0);
           return;
         }
         setErrorStatus(null);
@@ -198,12 +235,17 @@ function MyFlightsDashboard({
         } else {
           setPilotStats(null);
         }
+        const lp = res?.last_page || 1;
+        setLastPage(lp);
+        setTotalFlights(res?.total ?? res?.pilot?.total_flights ?? (res?.flights?.length || 0));
       })
       .catch(() => {
         if (!cancelled) {
           setErrorStatus("loadError");
           setFlights([]);
           setPilotStats(null);
+          setLastPage(1);
+          setTotalFlights(0);
         }
       })
       .finally(() => {
@@ -213,7 +255,7 @@ function MyFlightsDashboard({
     return () => {
       cancelled = true;
     };
-  }, [localMode, ready, refresh]);
+  }, [localMode, ready, refresh, page]);
 
   // Filter flights by status and search query
   const filteredFlights = useMemo(() => {
@@ -221,12 +263,12 @@ function MyFlightsDashboard({
 
     if (statusFilter === "accepted") {
       list = list.filter((f) => {
-        const s = (f.status || "").toLowerCase();
+        const s = normalizeFlightStatus(f.status);
         return s.includes("accept") || s.includes("approved") || s.includes("closed");
       });
     } else if (statusFilter === "pending") {
       list = list.filter((f) => {
-        const s = (f.status || "").toLowerCase();
+        const s = normalizeFlightStatus(f.status);
         return s.includes("pending") || s.includes("review");
       });
     }
@@ -452,7 +494,9 @@ function MyFlightsDashboard({
         <Card className="border-border/70 bg-card p-3 shadow-xs">
           <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
             <Globe className="h-3.5 w-3.5 text-indigo-400" />
-            {t("myFlights.totalDistance", "Distância Total")}
+            {pilotStats?.has_global_distance || (pilotStats?.total_flights ?? flights.length) <= flights.length
+              ? t("myFlights.totalDistance", "Distância Total")
+              : t("myFlights.pageDistance", "Distância da Página")}
           </span>
           <p className="mt-1 text-xl font-bold font-mono text-foreground">
             {pilotStats?.total_distance_nm ? (
@@ -618,10 +662,54 @@ function MyFlightsDashboard({
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {(lastPage > 1 || totalFlights > 50) && (
+            <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2 text-xs">
+              <span className="text-muted-foreground">
+                {t("myFlights.pageInfo", {
+                  page,
+                  lastPage,
+                  defaultValue: `Página ${page} de ${lastPage} (50 por página)`,
+                })}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || loading}
+                  className="h-7 px-2.5 text-xs gap-1"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>{t("myFlights.paginationPrevious", "Anterior")}</span>
+                </Button>
+                <span className="font-mono text-xs text-muted-foreground px-1">
+                  {t("myFlights.paginationPageOf", {
+                    page,
+                    lastPage,
+                    defaultValue: `Página ${page} de ${lastPage}`,
+                  })}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+                  disabled={page >= lastPage || loading}
+                  className="h-7 px-2.5 text-xs gap-1"
+                >
+                  <span>{t("myFlights.paginationNext", "Próximo")}</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
       </Card>
     </div>
   );
 }
+
+const noopSelectFlight = () => {};
 
 /**
  * Dedicated Full-Page View for a specific flight, covering the entire tab area.
@@ -691,7 +779,7 @@ function FlightDetailView({
           <FlightsMap
             flights={[flight]}
             selectedFlightId={flight.id}
-            onSelectFlight={() => {}}
+            onSelectFlight={noopSelectFlight}
             className="h-full w-full"
             overlayContent={
               <div className="flex flex-wrap items-center gap-2">
@@ -732,10 +820,18 @@ function FlightDetailView({
                 {t("myFlights.touchdownRate", "Toque na Pista")}
               </span>
               <p className="text-lg font-bold font-mono text-emerald-400 mt-1">
-                {Math.round(flight.landing_rate_fpm)} ft/min
+                {flight.landing_rate_fpm && flight.landing_rate_fpm !== 0
+                  ? `${Math.round(flight.landing_rate_fpm)} ft/min`
+                  : "—"}
               </p>
               <span className="text-[10px] text-muted-foreground">
-                {Math.abs(flight.landing_rate_fpm) <= 180 ? t("myFlights.butterLanding", "Toque Suave (Butter)") : t("myFlights.normalLanding", "Toque Operacional")}
+                {flight.landing_rate_fpm && flight.landing_rate_fpm !== 0 ? (
+                  Math.abs(flight.landing_rate_fpm) <= 180
+                    ? t("myFlights.butterLanding", "Toque Suave (Butter)")
+                    : t("myFlights.normalLanding", "Toque Operacional")
+                ) : (
+                  "—"
+                )}
               </span>
             </Card>
 
@@ -746,10 +842,14 @@ function FlightDetailView({
                 {t("myFlights.totalFlownDistance", "Distância Total")}
               </span>
               <p className="text-lg font-bold font-mono text-foreground mt-1">
-                {Math.round(flight.distance_nm)} NM
+                {flight.distance_nm && flight.distance_nm > 0
+                  ? `${Math.round(flight.distance_nm)} NM`
+                  : "—"}
               </p>
               <span className="text-[10px] text-muted-foreground">
-                ~{Math.round(flight.distance_nm * 1.852)} km
+                {flight.distance_nm && flight.distance_nm > 0
+                  ? `~${Math.round(flight.distance_nm * 1.852)} km`
+                  : "—"}
               </span>
             </Card>
 
@@ -760,7 +860,9 @@ function FlightDetailView({
                 {t("myFlights.fuelBurned", "Combustível")}
               </span>
               <p className="text-lg font-bold font-mono text-foreground mt-1">
-                {Math.round(flight.fuel_used_kg).toLocaleString()} kg
+                {flight.fuel_used_kg != null && flight.fuel_used_kg > 0
+                  ? `${Math.round(flight.fuel_used_kg).toLocaleString()} kg`
+                  : "—"}
               </p>
               <span className="text-[10px] text-muted-foreground">{t("myFlights.tripFuel", "Trip Fuel")}</span>
             </Card>
@@ -826,7 +928,7 @@ function FlightDetailView({
                 </span>{" "}
                 ({Math.round(flight.distance_nm)} NM)
               </p>
-              {flight.landing_rate_fpm ? (
+              {flight.landing_rate_fpm && flight.landing_rate_fpm !== 0 ? (
                 <p>
                   {t("myFlights.touchdownRate", "Toque na Pista")}:{" "}
                   <span className="text-emerald-400 font-semibold font-mono">

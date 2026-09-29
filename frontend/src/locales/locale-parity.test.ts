@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
+import fs from "fs";
+import path from "path";
 import en from "./en.json";
 import pt from "./pt.json";
 import es from "./es.json";
 import fr from "./fr.json";
+
+function findDuplicateKeysInJson(jsonText: string): string[] {
+  const keyRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"\s*:/g;
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = keyRegex.exec(jsonText)) !== null) {
+    const key = match[1];
+    if (seen.has(key)) {
+      duplicates.push(key);
+    } else {
+      seen.add(key);
+    }
+  }
+  return duplicates;
+}
 
 describe("Locale Parity", () => {
   const locales = [
@@ -26,8 +44,15 @@ describe("Locale Parity", () => {
   });
 
   it("ensures no duplicate keys in JSON source files", () => {
-    // Verified by JSON parse and structure
-    expect(Object.keys(pt).length).toBeGreaterThan(0);
-    expect(Object.keys(en).length).toBeGreaterThan(0);
+    const files = ["en.json", "pt.json", "es.json", "fr.json"];
+    for (const file of files) {
+      const filePath = path.resolve(__dirname, file);
+      const text = fs.readFileSync(filePath, "utf-8");
+      const duplicates = findDuplicateKeysInJson(text);
+      expect(
+        duplicates,
+        `File ${file} contains duplicate keys: ${duplicates.join(", ")}`
+      ).toEqual([]);
+    }
   });
 });

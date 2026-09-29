@@ -186,11 +186,14 @@ export function FlightsMap({
       observer.observe(containerRef.current);
 
       // Post-mount resize trigger to ensure bounds settle accurately
-      setTimeout(() => {
-        map.invalidateSize();
+      const resizeTimer = setTimeout(() => {
+        if (mapRef.current) {
+          map.invalidateSize();
+        }
       }, 100);
 
       return () => {
+        clearTimeout(resizeTimer);
         observer.disconnect();
         map.remove();
         mapRef.current = null;

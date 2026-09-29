@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -305,7 +306,30 @@ func (a *App) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, erro
 
 	// Fetch pilot profile for overview statistics and user filter
 	pilotProfile, err := a.GetPilot()
-	if err != nil || pilotProfile == nil {
+	if err != nil {
+		var se *domain.StatusError
+		if errors.As(err, &se) {
+			switch se.Status {
+			case 401, 403:
+				return &domain.MyFlightsResponse{
+					Status:  "accessDenied",
+					Flights: []domain.FlightLog{},
+				}, nil
+			case 429:
+				return &domain.MyFlightsResponse{
+					Status:  "rateLimited",
+					Flights: []domain.FlightLog{},
+				}, nil
+			case 404, 405:
+				return &domain.MyFlightsResponse{
+					Status:  "unavailable",
+					Flights: []domain.FlightLog{},
+				}, nil
+			}
+		}
+		return nil, err
+	}
+	if pilotProfile == nil {
 		return &domain.MyFlightsResponse{
 			Status:  "unavailable",
 			Flights: []domain.FlightLog{},
@@ -337,11 +361,24 @@ func (a *App) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, erro
 	}
 	if flightHours, ok := pilotProfile["flight_hours"].(float64); ok {
 		summary.TotalHours = flightHours
+		summary.HasGlobalHours = true
 	} else if hours, ok := pilotProfile["hours"].(float64); ok {
 		summary.TotalHours = hours
+		summary.HasGlobalHours = true
 	}
 	if landingAvg, ok := pilotProfile["landing_rate_avg"].(float64); ok {
 		summary.AvgLandingRate = landingAvg
+		summary.HasGlobalLandingRate = true
+	} else if lRate, ok := pilotProfile["avg_landing_rate"].(float64); ok {
+		summary.AvgLandingRate = lRate
+		summary.HasGlobalLandingRate = true
+	}
+	if dist, ok := pilotProfile["total_distance"].(float64); ok {
+		summary.TotalDistanceNM = dist
+		summary.HasGlobalDistance = true
+	} else if dist, ok := pilotProfile["distance"].(float64); ok {
+		summary.TotalDistanceNM = dist
+		summary.HasGlobalDistance = true
 	}
 	if rankObj, ok := pilotProfile["rank"].(map[string]interface{}); ok {
 		if rName, ok := rankObj["name"].(string); ok {
@@ -432,13 +469,19 @@ func (a *App) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, erro
 				response.Pilot.TotalFlights = len(response.Flights)
 			}
 		}
-		if response.Pilot.TotalHours == 0 && totalFlightMinutes > 0 {
+
+		// Only compute aggregate fallback stats from this page if all of the pilot's flights fit on this page.
+		isCompleteHistory := response.Pilot.TotalFlights <= len(response.Flights)
+
+		if response.Pilot.TotalHours == 0 && totalFlightMinutes > 0 && isCompleteHistory {
 			response.Pilot.TotalHours = math.Round((float64(totalFlightMinutes)/60.0)*10) / 10
 		}
-		if response.Pilot.AvgLandingRate == 0 && validLandingCount > 0 {
+		if response.Pilot.AvgLandingRate == 0 && validLandingCount > 0 && isCompleteHistory {
 			response.Pilot.AvgLandingRate = math.Round(totalLandingRate / float64(validLandingCount))
 		}
-		response.Pilot.TotalDistanceNM = math.Round(totalDistance)
+		if response.Pilot.TotalDistanceNM == 0 && totalDistance > 0 && isCompleteHistory {
+			response.Pilot.TotalDistanceNM = math.Round(totalDistance)
+		}
 	}
 
 	if envelope.Meta.CurrentPage > 0 {

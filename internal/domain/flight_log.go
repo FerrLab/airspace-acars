@@ -47,8 +47,11 @@ type PilotSummaryStats struct {
 	TotalFlights    int     `json:"total_flights"`
 	TotalHours      float64 `json:"total_hours"`
 	AvgLandingRate  float64 `json:"avg_landing_rate"`
-	TotalDistanceNM float64 `json:"total_distance_nm"`
-	Points          int     `json:"points"`
+	TotalDistanceNM      float64 `json:"total_distance_nm"`
+	Points               int     `json:"points"`
+	HasGlobalDistance    bool    `json:"has_global_distance,omitempty"`
+	HasGlobalHours       bool    `json:"has_global_hours,omitempty"`
+	HasGlobalLandingRate bool    `json:"has_global_landing_rate,omitempty"`
 }
 
 // MyFlightsResponse wraps pilot flight history and summary statistics.

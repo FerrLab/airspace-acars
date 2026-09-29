@@ -311,3 +311,110 @@ it("renders error banner with retry button on error status", async () => {
   expect(await screen.findByText(en["myFlights.accessDenied"])).toBeInTheDocument();
   expect(screen.getByText(en["myFlights.retry"])).toBeInTheDocument();
 });
+
+it("handles empty or unknown flight status neutrally without defaulting to approved", async () => {
+  const flightWithEmptyStatus: FlightLog = {
+    ...sampleFlights[0],
+    id: "flt-unknown",
+    callsign: "SXB9999",
+    status: "",
+  };
+
+  vi.spyOn(FlightLogService, "GetMyFlights").mockResolvedValueOnce({
+    status: "ok",
+    pilot: samplePilotStats,
+    flights: [flightWithEmptyStatus],
+    current_page: 1,
+    last_page: 1,
+    total: 1,
+  });
+
+  render(view());
+  expect(await screen.findByText("SXB9999")).toBeInTheDocument();
+
+  // Neutral badge "—" should be rendered, not "Approved"
+  expect(screen.queryByText("Approved")).not.toBeInTheDocument();
+
+  // Clicking "Accepted" filter should exclude this flight
+  const acceptedBtn = screen.getByRole("button", { name: en["myFlights.accepted"] });
+  await act(async () => {
+    fireEvent.click(acceptedBtn);
+  });
+  expect(screen.queryByText("SXB9999")).not.toBeInTheDocument();
+});
+
+it("does not show butter label or 0 ft/min when landing rate is missing or zero", async () => {
+  const zeroLandingFlight: FlightLog = {
+    ...sampleFlights[0],
+    id: "flt-zero-rate",
+    callsign: "SXB0000",
+    landing_rate_fpm: 0,
+  };
+
+  vi.spyOn(FlightLogService, "GetMyFlights").mockResolvedValueOnce({
+    status: "ok",
+    pilot: samplePilotStats,
+    flights: [zeroLandingFlight],
+    current_page: 1,
+    last_page: 1,
+    total: 1,
+  });
+
+  render(view());
+  await screen.findByText("SXB0000");
+
+  const eyeButtons = screen.getAllByTitle(en["myFlights.viewFlightDetails"]);
+  await act(async () => {
+    fireEvent.click(eyeButtons[0]);
+  });
+
+  // Should NOT display "Butter" or "Operational Touchdown"
+  expect(screen.queryByText("Butter Landing")).not.toBeInTheDocument();
+  expect(screen.queryByText("0 ft/min")).not.toBeInTheDocument();
+});
+
+it("renders pagination controls and triggers page change on click", async () => {
+  const getMyFlightsSpy = vi.spyOn(FlightLogService, "GetMyFlights").mockResolvedValue({
+    status: "ok",
+    pilot: samplePilotStats,
+    flights: sampleFlights,
+    current_page: 1,
+    last_page: 3,
+    total: 120,
+  });
+
+  render(view());
+  await screen.findByText("SXB1265");
+
+  expect(screen.getByText("Previous")).toBeInTheDocument();
+  expect(screen.getByText("Next")).toBeInTheDocument();
+  expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+
+  const nextBtn = screen.getByText("Next");
+  await act(async () => {
+    fireEvent.click(nextBtn);
+  });
+
+  expect(getMyFlightsSpy).toHaveBeenCalledWith(2, 50);
+});
+
+it("labels distance as Page Distance when global flag is false and total flights exceed page", async () => {
+  vi.spyOn(FlightLogService, "GetMyFlights").mockResolvedValueOnce({
+    status: "ok",
+    pilot: {
+      ...samplePilotStats,
+      total_flights: 120,
+      has_global_distance: false,
+    } as any,
+    flights: sampleFlights,
+    current_page: 1,
+    last_page: 3,
+    total: 120,
+  });
+
+  render(view());
+  await screen.findByText("SXB1265");
+
+  expect(screen.getByText(en["myFlights.pageDistance"])).toBeInTheDocument();
+  expect(screen.queryByText(en["myFlights.totalDistance"])).not.toBeInTheDocument();
+});

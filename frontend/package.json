@@ -15,12 +15,10 @@
   "dependencies": {
     "@sentry/react": "^10.74.0",
     "@tailwindcss/vite": "^4.2.0",
-    "@types/dompurify": "^3.0.5",
     "@types/leaflet": "^1.9.22",
     "@wailsio/runtime": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dompurify": "^3.4.16",
     "i18next": "^25.8.13",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.575.0",
