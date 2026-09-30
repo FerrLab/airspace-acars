@@ -192,6 +192,38 @@ it("intercepts link clicks inside document content and routes through OpenDocume
   expect(openUrlSpy).toHaveBeenCalledWith("https://airspace.ferrlab.com/sop/b737");
 });
 
+it("renders document HTML in the airspace prose container with its utility classes intact", async () => {
+  const briefing: DocItem = {
+    id: "doc-briefing",
+    title: "SBKP — Campinas",
+    type: "html",
+    is_auto_generated: true,
+    source_type: "airport",
+    content:
+      '<div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 mb-6">' +
+      '<span class="text-[28px] font-bold text-zinc-900 dark:text-white">SBKP</span></div>' +
+      '<div class="h-full bg-blue-500 rounded-sm" style="width: 42%;"></div>',
+    sort_order: 1,
+  };
+  vi.spyOn(DocumentService, "GetDocuments").mockResolvedValue({
+    status: "ok",
+    data: [briefing],
+    current_page: 1,
+    last_page: 1,
+  });
+  vi.spyOn(DocumentService, "GetDocument").mockResolvedValue({ status: "ok", data: briefing });
+
+  render(view());
+
+  const icao = await screen.findByText("SBKP");
+  expect(icao).toHaveClass("text-[28px]", "font-bold", "text-zinc-900", "dark:text-white");
+
+  const container = icao.closest(".document-content");
+  expect(container).not.toBeNull();
+  expect(container).toHaveClass("prose", "prose-sm", "dark:prose-invert", "max-w-none");
+  expect(container!.querySelector('[style*="width: 42%"]')).not.toBeNull();
+});
+
 it("pages through to last_page when multiple pages exist", async () => {
   const page1Doc: DocItem = {
     id: "doc-p1",
