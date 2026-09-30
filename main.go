@@ -90,11 +90,14 @@ func main() {
 	flightSvc := &FlightService{app: appInstance}
 	authSvc := &AuthService{app: appInstance}
 	chatSvc := &ChatService{app: appInstance}
+	notamSvc := &NOTAMService{app: appInstance}
+	documentSvc := &DocumentService{app: appInstance}
 	audioSvc := &AudioService{app: appInstance}
 	settingsSvc := &SettingsService{app: appInstance}
 	updateSvc := &UpdateService{app: appInstance}
 	discordSvc := &DiscordService{app: appInstance}
 	profileSvc := &ProfileService{app: appInstance}
+	flightLogSvc := &FlightLogService{app: appInstance}
 
 	// --- Create Wails application ---
 	wailsApp := application.New(application.Options{
@@ -105,14 +108,20 @@ func main() {
 			application.NewService(flightSvc),
 			application.NewService(authSvc),
 			application.NewService(chatSvc),
+			application.NewService(notamSvc),
+			application.NewService(documentSvc),
 			application.NewService(audioSvc),
 			application.NewService(settingsSvc),
 			application.NewService(updateSvc),
 			application.NewService(discordSvc),
 			application.NewService(profileSvc),
+			application.NewService(flightLogSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
+			// /documents/{id}/pdf streams a library PDF fetched with the
+			// pilot token, so the Documents tab can render it in place.
+			Middleware: appInstance.DocumentPDFMiddleware,
 		},
 		Windows: application.WindowsOptions{
 			DisableQuitOnLastWindowClosed: true,

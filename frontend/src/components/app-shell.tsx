@@ -3,6 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Sidebar, type Tab } from "@/components/sidebar";
 import { AcarsTab } from "@/components/acars-tab";
 import { ChatTab } from "@/components/chat-tab";
+import { NotamsTab } from "@/components/notams-tab";
+import { DocumentsTab } from "@/components/documents-tab";
+import { FlightClocks } from "@/components/flight-clocks";
+import { MyFlightsTab } from "@/components/my-flights-tab";
 import { DebugTab } from "@/components/debug-tab";
 import { SettingsTab } from "@/components/settings-tab";
 import { useUnreadChat } from "@/hooks/use-unread-chat";
@@ -12,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, LogOut } from "lucide-react";
 import { SettingsService, FlightService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
+import { getStoredVolumePercent } from "@/lib/notification-sounds";
+import { hydrateAudioOutputDevice } from "@/lib/audio-manager";
 
 export function AppShell() {
   const { t } = useTranslation();
@@ -21,17 +27,19 @@ export function AppShell() {
   const [showCloseModal, setShowCloseModal] = useState(false);
 
   const [flightState, setFlightState] = useState<"idle" | "active">("idle");
-  const [volume, setVolume] = useState(() => {
-    const stored = localStorage.getItem("acars_volume");
-    return stored ? parseInt(stored, 10) : 25;
-  });
+  const [volume, setVolume] = useState(() => getStoredVolumePercent());
 
   // Sound player lives here so it persists across tab switches
   useSoundPlayer(volume, flightState === "active" && !localMode);
 
   useEffect(() => {
     SettingsService.GetSettings()
-      .then((s) => setLocalMode(s.localMode ?? false))
+      .then((s) => {
+        setLocalMode(s.localMode ?? false);
+        if (s.audioOutputDevice) {
+          hydrateAudioOutputDevice(s.audioOutputDevice);
+        }
+      })
       .catch(() => {});
 
     if (!localMode) {
@@ -52,9 +60,21 @@ export function AppShell() {
     };
   }, [localMode]);
 
+  useEffect(() => {
+    const handleVolumeEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (typeof detail?.volume === "number") {
+        setVolume(detail.volume);
+      }
+    };
+    window.addEventListener("acars-volume-changed", handleVolumeEvent);
+    return () => window.removeEventListener("acars-volume-changed", handleVolumeEvent);
+  }, []);
+
   const handleVolumeChange = (v: number) => {
     setVolume(v);
     localStorage.setItem("acars_volume", String(v));
+    window.dispatchEvent(new CustomEvent("acars-volume-changed", { detail: { volume: v } }));
   };
 
   const handleConfirmCloseApp = async () => {
@@ -70,10 +90,14 @@ export function AppShell() {
   return (
     <div className="flex h-full relative">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} hasUnreadChat={hasUnread} localMode={localMode} />
-      <div className="flex flex-1 flex-col">
-        <main className="flex-1 overflow-y-auto p-6">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <FlightClocks />
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "acars" && <AcarsTab localMode={localMode} volume={volume} onVolumeChange={handleVolumeChange} />}
+          {activeTab === "documents" && <DocumentsTab localMode={localMode} />}
           {activeTab === "chat" && <ChatTab localMode={localMode} />}
+          {activeTab === "notams" && <NotamsTab localMode={localMode} />}
+          {activeTab === "my-flights" && <MyFlightsTab localMode={localMode} />}
           {activeTab === "debug" && <DebugTab />}
           {activeTab === "settings" && <SettingsTab localMode={localMode} onLocalModeChange={setLocalMode} />}
         </main>

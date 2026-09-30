@@ -123,6 +123,22 @@ func (p *UserActionPort) SetToken(token string) {
 
 // --- Chat commands ---
 
+func (p *UserActionPort) GetNOTAMs(page int) (*domain.NOTAMPage, error) {
+	return p.App.GetNOTAMs(page)
+}
+
+func (p *UserActionPort) GetNOTAM(id string) (*domain.NOTAMDetail, error) {
+	return p.App.GetNOTAM(id)
+}
+
+func (p *UserActionPort) GetDocuments(page int, parentID string, search string) (*domain.DocumentPage, error) {
+	return p.App.GetDocuments(page, parentID, search)
+}
+
+func (p *UserActionPort) GetDocument(id string) (*domain.DocumentDetail, error) {
+	return p.App.GetDocument(id)
+}
+
 func (p *UserActionPort) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return p.App.GetMessages(page)
 }

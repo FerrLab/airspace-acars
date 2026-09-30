@@ -42,7 +42,12 @@ const (
 	slotRelease        = 2
 
 	// IMMDeviceEnumerator: ..., EnumAudioEndpoints, GetDefaultAudioEndpoint
+	slotEnumAudioEndpoints      = 3
 	slotGetDefaultAudioEndpoint = 4
+
+	// IMMDeviceCollection: ..., GetCount, Item
+	slotCollectionGetCount = 3
+	slotCollectionItem     = 4
 
 	// IMMDevice: ..., Activate, OpenPropertyStore, GetId, GetState
 	slotActivate = 3
@@ -66,9 +71,10 @@ const (
 )
 
 const (
-	eRender   = 0 // EDataFlow
-	eConsole  = 0 // ERole
-	clsctxAll = 23
+	eRender           = 0 // EDataFlow
+	eConsole          = 0 // ERole
+	deviceStateActive = 0x00000001
+	clsctxAll         = 23
 )
 
 // x/sys/windows binds most of ole32 but not CoCreateInstance, so it is bound
@@ -93,6 +99,63 @@ func release(obj unsafe.Pointer) {
 }
 
 func failed(hr uintptr) bool { return int32(hr) < 0 }
+
+func labelDeviceSessions(device unsafe.Pointer, ours map[uint32]bool, name, icon *uint16) int {
+	var manager unsafe.Pointer
+	if hr := call(device, slotActivate, uintptr(unsafe.Pointer(&iidIAudioSessionManager2)),
+		clsctxAll, 0, uintptr(unsafe.Pointer(&manager))); failed(hr) {
+		return 0
+	}
+	defer release(manager)
+
+	var sessions unsafe.Pointer
+	if hr := call(manager, slotGetSessionEnumerator, uintptr(unsafe.Pointer(&sessions))); failed(hr) {
+		return 0
+	}
+	defer release(sessions)
+
+	var count int32
+	if hr := call(sessions, slotGetCount, uintptr(unsafe.Pointer(&count))); failed(hr) {
+		return 0
+	}
+
+	labelled := 0
+	for i := int32(0); i < count; i++ {
+		var control unsafe.Pointer
+		if hr := call(sessions, slotGetSession, uintptr(i), uintptr(unsafe.Pointer(&control))); failed(hr) {
+			continue
+		}
+
+		// The process id is only reachable through IAudioSessionControl2.
+		var control2 unsafe.Pointer
+		hr := call(control, slotQueryInterface, uintptr(unsafe.Pointer(&iidIAudioSessionControl2)),
+			uintptr(unsafe.Pointer(&control2)))
+		release(control)
+		if failed(hr) {
+			continue
+		}
+
+		var pid uint32
+		if hr := call(control2, slotGetProcessId, uintptr(unsafe.Pointer(&pid))); failed(hr) {
+			release(control2)
+			continue
+		}
+		if !ours[pid] {
+			release(control2)
+			continue
+		}
+
+		if hr := call(control2, slotSetDisplayName, uintptr(unsafe.Pointer(name)), 0); !failed(hr) {
+			labelled++
+		}
+		if icon != nil {
+			call(control2, slotSetIconPath, uintptr(unsafe.Pointer(icon)), 0)
+		}
+		release(control2)
+	}
+
+	return labelled
+}
 
 // Label names every audio session owned by this process or one of its
 // descendants — which is where the webview's session lives. It returns how
@@ -138,76 +201,47 @@ func Label(displayName, iconPath string) (labelled int, err error) {
 	}
 	defer release(enumerator)
 
-	var device unsafe.Pointer
-	if hr := call(enumerator, slotGetDefaultAudioEndpoint, eRender, eConsole,
-		uintptr(unsafe.Pointer(&device))); failed(hr) {
-		// No output device at all: nothing to name, and not a fault.
-		return 0, nil
-	}
-	defer release(device)
-
-	var manager unsafe.Pointer
-	if hr := call(device, slotActivate, uintptr(unsafe.Pointer(&iidIAudioSessionManager2)),
-		clsctxAll, 0, uintptr(unsafe.Pointer(&manager))); failed(hr) {
-		return 0, fmt.Errorf("activate session manager: 0x%08X", uint32(hr))
-	}
-	defer release(manager)
-
-	var sessions unsafe.Pointer
-	if hr := call(manager, slotGetSessionEnumerator, uintptr(unsafe.Pointer(&sessions))); failed(hr) {
-		return 0, fmt.Errorf("session enumerator: 0x%08X", uint32(hr))
-	}
-	defer release(sessions)
-
-	var count int32
-	if hr := call(sessions, slotGetCount, uintptr(unsafe.Pointer(&count))); failed(hr) {
-		return 0, fmt.Errorf("session count: 0x%08X", uint32(hr))
-	}
-
 	name, err := windows.UTF16PtrFromString(displayName)
 	if err != nil {
 		return 0, err
 	}
-	icon, err := windows.UTF16PtrFromString(iconPath)
-	if err != nil {
-		return 0, err
+	var icon *uint16
+	if iconPath != "" {
+		icon, err = windows.UTF16PtrFromString(iconPath)
+		if err != nil {
+			return 0, err
+		}
 	}
 
-	for i := int32(0); i < count; i++ {
-		var control unsafe.Pointer
-		if hr := call(sessions, slotGetSession, uintptr(i), uintptr(unsafe.Pointer(&control))); failed(hr) {
-			continue
+	// Try enumerating all active audio endpoints so that whichever device the pilot
+	// routes ACARS audio to (speakers, headset, virtual audio cable), its audio
+	// session is identified in the Windows Volume Mixer as Airspace ACARS.
+	var collection unsafe.Pointer
+	hr := call(enumerator, slotEnumAudioEndpoints, eRender, deviceStateActive, uintptr(unsafe.Pointer(&collection)))
+	if !failed(hr) && collection != nil {
+		defer release(collection)
+		var deviceCount uint32
+		if hr := call(collection, slotCollectionGetCount, uintptr(unsafe.Pointer(&deviceCount))); !failed(hr) {
+			for i := uint32(0); i < deviceCount; i++ {
+				var dev unsafe.Pointer
+				if hr := call(collection, slotCollectionItem, uintptr(i), uintptr(unsafe.Pointer(&dev))); !failed(hr) && dev != nil {
+					labelled += labelDeviceSessions(dev, ours, name, icon)
+					release(dev)
+				}
+			}
+			return labelled, nil
 		}
-
-		// The process id is only reachable through IAudioSessionControl2.
-		var control2 unsafe.Pointer
-		hr := call(control, slotQueryInterface, uintptr(unsafe.Pointer(&iidIAudioSessionControl2)),
-			uintptr(unsafe.Pointer(&control2)))
-		release(control)
-		if failed(hr) {
-			continue
-		}
-
-		var pid uint32
-		if hr := call(control2, slotGetProcessId, uintptr(unsafe.Pointer(&pid))); failed(hr) {
-			release(control2)
-			continue
-		}
-		if !ours[pid] {
-			release(control2)
-			continue
-		}
-
-		if hr := call(control2, slotSetDisplayName, uintptr(unsafe.Pointer(name)), 0); !failed(hr) {
-			labelled++
-		}
-		if iconPath != "" {
-			call(control2, slotSetIconPath, uintptr(unsafe.Pointer(icon)), 0)
-		}
-		release(control2)
 	}
 
-	return labelled, nil
+	// Fallback to default audio endpoint if collection enumeration is unavailable
+	var device unsafe.Pointer
+	if hr := call(enumerator, slotGetDefaultAudioEndpoint, eRender, eConsole,
+		uintptr(unsafe.Pointer(&device))); failed(hr) {
+		return 0, nil
+	}
+	defer release(device)
+
+	return labelDeviceSessions(device, ours, name, icon), nil
 }
 
 // processTree returns this process and every descendant of it. The webview

@@ -7,10 +7,22 @@ import (
 	"math"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"airspace-acars/internal/domain"
 	"airspace-acars/internal/profiles"
+)
+
+// While X-Plane is not answering, the auto-connect loop opens a fresh adapter
+// every few seconds. These keep the lines that would otherwise repeat on each
+// of them to one apiece.
+var (
+	// listenLogged is the address "listening for X-Plane data" last named.
+	listenLogged atomic.Value
+	// listenFailing is set while opening the listener fails, so the failure
+	// is reported once instead of on every attempt.
+	listenFailing atomic.Bool
 )
 
 var xplaneDatarefs = []string{
@@ -100,7 +112,37 @@ var xplaneDatarefs = []string{
 	"sim/cockpit2/electrical/APU_N1_percent",
 	"sim/cockpit2/electrical/APU_generator_on",
 	"sim/cockpit2/electrical/APU_generator_amps",
+
+	// Landing lights, one switch per light. landing_lights_on above is the
+	// legacy "all landing lights at once" switch, and an aircraft whose lights
+	// have switches of their own (the airliners) leaves it at zero and drives
+	// these instead, so read alone it reported the landing lights off through
+	// every approach. X-Plane supports sixteen. The value is a ratio and not
+	// always 0 or 1: the Zibo 737 writes 2.
+	"sim/cockpit2/switches/landing_lights_switch[0]",
+	"sim/cockpit2/switches/landing_lights_switch[1]",
+	"sim/cockpit2/switches/landing_lights_switch[2]",
+	"sim/cockpit2/switches/landing_lights_switch[3]",
+	"sim/cockpit2/switches/landing_lights_switch[4]",
+	"sim/cockpit2/switches/landing_lights_switch[5]",
+	"sim/cockpit2/switches/landing_lights_switch[6]",
+	"sim/cockpit2/switches/landing_lights_switch[7]",
+	"sim/cockpit2/switches/landing_lights_switch[8]",
+	"sim/cockpit2/switches/landing_lights_switch[9]",
+	"sim/cockpit2/switches/landing_lights_switch[10]",
+	"sim/cockpit2/switches/landing_lights_switch[11]",
+	"sim/cockpit2/switches/landing_lights_switch[12]",
+	"sim/cockpit2/switches/landing_lights_switch[13]",
+	"sim/cockpit2/switches/landing_lights_switch[14]",
+	"sim/cockpit2/switches/landing_lights_switch[15]",
 }
+
+// The per-light landing light switches occupy a contiguous run of the table,
+// so applyDefaultRef handles them by range rather than one case apiece.
+const (
+	landingSwitchIndexBase = 81
+	landingLightCount      = 16
+)
 
 // Adapter is the X-Plane UDP adapter using the RREF protocol.
 type Adapter struct {
@@ -117,12 +159,20 @@ type Adapter struct {
 	// datarefs (see profile.go).
 	icaoChars    [icaoChars]byte
 	descripChars [descripChars]byte
+	uiNameChars  [uiNameChars]byte
+	authorChars  [authorChars]byte
 
 	// Active aircraft profile and the extra dataref readings it needs.
 	plan        *profiles.Plan
 	extraByIdx  map[int]string
 	extraValues map[string]float64
 	extraRefs   []subscribedRef
+	unproven    map[string]bool
+
+	// The landing light switches as last read: the legacy master and one per
+	// light. Lights.Landing is on when any of them is (see landingLightsOn).
+	landingMaster   bool
+	landingSwitches [landingLightCount]bool
 }
 
 // NewAdapter creates a new X-Plane adapter.
@@ -172,7 +222,9 @@ func (x *Adapter) Connect() error {
 	// until something answers. Saying connected here read as success in logs
 	// from pilots whose simulator was never running. The caller waits for
 	// data and reports on that; this line only claims what it did.
-	slog.Info("listening for X-Plane data", "addr", addr.String(), "datarefs", len(xplaneDatarefs))
+	if prev, _ := listenLogged.Swap(addr.String()).(string); prev != addr.String() {
+		slog.Info("listening for X-Plane data", "addr", addr.String(), "datarefs", len(xplaneDatarefs))
+	}
 	return nil
 }
 
@@ -245,9 +297,12 @@ func (x *Adapter) listenLoop() {
 	localAddr := x.conn.LocalAddr().(*net.UDPAddr)
 	listener, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
-		slog.Error("failed to listen for X-Plane responses", "error", err)
+		if !listenFailing.Swap(true) {
+			slog.Error("failed to listen for X-Plane responses", "error", err)
+		}
 		return
 	}
+	listenFailing.Store(false)
 	defer listener.Close()
 
 	listener.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -289,6 +344,12 @@ func (x *Adapter) listenLoop() {
 // applyDefaultRef stores a reading from the adapter's built-in dataref table.
 // Callers hold x.mu.
 func (x *Adapter) applyDefaultRef(idx int, val float64) {
+	if idx >= landingSwitchIndexBase && idx < landingSwitchIndexBase+landingLightCount {
+		x.landingSwitches[idx-landingSwitchIndexBase] = val > 0
+		x.data.Lights.Landing = x.landingLightsOn()
+		return
+	}
+
 	switch idx {
 	case 0:
 		x.data.Position.Latitude = float64(val)
@@ -381,7 +442,8 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 	case 39:
 		x.data.Lights.Strobe = val != 0
 	case 40:
-		x.data.Lights.Landing = val != 0
+		x.landingMaster = val != 0
+		x.data.Lights.Landing = x.landingLightsOn()
 	case 41:
 		x.data.Controls.Elevator = float64(val)
 	case 42:
@@ -482,4 +544,18 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 		// bus, which is what the MSFS simvar of that name reports.
 		x.data.APU.GenActive = float64(val) > 0
 	}
+}
+
+// landingLightsOn reports the landing lights on when the legacy master switch
+// or any per-light switch is. Callers hold x.mu.
+func (x *Adapter) landingLightsOn() bool {
+	if x.landingMaster {
+		return true
+	}
+	for _, on := range x.landingSwitches {
+		if on {
+			return true
+		}
+	}
+	return false
 }

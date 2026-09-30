@@ -10,16 +10,22 @@
 import {
   mockAuthService,
   mockChatService,
+  mockNOTAMService,
+  mockDocumentService,
   mockFlightService,
   mockFlightDataService,
   mockSettingsService,
   mockAudioService,
   mockDiscordService,
+  mockFlightLogService,
   mockUpdateService,
 } from "./wails-bindings";
 
 export const AuthService = mockAuthService();
 export const ChatService = mockChatService();
+export const NOTAMService = mockNOTAMService();
+export const DocumentService = mockDocumentService();
+export const FlightLogService = mockFlightLogService();
 export const FlightService = mockFlightService();
 export const FlightDataService = mockFlightDataService();
 export const SettingsService = mockSettingsService();

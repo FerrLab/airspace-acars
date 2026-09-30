@@ -20,15 +20,15 @@ type FlightDataService struct{ app *app.App }
 func (s *FlightDataService) ConnectSim(simType string) (string, error) {
 	return s.app.ConnectSim(simType)
 }
-func (s *FlightDataService) DisconnectSim()              { s.app.DisconnectSim() }
-func (s *FlightDataService) IsConnected() bool            { return s.app.IsConnected() }
-func (s *FlightDataService) ConnectedAdapter() string     { return s.app.ConnectedAdapter() }
+func (s *FlightDataService) DisconnectSim()           { s.app.DisconnectSim() }
+func (s *FlightDataService) IsConnected() bool        { return s.app.IsConnected() }
+func (s *FlightDataService) ConnectedAdapter() string { return s.app.ConnectedAdapter() }
 func (s *FlightDataService) GetFlightDataNow() (*domain.FlightData, error) {
 	return s.app.GetFlightDataNow()
 }
-func (s *FlightDataService) StartRecording() error        { return s.app.StartRecording() }
-func (s *FlightDataService) StopRecording()               { s.app.StopRecording() }
-func (s *FlightDataService) IsRecording() bool            { return s.app.IsRecording() }
+func (s *FlightDataService) StartRecording() error { return s.app.StartRecording() }
+func (s *FlightDataService) StopRecording()        { s.app.StopRecording() }
+func (s *FlightDataService) IsRecording() bool     { return s.app.IsRecording() }
 func (s *FlightDataService) GetRecordingInfo() map[string]interface{} {
 	return s.app.GetRecordingInfo()
 }
@@ -38,7 +38,7 @@ func (s *FlightDataService) ExportCSV(filePath string) error { return s.app.Expo
 
 type FlightService struct{ app *app.App }
 
-func (s *FlightService) GetFlightState() string            { return s.app.GetFlightState() }
+func (s *FlightService) GetFlightState() string { return s.app.GetFlightState() }
 func (s *FlightService) GetActiveFlightInfo() map[string]string {
 	return s.app.GetActiveFlightInfo()
 }
@@ -56,8 +56,8 @@ func (s *FlightService) QuitApp()            { s.app.QuitFunc() }
 
 type AuthService struct{ app *app.App }
 
-func (s *AuthService) FetchTenants() ([]domain.Tenant, error)    { return s.app.FetchTenants() }
-func (s *AuthService) SelectTenant(d string)                      { s.app.SelectTenant(d) }
+func (s *AuthService) FetchTenants() ([]domain.Tenant, error) { return s.app.FetchTenants() }
+func (s *AuthService) SelectTenant(d string)                  { s.app.SelectTenant(d) }
 func (s *AuthService) RequestDeviceCode() (*domain.DeviceCodeResponse, error) {
 	return s.app.RequestDeviceCode()
 }
@@ -73,6 +73,38 @@ func (s *AuthService) SetToken(token string) { s.app.SetToken(token) }
 
 type ChatService struct{ app *app.App }
 
+// NOTAMService exposes read-only company notices using the selected tenant.
+type NOTAMService struct{ app *app.App }
+
+func (s *NOTAMService) GetNOTAMs(page int) (*domain.NOTAMPage, error) {
+	return s.app.GetNOTAMs(page)
+}
+
+func (s *NOTAMService) GetNOTAM(id string) (*domain.NOTAMDetail, error) {
+	return s.app.GetNOTAM(id)
+}
+
+// DocumentService exposes read-only company documents, manuals, and briefings using the selected tenant.
+type DocumentService struct{ app *app.App }
+
+func (s *DocumentService) GetDocuments(page int, parentID string, search string) (*domain.DocumentPage, error) {
+	return s.app.GetDocuments(page, parentID, search)
+}
+
+func (s *DocumentService) GetDocument(id string) (*domain.DocumentDetail, error) {
+	return s.app.GetDocument(id)
+}
+
+func (s *DocumentService) OpenDocumentURL(rawURL string) error {
+	return s.app.OpenDocumentURL(rawURL)
+}
+
+// FlightLogService exposes read-only pilot flights history and logbook stats.
+type FlightLogService struct{ app *app.App }
+
+func (s *FlightLogService) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, error) {
+	return s.app.GetMyFlights(page, limit)
+}
 func (s *ChatService) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return s.app.GetMessages(page)
 }
@@ -97,7 +129,7 @@ func (s *AudioService) ClearCache() { s.app.ClearCache() }
 
 type SettingsService struct{ app *app.App }
 
-func (s *SettingsService) GetSettings() domain.Settings          { return s.app.GetSettings() }
+func (s *SettingsService) GetSettings() domain.Settings { return s.app.GetSettings() }
 func (s *SettingsService) UpdateSettings(settings domain.Settings) error {
 	return s.app.UpdateSettings(settings)
 }
@@ -106,10 +138,10 @@ func (s *SettingsService) UpdateSettings(settings domain.Settings) error {
 
 type UpdateService struct{ app *app.App }
 
-func (s *UpdateService) GetCurrentVersion() string                    { return s.app.GetCurrentVersion() }
-func (s *UpdateService) CheckForUpdate() (*domain.UpdateInfo, error)  { return s.app.CheckForUpdate() }
-func (s *UpdateService) ApplyUpdate() error                           { return s.app.ApplyUpdate() }
-func (s *UpdateService) TailLogs(n int) ([]string, error)             { return s.app.TailLogs(n) }
+func (s *UpdateService) GetCurrentVersion() string                   { return s.app.GetCurrentVersion() }
+func (s *UpdateService) CheckForUpdate() (*domain.UpdateInfo, error) { return s.app.CheckForUpdate() }
+func (s *UpdateService) ApplyUpdate() error                          { return s.app.ApplyUpdate() }
+func (s *UpdateService) TailLogs(n int) ([]string, error)            { return s.app.TailLogs(n) }
 
 // --- ProfileService: aircraft profiles ---
 

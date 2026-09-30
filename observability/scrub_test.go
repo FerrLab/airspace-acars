@@ -66,8 +66,8 @@ func TestRedactStringLeavesUsefulTextAlone(t *testing.T) {
 
 func TestRedactStringRemovesTheAccountName(t *testing.T) {
 	home := t.TempDir() // stands in for the pilot's profile directory
-	homePaths = append(homePaths, home)
-	t.Cleanup(func() { homePaths = homePaths[:len(homePaths)-1] })
+	homePaths = append([]string{home}, homePaths...)
+	t.Cleanup(func() { homePaths = homePaths[1:] })
 
 	got := redactString("open " + home + "/airspace-acars/settings.json: permission denied")
 	assert.NotContains(t, got, home)

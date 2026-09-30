@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Send, Plane, ChevronDown } from "lucide-react";
 import { ChatService, SettingsService } from "../../bindings/airspace-acars";
-import { generateNotificationSound, type ChatSoundType } from "@/lib/notification-sounds";
+import { generateNotificationSound, getMasterVolume, type ChatSoundType } from "@/lib/notification-sounds";
+import { applyAudioSink, subscribeAudioDeviceChange } from "@/lib/audio-manager";
 
 interface Message {
   id: number;
@@ -77,7 +78,10 @@ function usePingSound(soundType: ChatSoundType) {
 
     const url = URL.createObjectURL(blob);
     urlRef.current = url;
-    audioRef.current = new Audio(url);
+    const audio = new Audio(url);
+    audio.volume = getMasterVolume();
+    applyAudioSink(audio);
+    audioRef.current = audio;
 
     return () => {
       if (urlRef.current) {
@@ -87,8 +91,30 @@ function usePingSound(soundType: ChatSoundType) {
     };
   }, [soundType]);
 
+  useEffect(() => {
+    const handleVolume = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (audioRef.current && typeof detail?.volume === "number") {
+        audioRef.current.volume = Math.max(0, Math.min(100, detail.volume)) / 100;
+      }
+    };
+    window.addEventListener("acars-volume-changed", handleVolume);
+    return () => window.removeEventListener("acars-volume-changed", handleVolume);
+  }, []);
+
+  useEffect(() => {
+    return subscribeAudioDeviceChange((newDeviceId) => {
+      if (audioRef.current) {
+        applyAudioSink(audioRef.current, newDeviceId);
+      }
+    });
+  }, []);
+
   return useCallback(() => {
     if (audioRef.current) {
+      const vol = getMasterVolume();
+      audioRef.current.volume = vol;
+      if (vol <= 0) return;
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
     }

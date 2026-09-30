@@ -3,23 +3,45 @@ package xplane
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"airspace-acars/internal/profiles"
 )
 
 // RREF index ranges. The built-in dataref table owns 0..len(xplaneDatarefs);
-// the ranges below sit well above it so the three groups never collide.
+// the ranges below sit well above it so the groups never collide.
 const (
 	icaoIndexBase    = 500 // sim/aircraft/view/acf_ICAO, one index per character
 	descripIndexBase = 520 // sim/aircraft/view/acf_descrip, one index per character
+	uiNameIndexBase  = 600 // sim/aircraft/view/acf_ui_name, one index per character
+	authorIndexBase  = 700 // sim/aircraft/view/acf_author, one index per character
 	extraIndexBase   = 1000
 
 	icaoChars    = 8
 	descripChars = 48
+	// The name is sent as each position's aircraft name, which the server
+	// keeps in a 100-character column: the author, a space and the UI name
+	// together stay inside it.
+	uiNameChars = 64
+	authorChars = 32
 
 	identityFreq = 1  // Hz — the loaded aircraft rarely changes
 	extraFreq    = 15 // Hz — profile overrides feed 1 Hz position reports
 )
+
+// identityString is one string dataref the aircraft identity is read from.
+type identityString struct {
+	dataref string
+	base    int
+	chars   int
+}
+
+var identityStrings = []identityString{
+	{"sim/aircraft/view/acf_ICAO", icaoIndexBase, icaoChars},
+	{"sim/aircraft/view/acf_descrip", descripIndexBase, descripChars},
+	{"sim/aircraft/view/acf_ui_name", uiNameIndexBase, uiNameChars},
+	{"sim/aircraft/view/acf_author", authorIndexBase, authorChars},
+}
 
 // subscribedRef records an extra dataref subscription so it can be cancelled
 // when the plan changes.
@@ -46,7 +68,7 @@ func (x *Adapter) RawIdentity() profiles.Context {
 		}
 	}
 	return profiles.Context{
-		AircraftName: trimIdentity(x.descripChars[:]),
+		AircraftName: x.aircraftName(),
 		AircraftType: trimIdentity(x.icaoChars[:]),
 		Simulator:    profiles.SimXPlane,
 		EngineCount:  engines,
@@ -71,6 +93,7 @@ func (x *Adapter) subscribeExtras(plan *profiles.Plan) error {
 	x.extraByIdx = map[int]string{}
 	x.extraValues = map[string]float64{}
 	x.extraRefs = nil
+	x.unproven = map[string]bool{}
 
 	if plan == nil || x.conn == nil {
 		return nil
@@ -90,6 +113,9 @@ func (x *Adapter) subscribeExtras(plan *profiles.Plan) error {
 		}
 		x.extraByIdx[next] = v.Key
 		x.extraRefs = append(x.extraRefs, subscribedRef{index: next, dataref: v.Name})
+		if !strings.HasPrefix(v.Name, "sim/") {
+			x.unproven[v.Key] = true
+		}
 		next++
 	}
 
@@ -112,26 +138,60 @@ func (x *Adapter) unsubscribeExtras() {
 	}
 }
 
-// subscribeIdentity requests the aircraft ICAO type and description. X-Plane
-// exposes both as byte arrays, which the RREF protocol can only deliver one
-// element at a time, so each character gets its own low-rate subscription.
-// If a build of X-Plane refuses them the fields simply stay empty.
+// subscribeIdentity requests the aircraft's ICAO type, description, UI name and
+// author. X-Plane exposes them as byte arrays, which the RREF protocol can only
+// deliver one element at a time, so each character gets its own low-rate
+// subscription. If a build of X-Plane refuses one — X-Plane 11 has no UI name —
+// that field simply stays empty.
 func (x *Adapter) subscribeIdentity() {
-	for i := 0; i < icaoChars; i++ {
-		x.subscribeRREF(icaoIndexBase+i, identityFreq, fmt.Sprintf("sim/aircraft/view/acf_ICAO[%d]", i))
-	}
-	for i := 0; i < descripChars; i++ {
-		x.subscribeRREF(descripIndexBase+i, identityFreq, fmt.Sprintf("sim/aircraft/view/acf_descrip[%d]", i))
+	for _, s := range identityStrings {
+		for i := 0; i < s.chars; i++ {
+			x.subscribeRREF(s.base+i, identityFreq, fmt.Sprintf("%s[%d]", s.dataref, i))
+		}
 	}
 }
 
 // unsubscribeIdentity cancels the identity subscriptions. Callers hold x.mu.
 func (x *Adapter) unsubscribeIdentity() {
-	for i := 0; i < icaoChars; i++ {
-		x.subscribeRREF(icaoIndexBase+i, 0, fmt.Sprintf("sim/aircraft/view/acf_ICAO[%d]", i))
+	for _, s := range identityStrings {
+		for i := 0; i < s.chars; i++ {
+			x.subscribeRREF(s.base+i, 0, fmt.Sprintf("%s[%d]", s.dataref, i))
+		}
 	}
-	for i := 0; i < descripChars; i++ {
-		x.subscribeRREF(descripIndexBase+i, 0, fmt.Sprintf("sim/aircraft/view/acf_descrip[%d]", i))
+}
+
+// aircraftName is the name the loaded aircraft is reported and matched under.
+// Callers hold x.mu.
+func (x *Adapter) aircraftName() string {
+	return composeAircraftName(
+		trimIdentity(x.authorChars[:]),
+		trimIdentity(x.uiNameChars[:]),
+		trimIdentity(x.descripChars[:]))
+}
+
+// composeAircraftName builds X-Plane's counterpart of MSFS's TITLE, which names
+// the add-on as well as the aircraft ("Fenix A320 IAE Lufthansa") and is what
+// profile selectors match. X-Plane 12 lists each aircraft under a UI name;
+// X-Plane 11 has only the author's one-line description, such as "A320 with
+// high fidelity system modelling". Neither reliably names the developer, so
+// the author goes in front unless the name already carries it.
+func composeAircraftName(author, uiName, descrip string) string {
+	author = strings.TrimSpace(author)
+	name := strings.TrimSpace(uiName)
+	if name == "" {
+		name = strings.TrimSpace(descrip)
+	}
+
+	words := strings.Fields(author)
+	switch {
+	case len(words) == 0:
+		return name
+	case name == "":
+		return author
+	case strings.Contains(strings.ToLower(name), strings.ToLower(words[0])):
+		return name
+	default:
+		return author + " " + name
 	}
 }
 
@@ -140,15 +200,36 @@ func (x *Adapter) unsubscribeIdentity() {
 func (x *Adapter) handleReading(idx int, val float64) {
 	switch {
 	case idx >= extraIndexBase:
-		if key, ok := x.extraByIdx[idx]; ok {
-			if x.extraValues == nil {
-				x.extraValues = map[string]float64{}
-			}
-			x.extraValues[key] = val
+		key, ok := x.extraByIdx[idx]
+		if !ok {
+			return
 		}
+		// A dataref X-Plane cannot resolve does not fail its subscription: it
+		// reports nothing, or a permanent zero. So, as the SimConnect adapter
+		// does for local variables, an aircraft's own dataref is withheld until
+		// it has been seen non-zero once: until it proves it is real, the data
+		// point keeps what the adapter read by its own route. Stock datarefs
+		// always exist, and their zeros count from the start.
+		if x.unproven[key] {
+			if val == 0 {
+				return
+			}
+			delete(x.unproven, key)
+			slog.Debug("profile dataref is live", "key", key)
+		}
+		if x.extraValues == nil {
+			x.extraValues = map[string]float64{}
+		}
+		x.extraValues[key] = val
+	case idx >= authorIndexBase && idx < authorIndexBase+authorChars:
+		x.authorChars[idx-authorIndexBase] = byteFromReading(val)
+		x.data.AircraftName = x.aircraftName()
+	case idx >= uiNameIndexBase && idx < uiNameIndexBase+uiNameChars:
+		x.uiNameChars[idx-uiNameIndexBase] = byteFromReading(val)
+		x.data.AircraftName = x.aircraftName()
 	case idx >= descripIndexBase && idx < descripIndexBase+descripChars:
 		x.descripChars[idx-descripIndexBase] = byteFromReading(val)
-		x.data.AircraftName = trimIdentity(x.descripChars[:])
+		x.data.AircraftName = x.aircraftName()
 	case idx >= icaoIndexBase && idx < icaoIndexBase+icaoChars:
 		x.icaoChars[idx-icaoIndexBase] = byteFromReading(val)
 		x.data.AircraftType = trimIdentity(x.icaoChars[:])

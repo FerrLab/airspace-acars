@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +114,7 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
@@ -180,7 +182,10 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	// same way. Treating that as an expired session signed the pilot out of a
 	// tenant they had just signed in to, and deleted the stored token on the
 	// way out, so the next attempt needed a fresh code as well.
-	if resp.StatusCode == http.StatusUnauthorized && token != "" {
+	//
+	// A private v1 API may require a different credential. Its rejection does
+	// not invalidate the pilot's ACARS token (e.g. optional company NOTAMs).
+	if resp.StatusCode == http.StatusUnauthorized && token != "" && strings.HasPrefix(path, "/api/v2/acars/") {
 		a.mu.RLock()
 		cb := a.onUnauthorized
 		a.mu.RUnlock()

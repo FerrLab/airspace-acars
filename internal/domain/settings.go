@@ -1,15 +1,15 @@
 package domain
 
 type Settings struct {
-	Theme            string `json:"theme"`
-	SimType          string `json:"simType"`
-	XPlaneHost       string `json:"xplaneHost"`
-	XPlanePort       int    `json:"xplanePort"`
-	APIBaseURL       string `json:"apiBaseURL"`
-	LocalMode        bool   `json:"localMode"`
-	ChatSound        string `json:"chatSound"`
-	DiscordPresence  bool   `json:"discordPresence"`
-	Language         string `json:"language"`
+	Theme               string `json:"theme"`
+	SimType             string `json:"simType"`
+	XPlaneHost          string `json:"xplaneHost"`
+	XPlanePort          int    `json:"xplanePort"`
+	APIBaseURL          string `json:"apiBaseURL"`
+	LocalMode           bool   `json:"localMode"`
+	ChatSound           string `json:"chatSound"`
+	DiscordPresence     bool   `json:"discordPresence"`
+	Language            string `json:"language"`
 	AutoStartFlight     bool   `json:"autoStartFlight"`
 	ConfirmCloseApp     bool   `json:"confirmCloseApp"`
 	ConfirmCancelFlight bool   `json:"confirmCancelFlight"`
@@ -17,7 +17,8 @@ type Settings struct {
 	// AircraftProfile selects the aircraft profile: "auto" matches profiles
 	// against the loaded aircraft, "off" disables them, and any other value
 	// pins that profile ID regardless of its selector.
-	AircraftProfile string `json:"aircraftProfile"`
+	AircraftProfile   string `json:"aircraftProfile"`
+	AudioOutputDevice string `json:"audioOutputDevice"`
 }
 
 func DefaultSettings() Settings {
@@ -35,5 +36,6 @@ func DefaultSettings() Settings {
 		ConfirmCancelFlight: false,
 		ConfirmFinishFlight: false,
 		AircraftProfile:     "auto",
+		AudioOutputDevice:   "default",
 	}
 }

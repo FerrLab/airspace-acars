@@ -60,7 +60,7 @@ attached to reports alongside the counters. A queue depth sampled every tick is
 noise as a breadcrumb but exactly the right context on an error.
 
 ```go
-observability.Count("sim.reconnect_attempts", "adapter", adapterName)
+observability.Count("sim.staleness_detected", "adapter", adapterName)
 observability.Add("position.reports_sent", int64(sent))
 observability.Gauge("position.outbox_depth", float64(count))
 ```

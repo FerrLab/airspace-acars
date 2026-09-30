@@ -321,6 +321,32 @@ func checkDLL64(path string) (bool, error) {
 	return isDLL64Bit(path)
 }
 
+// lastDLL is what the previous connection attempt found: the DLL's path, or
+// none. While the simulator is not answering, the auto-connect loop keeps
+// opening connections and gets the same answer every time, so the answer is
+// logged when it changes. A missing DLL is an error and reported — once,
+// rather than on every attempt.
+var lastDLL struct {
+	sync.Mutex
+	known bool
+	path  string
+}
+
+func noteDLL(path string, err error) {
+	lastDLL.Lock()
+	unchanged := lastDLL.known && lastDLL.path == path
+	lastDLL.known, lastDLL.path = true, path
+	lastDLL.Unlock()
+
+	switch {
+	case unchanged:
+	case err != nil:
+		slog.Error("SimConnect DLL not found", "error", err)
+	default:
+		slog.Info("using SimConnect DLL", "path", path)
+	}
+}
+
 // ensureSimConnectDLL extracts the embedded SimConnect.dll next to the
 // executable if it is missing or does not match the bundled version.
 func ensureSimConnectDLL() {
@@ -419,12 +445,11 @@ func (s *Adapter) run(errCh chan<- error) {
 	}()
 
 	dllPath, err := findSimConnectDLL()
+	noteDLL(dllPath, err)
 	if err != nil {
-		slog.Error("SimConnect DLL not found", "error", err)
 		errCh <- err
 		return
 	}
-	slog.Info("using SimConnect DLL", "path", dllPath)
 
 	sc, err := sim.New("Airspace ACARS", dllPath)
 	if err != nil {
@@ -444,7 +469,10 @@ func (s *Adapter) run(errCh chan<- error) {
 	s.report = report
 	s.mu.Unlock()
 
-	slog.Info("SimConnect connected")
+	// Debug, because the app logs the attempt and its outcome itself, and a
+	// simulator on a loading screen opens fine and then sends nothing: the
+	// auto-connect loop would put this line in the log every few seconds.
+	slog.Debug("SimConnect connected")
 	errCh <- nil // signal success to Connect()
 
 	defineID := sc.GetDefineID(report)

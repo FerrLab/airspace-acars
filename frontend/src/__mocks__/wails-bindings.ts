@@ -1,5 +1,91 @@
 // Factory functions for mocking Wails binding services in tests.
 
+export function mockFlightLogService() {
+  return {
+    GetMyFlights: (_page: number, _limit: number) =>
+      Promise.resolve({
+        status: "ok",
+        pilot: {
+          pilot_id: "1",
+          name: "Captain John Doe",
+          callsign: "GLO101",
+          rank: "Captain",
+          rank_image_url: "",
+          total_flights: 12,
+          total_hours: 48.5,
+          avg_landing_rate: -160,
+          total_distance_nm: 6420,
+          points: 350,
+        },
+        flights: [] as Array<any>,
+        current_page: 1,
+        page: 1,
+        last_page: 1,
+        total: 0,
+      }),
+  };
+}
+
+export function mockNOTAMService() {
+  return {
+    GetNOTAMs: (_page: number) =>
+      Promise.resolve({
+        status: "ok",
+        data: [] as Array<{ id: string; title: string; content: string; created_at: string }>,
+        current_page: 1,
+        last_page: 1,
+      }),
+    GetNOTAM: (_id: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: null as { id: string; title: string; content: string; created_at: string } | null,
+      }),
+  };
+}
+
+export function mockDocumentService() {
+  return {
+    GetDocuments: (_page: number, _parentID: string, _search: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: [] as Array<{
+          id: string;
+          title: string;
+          type: string;
+          parent_id?: string;
+          visibility?: string;
+          is_auto_generated: boolean;
+          source?: string;
+          content?: string;
+          file_url?: string;
+          sort_order: number;
+          created_at?: string;
+          updated_at?: string;
+        }>,
+        current_page: 1,
+        last_page: 1,
+      }),
+    GetDocument: (_id: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: null as {
+          id: string;
+          title: string;
+          type: string;
+          parent_id?: string;
+          visibility?: string;
+          is_auto_generated: boolean;
+          source?: string;
+          content?: string;
+          file_url?: string;
+          sort_order: number;
+          created_at?: string;
+          updated_at?: string;
+        } | null,
+      }),
+    OpenDocumentURL: (_url: string) => Promise.resolve(),
+  };
+}
 export function mockSettingsService() {
   return {
     GetSettings: () =>
@@ -20,6 +106,8 @@ export function mockSettingsService() {
 export function mockFlightService() {
   return {
     GetFlightState: () => Promise.resolve("idle"),
+    GetActiveFlightInfo: () =>
+      Promise.resolve(null as { departure?: string; arrival?: string; callsign?: string } | null),
     GetBooking: () =>
       Promise.resolve({
         id: "bk_test_1",
