@@ -59,7 +59,9 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
     try {
       const defaultLabel = t("settings.audioDeviceDefault", "Padrão do Sistema");
       const unnamedPrefix = t("settings.audioDeviceUnnamed", "Dispositivo de Áudio");
-      const devs = await getAudioOutputDevices(defaultLabel, unnamedPrefix);
+      // An explicit refresh retries the media permission unlock even if it was
+      // denied earlier (e.g. the user just flipped the Windows microphone privacy switch).
+      const devs = await getAudioOutputDevices(defaultLabel, unnamedPrefix, { retryIfDenied: true });
       setAudioDevices(devs);
     } finally {
       setRefreshingAudio(false);
