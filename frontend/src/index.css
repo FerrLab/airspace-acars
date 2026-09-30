@@ -1,8 +1,32 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
+
+/* Utilities used by the server-rendered documents; see the file for why. */
+@source "./lib/document-classes.html";
 
 @custom-variant dark (&:is(.dark *));
+/*
+ * Company documents are rendered from the same HTML as the airspace web app,
+ * inside the same `prose prose-sm dark:prose-invert` container. Airspace maps
+ * the zinc palette to neutral greys in its theme, so the same mapping is
+ * applied here, scoped to the document body, to keep the colours identical.
+ */
+.document-content {
+    --color-zinc-50: #fafafa;
+    --color-zinc-100: #f5f5f5;
+    --color-zinc-200: #e5e5e5;
+    --color-zinc-300: #d4d4d4;
+    --color-zinc-400: #a3a3a3;
+    --color-zinc-500: #737373;
+    --color-zinc-600: #525252;
+    --color-zinc-700: #404040;
+    --color-zinc-800: #262626;
+    --color-zinc-900: #171717;
+    --color-zinc-950: #0a0a0a;
+}
+
 /* Quiet feedback for the flight controls; live readings never animate. */
 .acars-dashboard button {
     transition-property: background-color, color, border-color, transform;

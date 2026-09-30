@@ -362,7 +362,9 @@ function CompanyDocuments({
     };
   }, [pdfDocId]);
 
-  // Safe HTML content
+  // Safe HTML content. The container classes match the airspace document
+  // library (resources/views/livewire/documents/library.blade.php) so a
+  // document reads the same here as on the web.
   const sanitizedHtml = useMemo(
     () => (activeDoc?.content ? sanitizeDocumentHtml(activeDoc.content) : ""),
     [activeDoc?.content]
@@ -665,7 +667,7 @@ function CompanyDocuments({
                   </div>
                 ) : sanitizedHtml ? (
                   <div
-                    className="prose prose-sm dark:prose-invert max-w-none text-foreground leading-relaxed [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-xs [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:p-2 [&_th]:bg-muted/40 [&_td]:border [&_td]:border-border [&_td]:p-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [contain:paint]"
+                    className="document-content prose prose-sm dark:prose-invert max-w-none text-zinc-800 dark:text-zinc-200 [contain:paint]"
                     style={{ contain: "paint" }}
                     onClick={handleContentClick}
                     dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
