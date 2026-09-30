@@ -13,10 +13,13 @@ import DOMPurify from "dompurify";
  * - inline styles preserved but reduced to HTMLPurifier's safe property
  *   list, so no positioning, stacking or visibility tricks survive;
  * - ids and data attributes dropped;
- * - http, https, mailto and tel links, plus data: URIs on images only.
+ * - http and https links, plus data: URIs on images only.
  *
  * On top of the server rules, positioning utilities are also stripped from
- * class attributes so a document can never overlay the rest of the app.
+ * class attributes so a document can never overlay the rest of the app, and
+ * mailto and tel links (which airspace allows) are dropped: links open
+ * through the system browser via OpenDocumentURL, which only takes http and
+ * https, so they would render as links that do nothing.
  */
 
 /** Elements that are never allowed, matching airspace's FORBIDDEN_ELEMENTS. */
@@ -139,7 +142,7 @@ export function sanitizeDocumentHtml(dirty: string): string {
     FORBID_TAGS: FORBIDDEN_TAGS,
     FORBID_ATTR: ["id"],
     ALLOW_DATA_ATTR: false,
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:https?:|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }
 

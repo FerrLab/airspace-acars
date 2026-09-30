@@ -273,6 +273,12 @@ var documentPDFPath = regexp.MustCompile(`^/documents/([0-9]+)/pdf$`)
 // asset server. The upstream route is Bearer-authenticated, so the webview
 // cannot load it directly; this fetches it with the pilot token and streams
 // the bytes back, which lets the tab render the PDF in place.
+//
+// The route has no authentication of its own: it relies on the asset server
+// being the in-process scheme handler that only the app's own webview can
+// reach. Should the app ever be started with Wails server options (headless
+// or dev), the pilot's library would otherwise be readable on a local port,
+// so a request that says it did not come from the app's own page is refused.
 func (a *App) DocumentPDFMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m := documentPDFPath.FindStringSubmatch(r.URL.Path)
@@ -285,8 +291,27 @@ func (a *App) DocumentPDFMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !fromAppPage(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		a.serveDocumentPDF(w, m[1])
 	})
+}
+
+// fromAppPage reports whether the request was made by the app's own page.
+// The tab loads the PDF with fetch(), a same-origin request, so Chromium
+// marks it "same-origin"; a URL typed into a browser is "none" and another
+// site is "cross-site" or "same-site". A webview that does not send the
+// header at all is trusted, as the in-process handler is only reachable
+// from the app.
+func fromAppPage(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) {
+	case "", "same-origin":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) serveDocumentPDF(w http.ResponseWriter, id string) {

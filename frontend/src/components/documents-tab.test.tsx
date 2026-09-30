@@ -192,6 +192,47 @@ it("intercepts link clicks inside document content and routes through OpenDocume
   expect(openUrlSpy).toHaveBeenCalledWith("https://airspace.ferrlab.com/sop/b737");
 });
 
+it("keeps middle clicks and drags on document links from navigating the webview", async () => {
+  const docWithLink: DocItem = {
+    id: "doc-link",
+    title: "Document with Link",
+    type: "html",
+    is_auto_generated: false,
+    content: '<p>See <a href="https://airspace.ferrlab.com/sop/b737">Flight Manual</a> for details.</p>',
+    sort_order: 1,
+  };
+  vi.spyOn(DocumentService, "GetDocuments").mockResolvedValue({
+    status: "ok",
+    data: [docWithLink],
+    current_page: 1,
+    last_page: 1,
+  });
+  vi.spyOn(DocumentService, "GetDocument").mockResolvedValue({
+    status: "ok",
+    data: docWithLink,
+  });
+  const openUrlSpy = vi.spyOn(DocumentService, "OpenDocumentURL").mockResolvedValue();
+
+  render(view());
+
+  const link = await screen.findByRole("link", { name: "Flight Manual" });
+
+  // A middle click would otherwise ask the webview for a new window.
+  const auxClick = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 });
+  await act(async () => {
+    link.dispatchEvent(auxClick);
+  });
+  expect(auxClick.defaultPrevented).toBe(true);
+  expect(openUrlSpy).toHaveBeenCalledWith("https://airspace.ferrlab.com/sop/b737");
+
+  // Dropping a dragged link anywhere on the window navigates it.
+  const dragStart = new Event("dragstart", { bubbles: true, cancelable: true });
+  await act(async () => {
+    link.dispatchEvent(dragStart);
+  });
+  expect(dragStart.defaultPrevented).toBe(true);
+});
+
 it("renders document HTML in the airspace prose container with its utility classes intact", async () => {
   const briefing: DocItem = {
     id: "doc-briefing",

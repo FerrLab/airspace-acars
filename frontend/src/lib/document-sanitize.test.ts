@@ -54,10 +54,12 @@ describe("sanitizeDocumentHtml", () => {
     expect(cleaned).toContain('<img src="valid.png">');
   });
 
-  it("keeps the link schemes airspace allows and drops the rest", () => {
+  it("keeps http and https links and drops every other scheme", () => {
     expect(sanitizeDocumentHtml('<a href="https://airspace.test/sop">SOP</a>')).toContain('href="https://airspace.test/sop"');
-    expect(sanitizeDocumentHtml('<a href="mailto:ops@airspace.test">Ops</a>')).toContain('href="mailto:ops@airspace.test"');
-    expect(sanitizeDocumentHtml('<a href="tel:+551140000000">Tower</a>')).toContain('href="tel:+551140000000"');
+    expect(sanitizeDocumentHtml('<a href="/sop/b737">SOP</a>')).toContain('href="/sop/b737"');
+    // OpenDocumentURL only opens http and https, so these would be dead links.
+    expect(sanitizeDocumentHtml('<a href="mailto:ops@airspace.test">Ops</a>')).toBe("<a>Ops</a>");
+    expect(sanitizeDocumentHtml('<a href="tel:+551140000000">Tower</a>')).toBe("<a>Tower</a>");
     expect(sanitizeDocumentHtml('<a href="vbscript:msgbox(1)">Bad</a>')).not.toContain("vbscript:");
     expect(sanitizeDocumentHtml('<a href="data:text/html,hi">Bad</a>')).not.toContain("data:");
   });

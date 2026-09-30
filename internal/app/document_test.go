@@ -219,3 +219,37 @@ func TestDocumentPDFMiddlewareMapsStatusesAndRejectsNonPDF(t *testing.T) {
 		t.Fatalf("non-PDF body served: %d %v", rec.Code, rec.Header())
 	}
 }
+
+// The route has no auth of its own; it trusts the in-process asset server.
+// A request that declares it came from somewhere other than the app's own
+// page (a browser tab, another site) is refused, and one from a webview that
+// sends no such header is served.
+func TestDocumentPDFMiddlewareRefusesRequestsNotFromTheAppPage(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Fatal("must not fall through") })
+	for _, site := range []string{"none", "cross-site", "same-site"} {
+		api := &documentAPI{stubAPI: stubAPI{status: 200, body: []byte("%PDF-1.4\n")}}
+		a := &App{Airspace: api}
+		req := httptest.NewRequest(http.MethodGet, "/documents/3/pdf", nil)
+		req.Header.Set("Sec-Fetch-Site", site)
+		rec := httptest.NewRecorder()
+		a.DocumentPDFMiddleware(next).ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("Sec-Fetch-Site %q: got %d, want 403", site, rec.Code)
+		}
+		if api.calls != 0 {
+			t.Fatalf("Sec-Fetch-Site %q: upstream was fetched", site)
+		}
+	}
+	for _, site := range []string{"", "same-origin"} {
+		a := &App{Airspace: &documentAPI{stubAPI: stubAPI{status: 200, body: []byte("%PDF-1.4\n")}}}
+		req := httptest.NewRequest(http.MethodGet, "/documents/3/pdf", nil)
+		if site != "" {
+			req.Header.Set("Sec-Fetch-Site", site)
+		}
+		rec := httptest.NewRecorder()
+		a.DocumentPDFMiddleware(next).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Sec-Fetch-Site %q: got %d, want 200", site, rec.Code)
+		}
+	}
+}

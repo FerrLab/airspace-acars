@@ -243,3 +243,45 @@ func TestClearingTheTokenDoesNotCascade(t *testing.T) {
 			"remaining calls are unauthenticated, not expired", fired)
 	}
 }
+
+// Every response is buffered in memory, and a library PDF now takes that
+// path, so an upstream body past the cap is an error rather than a memory
+// exhaustion.
+func TestResponseBodyIsBounded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		chunk := make([]byte, 1<<20)
+		for written := 0; written <= maxResponseBytes; written += len(chunk) {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	a := NewAdapter()
+	a.SetBaseURL(srv.URL)
+
+	if _, _, err := a.DoRequest("GET", "/api/v2/acars/documents/1/pdf", nil); err == nil {
+		t.Fatal("DoRequest accepted a body past maxResponseBytes")
+	}
+	if _, err := a.RawGet(srv.URL + "/big"); err == nil {
+		t.Fatal("RawGet accepted a body past maxResponseBytes")
+	}
+}
+
+func TestResponseBodyUnderTheCapIsReturnedWhole(t *testing.T) {
+	body := make([]byte, 3<<20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	a := NewAdapter()
+	a.SetBaseURL(srv.URL)
+
+	got, status, err := a.DoRequest("GET", "/api/v2/acars/documents/1/pdf", nil)
+	if err != nil || status != http.StatusOK || len(got) != len(body) {
+		t.Fatalf("got %d bytes, status %d, err %v", len(got), status, err)
+	}
+}
