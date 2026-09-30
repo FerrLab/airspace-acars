@@ -370,15 +370,38 @@ function CompanyDocuments({
     [activeDoc?.content]
   );
 
-  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Every way a link inside a document could navigate the webview is
+  // intercepted: a click, a middle or modifier click (auxclick, which would
+  // open a new window) and a drag (dropping a link on the window navigates
+  // it). Links open through OpenDocumentURL in the system browser instead,
+  // so a document can never take the app off-origin.
+  const anchorFromEvent = (e: React.SyntheticEvent<HTMLDivElement>): string | null => {
     const target = e.target as HTMLElement | null;
     const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
-    if (!anchor) return;
+    if (!anchor) return null;
     const href = anchor.getAttribute("href");
-    if (!href) return;
+    if (!href) return null;
+    return href;
+  };
+
+  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const href = anchorFromEvent(e);
+    if (href === null) return;
     if (href.startsWith("#")) return;
     e.preventDefault();
     void DocumentService.OpenDocumentURL(href);
+  };
+
+  const handleContentAuxClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const href = anchorFromEvent(e);
+    if (href === null) return;
+    e.preventDefault();
+    if (href.startsWith("#")) return;
+    void DocumentService.OpenDocumentURL(href);
+  };
+
+  const handleContentDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    if (anchorFromEvent(e) !== null) e.preventDefault();
   };
 
   return (
@@ -670,6 +693,8 @@ function CompanyDocuments({
                     className="document-content prose prose-sm dark:prose-invert max-w-none text-zinc-800 dark:text-zinc-200 [contain:paint]"
                     style={{ contain: "paint" }}
                     onClick={handleContentClick}
+                    onAuxClick={handleContentAuxClick}
+                    onDragStart={handleContentDragStart}
                     dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
                   />
                 ) : (
