@@ -1,9 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -260,4 +263,64 @@ func (a *App) OpenDocumentURL(rawURL string) error {
 	}
 
 	return browser.OpenURL(parsed.String())
+}
+
+// documentPDFPath is the in-app URL the Documents tab loads a PDF from. The
+// id is numeric only, so nothing else can be spliced into the upstream path.
+var documentPDFPath = regexp.MustCompile(`^/documents/([0-9]+)/pdf$`)
+
+// DocumentPDFMiddleware serves a library document's PDF from the app's own
+// asset server. The upstream route is Bearer-authenticated, so the webview
+// cannot load it directly; this fetches it with the pilot token and streams
+// the bytes back, which lets the tab render the PDF in place.
+func (a *App) DocumentPDFMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m := documentPDFPath.FindStringSubmatch(r.URL.Path)
+		if m == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		a.serveDocumentPDF(w, m[1])
+	})
+}
+
+func (a *App) serveDocumentPDF(w http.ResponseWriter, id string) {
+	body, status, err := a.executeRequest(documentsPath + "/" + id + "/pdf")
+	if err != nil {
+		http.Error(w, "document download failed", http.StatusBadGateway)
+		return
+	}
+	switch status {
+	case "ok":
+	case "accessDenied":
+		http.Error(w, "document not available", http.StatusForbidden)
+		return
+	case "unavailable":
+		http.Error(w, "document not found", http.StatusNotFound)
+		return
+	case "rateLimited":
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	default: // localMode, noSession
+		http.Error(w, "no session", http.StatusServiceUnavailable)
+		return
+	}
+	// Never serve an error page or HTML under a PDF content type.
+	if !bytes.HasPrefix(body, []byte("%PDF-")) {
+		http.Error(w, "upstream did not return a PDF", http.StatusBadGateway)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/pdf")
+	h.Set("Content-Disposition", `inline; filename="document-`+id+`.pdf"`)
+	h.Set("Content-Length", strconv.Itoa(len(body)))
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }

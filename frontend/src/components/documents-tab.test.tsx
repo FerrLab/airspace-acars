@@ -282,3 +282,30 @@ it("uses source_type to place generated documents in their category", async () =
   expect(screen.getAllByText("A320 CFM").length).toBeGreaterThan(0);
   expect(screen.queryByText("SBKP")).not.toBeInTheDocument();
 });
+
+it("renders a PDF document in place from the in-app PDF route", async () => {
+  const urlSpy = vi.spyOn(DocumentService, "OpenDocumentURL").mockResolvedValue();
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    blob: () => Promise.resolve(new Blob(["%PDF-1.4"], { type: "application/pdf" })),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const createUrl = vi.fn(() => "blob:mock-pdf");
+  const revokeUrl = vi.fn();
+  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl }));
+
+  render(view());
+  await screen.findAllByText("Airport Briefing SBGR");
+  await act(async () => {
+    fireEvent.click(screen.getByText("Fleet Operations Manual PDF"));
+  });
+
+  const frame = await screen.findByTitle("Fleet Operations Manual PDF");
+  expect(frame.tagName).toBe("IFRAME");
+  expect(frame).toHaveAttribute("src", "blob:mock-pdf");
+  expect(fetchMock).toHaveBeenCalledWith("/documents/doc-4/pdf", expect.objectContaining({ method: "GET" }));
+  // The PDF never leaves the app: nothing is handed to the system browser.
+  expect(urlSpy).not.toHaveBeenCalled();
+  vi.unstubAllGlobals();
+});

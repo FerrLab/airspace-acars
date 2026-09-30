@@ -5,8 +5,6 @@ import {
   BookOpen,
   Calendar,
   ChevronRight,
-  Download,
-  ExternalLink,
   FileText,
   Folder,
   FolderOpen,
@@ -309,12 +307,60 @@ function CompanyDocuments({
       : d.toLocaleDateString(i18n.language, { day: "numeric", month: "short", year: "numeric" });
   };
 
-  const handleOpenDocument = (rawUrl?: string) => {
-    if (!rawUrl) return;
-    DocumentService.OpenDocumentURL(rawUrl).catch((err) => {
-      console.warn("Failed to open document URL:", err);
-    });
-  };
+  // PDFs render in place. The upstream route is Bearer-authenticated, so the
+  // Go side proxies it at /documents/{id}/pdf on the app's own asset server;
+  // the bytes are loaded into a blob URL and shown in an embedded viewer.
+  const isPdfDoc = !!activeDoc && (activeDoc.type === "pdf" || (!!activeDoc.file_url && !activeDoc.content));
+  const pdfDocId = isPdfDoc ? activeDoc!.id : null;
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  useEffect(() => {
+    if (!pdfDocId) {
+      setPdfUrl(null);
+      setPdfError(null);
+      setPdfLoading(false);
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setPdfLoading(true);
+    setPdfError(null);
+    setPdfUrl(null);
+
+    fetch(`/documents/${encodeURIComponent(pdfDocId)}/pdf`, { method: "GET", cache: "no-store" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setPdfError(
+            res.status === 403
+              ? "documents.pdfAccessDenied"
+              : res.status === 404
+                ? "documents.pdfUnavailable"
+                : "documents.pdfError"
+          );
+          return;
+        }
+        const blob = await res.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPdfUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("Failed to load document PDF:", err);
+        setPdfError("documents.pdfError");
+      })
+      .finally(() => {
+        if (!cancelled) setPdfLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [pdfDocId]);
 
   // Safe HTML content
   const sanitizedHtml = useMemo(
@@ -557,20 +603,6 @@ function CompanyDocuments({
                 </div>
 
                 {/* External Actions (PDF, Download, etc.) */}
-                <div className="flex items-center gap-2">
-                  {activeDoc.file_url && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenDocument(activeDoc.file_url)}
-                      className="h-8 gap-1.5 text-xs border-border/80"
-                    >
-                      <Download className="h-3.5 w-3.5 text-primary" />
-                      <span>{t("documents.downloadPdf", "Abrir / Baixar PDF")}</span>
-                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                    </Button>
-                  )}
-                </div>
               </div>
 
               {/* Document Content Body */}
@@ -585,29 +617,28 @@ function CompanyDocuments({
                     <AlertCircle className="mx-auto mb-2 h-6 w-6 text-amber-500" />
                     <p>{t(detailError)}</p>
                   </div>
-                ) : activeDoc.type === "pdf" || (activeDoc.file_url && !activeDoc.content) ? (
-                  <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20">
-                      <FileText className="h-8 w-8" />
+                ) : isPdfDoc ? (
+                  pdfUrl ? (
+                    <iframe
+                      title={activeDoc.title}
+                      src={pdfUrl}
+                      className="h-full min-h-[60vh] w-full rounded-md border border-border/60 bg-white"
+                    />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20">
+                        {pdfLoading ? <Loader2 className="h-8 w-8 animate-spin" /> : <FileText className="h-8 w-8" />}
+                      </div>
+                      <h4 className="text-base font-semibold text-foreground">{activeDoc.title}</h4>
+                      <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                        {pdfLoading
+                          ? t("documents.pdfDownloading", "Carregando PDF…")
+                          : pdfError
+                            ? t(pdfError)
+                            : t("documents.pdfUnavailable", "Este documento não possui PDF disponível.")}
+                      </p>
                     </div>
-                    <h4 className="text-base font-semibold text-foreground">{activeDoc.title}</h4>
-                    <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">
-                      {t(
-                        "documents.pdfDesc",
-                        "Este documento é um arquivo PDF fornecido pela VA. Você pode visualizá-lo ou baixá-lo diretamente."
-                      )}
-                    </p>
-                    {activeDoc.file_url && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleOpenDocument(activeDoc.file_url)}
-                        className="mt-5 gap-2"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        {t("documents.openPdfExternal", "Abrir Documento PDF")}
-                      </Button>
-                    )}
-                  </div>
+                  )
                 ) : activeDoc.type === "folder" ? (
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-foreground">

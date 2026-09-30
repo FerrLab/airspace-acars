@@ -1,6 +1,8 @@
 package app
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 )
@@ -163,3 +165,57 @@ func TestValidateDocumentURL(t *testing.T) {
 	}
 }
 
+func TestDocumentPDFMiddlewareServesUpstreamPDF(t *testing.T) {
+	api := &documentAPI{stubAPI: stubAPI{status: 200, body: []byte("%PDF-1.4\n%fake\n")}}
+	a := &App{Airspace: api}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	h := a.DocumentPDFMiddleware(next)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/documents/3/pdf", nil))
+	if rec.Code != 200 || rec.Body.String() != "%PDF-1.4\n%fake\n" {
+		t.Fatalf("unexpected response: %d %q", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/pdf" {
+		t.Fatalf("content type %q", ct)
+	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("missing hardening headers: %v", rec.Header())
+	}
+	if api.path != "/api/v2/acars/documents/3/pdf" {
+		t.Fatalf("wrong upstream path: %s", api.path)
+	}
+
+	// Anything else on the asset server is passed through untouched.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/documents/3/pdf/../x", nil))
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/index.html", nil))
+	if rec2.Code != http.StatusTeapot {
+		t.Fatalf("non-matching path must reach the asset handler, got %d", rec2.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/documents/3/pdf", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST must be refused, got %d", rec.Code)
+	}
+}
+
+func TestDocumentPDFMiddlewareMapsStatusesAndRejectsNonPDF(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Fatal("must not fall through") })
+	for status, want := range map[int]int{403: 403, 404: 404, 429: 429} {
+		a := &App{Airspace: &documentAPI{stubAPI: stubAPI{status: status, body: []byte("{}")}}}
+		rec := httptest.NewRecorder()
+		a.DocumentPDFMiddleware(next).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/documents/3/pdf", nil))
+		if rec.Code != want {
+			t.Fatalf("upstream %d: got %d", status, rec.Code)
+		}
+	}
+	// An HTML login page must never be served as application/pdf.
+	a := &App{Airspace: &documentAPI{stubAPI: stubAPI{status: 200, body: []byte("<html>login</html>")}}}
+	rec := httptest.NewRecorder()
+	a.DocumentPDFMiddleware(next).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/documents/3/pdf", nil))
+	if rec.Code != http.StatusBadGateway || rec.Header().Get("Content-Type") == "application/pdf" {
+		t.Fatalf("non-PDF body served: %d %v", rec.Code, rec.Header())
+	}
+}
