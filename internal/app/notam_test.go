@@ -28,7 +28,7 @@ func TestNOTAMListPaginationAndQuery(t *testing.T) {
 	}
 	u, _ := url.Parse(api.path)
 	q := u.Query()
-	if u.Path != companyNOTAMPath || q.Get("filter[is_active]") != "1" || q.Get("page") != "2" || q.Get("sort_dir") != "desc" {
+	if u.Path != "/api/v2/acars/notams" || q.Get("filter[is_active]") != "1" || q.Get("page") != "2" || q.Get("sort_dir") != "desc" {
 		t.Fatalf("wrong request: %s", api.path)
 	}
 }

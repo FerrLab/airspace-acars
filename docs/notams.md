@@ -7,8 +7,8 @@ company's notices and pending UI responses.
 
 ## API contract
 
-- List: `GET /api/v1/company-notams?filter[is_active]=1&sort=created_at&sort_dir=desc&per_page=25&page=1`
-- Detail: `GET /api/v1/company-notams/{id}`
+- List: `GET /api/v2/acars/notams?filter[is_active]=1&sort=created_at&sort_dir=desc&per_page=25&page=1`
+- Detail: `GET /api/v2/acars/notams/{id}` (the notice is wrapped in `data`)
 - Pagination: Laravel `data` + `meta.current_page` / `meta.last_page`; flat
   `current_page` / `last_page` is also accepted.
 - IDs may be JSON numbers or strings. Notices use `title`, `created_at`, and
@@ -23,14 +23,15 @@ The field mapping above still needs verification against a real tenant.
 ## Authentication limitation
 
 The [Private API v1](https://airspace.ferrlab.com/manual/es/api/private-api-v1)
-documents an integration API key. Acceptance of the ACARS pilot token is **not
-confirmed**. This client attempts read-only access with its existing pilot
-session and probes known company and ACARS candidate routes (`/api/v1/company-notams`,
-`/api/v2/acars/notams`, `/api/v2/acars/company-notams`). It never embeds an
-administrative API key and halts candidate probing immediately on 401/403 or 429.
+is for integration API keys and is never called by this client. Notices,
+documents and the flight logbook are read only through the ACARS pilot routes
+under `/api/v2/acars/`, which take the pilot's own token and scope every
+response to that pilot and airline server-side. The client never embeds an
+administrative API key.
 
-A 401/403 shows an access message in the tab. It must not trigger ACARS logout:
-the HTTP adapter only treats a 401 from `/api/v2/acars/` as session expiration.
+The server answers 401 only for a missing, invalid or expired token, so a 401
+here signs the pilot out like any other `/api/v2/acars/` route. A 403 means the
+notices are not available to this pilot and shows an access message in the tab.
 A 404/405 indicates unavailable notices, 429 asks the pilot to wait, and network
 or malformed-response failures offer a manual refresh. None is presented as an
 empty successful list.

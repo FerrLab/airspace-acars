@@ -114,6 +114,7 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}

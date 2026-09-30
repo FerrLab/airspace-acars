@@ -119,6 +119,9 @@ func main() {
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
+			// /documents/{id}/pdf streams a library PDF fetched with the
+			// pilot token, so the Documents tab can render it in place.
+			Middleware: appInstance.DocumentPDFMiddleware,
 		},
 		Windows: application.WindowsOptions{
 			DisableQuitOnLastWindowClosed: true,

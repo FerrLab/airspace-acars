@@ -235,3 +235,77 @@ it("pages through to last_page when multiple pages exist", async () => {
   expect(getDocsSpy).toHaveBeenCalledWith(2, "", "");
 });
 
+
+it("uses source_type to place generated documents in their category", async () => {
+  const neutralAirport: DocItem = {
+    id: "doc-st-1",
+    title: "SBKP",
+    type: "html",
+    is_auto_generated: true,
+    source: "Airport briefing",
+    source_type: "airport",
+    content: "<p>Campinas briefing.</p>",
+    sort_order: 1,
+  };
+  const loadProfile: DocItem = {
+    id: "doc-st-2",
+    title: "A320 CFM",
+    type: "html",
+    is_auto_generated: true,
+    source: "Load profile",
+    source_type: "load_profile",
+    content: "<p>Weight and balance envelope.</p>",
+    sort_order: 2,
+  };
+  vi.spyOn(DocumentService, "GetDocuments").mockResolvedValue({
+    status: "ok",
+    data: [neutralAirport, loadProfile],
+    current_page: 1,
+    last_page: 1,
+  });
+  vi.spyOn(DocumentService, "GetDocument").mockImplementation((id: string) =>
+    Promise.resolve({ status: "ok", data: id === "doc-st-1" ? neutralAirport : loadProfile })
+  );
+
+  render(view());
+  await screen.findAllByText("SBKP");
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Airport Briefings/i }));
+  });
+  expect(screen.getAllByText("SBKP").length).toBeGreaterThan(0);
+  expect(screen.queryByText("A320 CFM")).not.toBeInTheDocument();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Load Profiles/i }));
+  });
+  expect(screen.getAllByText("A320 CFM").length).toBeGreaterThan(0);
+  expect(screen.queryByText("SBKP")).not.toBeInTheDocument();
+});
+
+it("renders a PDF document in place from the in-app PDF route", async () => {
+  const urlSpy = vi.spyOn(DocumentService, "OpenDocumentURL").mockResolvedValue();
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    blob: () => Promise.resolve(new Blob(["%PDF-1.4"], { type: "application/pdf" })),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const createUrl = vi.fn(() => "blob:mock-pdf");
+  const revokeUrl = vi.fn();
+  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl }));
+
+  render(view());
+  await screen.findAllByText("Airport Briefing SBGR");
+  await act(async () => {
+    fireEvent.click(screen.getByText("Fleet Operations Manual PDF"));
+  });
+
+  const frame = await screen.findByTitle("Fleet Operations Manual PDF");
+  expect(frame.tagName).toBe("IFRAME");
+  expect(frame).toHaveAttribute("src", "blob:mock-pdf");
+  expect(fetchMock).toHaveBeenCalledWith("/documents/doc-4/pdf", expect.objectContaining({ method: "GET" }));
+  // The PDF never leaves the app: nothing is handed to the system browser.
+  expect(urlSpy).not.toHaveBeenCalled();
+  vi.unstubAllGlobals();
+});
