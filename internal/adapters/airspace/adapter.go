@@ -18,6 +18,24 @@ import (
 // pooled connection to be discarded, short enough that nobody notices.
 const retryDelay = 250 * time.Millisecond
 
+// maxResponseBytes caps how much of a response body is buffered. Every reply
+// is read into memory, and a library PDF is now among them, so an oversized
+// or malicious upstream body must not be able to exhaust the ACARS.
+const maxResponseBytes = 50 << 20
+
+// readBounded reads at most maxResponseBytes from r and reports an error if
+// the body goes past that.
+func readBounded(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxResponseBytes)
+	}
+	return body, nil
+}
+
 // Adapter is the Airspace HTTP API client.
 type Adapter struct {
 	mu             sync.RWMutex
@@ -164,7 +182,7 @@ func (a *Adapter) DoRequest(method, path string, body interface{}) ([]byte, int,
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readBounded(resp.Body)
 	if err != nil {
 		err = fmt.Errorf("read response: %w", err)
 		span.Fail(err)
@@ -205,7 +223,7 @@ func (a *Adapter) RawGet(url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBounded(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}

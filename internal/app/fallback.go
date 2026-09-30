@@ -67,7 +67,10 @@ func (a *App) executeRequest(path string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	slog.Info("executeRequest", "path", path, "status", status)
+	// The query carries what the pilot typed into a search box and their
+	// pilot id; the log is what pilots upload for support, so only the route
+	// is recorded.
+	slog.Info("executeRequest", "path", pathWithoutQuery(path), "status", status)
 	switch status {
 	case 200, 201, 202:
 		return body, "ok", nil
@@ -80,6 +83,15 @@ func (a *App) executeRequest(path string) ([]byte, string, error) {
 	default:
 		return nil, "error", domain.NewStatusError("GET", path, status, body)
 	}
+}
+
+// pathWithoutQuery strips the query string (and any fragment) from a
+// request path.
+func pathWithoutQuery(path string) string {
+	if i := strings.IndexAny(path, "?#"); i >= 0 {
+		return path[:i]
+	}
+	return path
 }
 
 // parseRawID extracts string or numeric ID from JSON raw message.

@@ -113,3 +113,19 @@ func TestParseRawID(t *testing.T) {
 	}
 }
 
+
+// The request log is what pilots upload for support; the query carries
+// their search text and pilot id, so only the route is logged.
+func TestPathWithoutQuery(t *testing.T) {
+	cases := map[string]string{
+		"/api/v2/acars/documents?filter%5Btitle%5D=secret&page=1": "/api/v2/acars/documents",
+		"/api/v2/acars/pilot/flights":                             "/api/v2/acars/pilot/flights",
+		"/api/v2/acars/notams#frag":                               "/api/v2/acars/notams",
+		"":                                                        "",
+	}
+	for in, want := range cases {
+		if got := pathWithoutQuery(in); got != want {
+			t.Errorf("pathWithoutQuery(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
