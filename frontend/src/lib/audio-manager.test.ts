@@ -7,6 +7,7 @@ import {
   getAudioOutputDevices,
   applyAudioSink,
   subscribeAudioDeviceChange,
+  resetMediaPermissionStateForTests,
   AUDIO_DEVICE_STORAGE_KEY,
 } from "./audio-manager";
 
@@ -14,6 +15,7 @@ describe("audio-manager", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    resetMediaPermissionStateForTests();
   });
 
   afterEach(() => {
@@ -109,7 +111,7 @@ describe("audio-manager", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it("enumerates output devices without requesting microphone access", async () => {
+  it("does not request microphone access when output labels are already exposed", async () => {
     const getUserMediaMock = vi.fn();
     const enumerateDevicesMock = vi.fn().mockResolvedValue([
       { deviceId: "default", kind: "audiooutput", label: "Default - Realtek" },
@@ -128,6 +130,84 @@ describe("audio-manager", () => {
     expect(devices).toHaveLength(2);
     expect(devices[1].deviceId).toBe("headset-1");
     expect(devices[1].label).toBe("USB Headset");
+  });
+
+  it("unlocks the full output list with a one-off, stopped media request when Chromium hides it", async () => {
+    // Without media permission Chromium returns a single unnamed output device.
+    const stopMock = vi.fn();
+    const getUserMediaMock = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: stopMock }],
+    });
+    const enumerateDevicesMock = vi
+      .fn()
+      .mockResolvedValueOnce([{ deviceId: "", kind: "audiooutput", label: "" }])
+      .mockResolvedValue([
+        { deviceId: "default", kind: "audiooutput", label: "Default - Realtek" },
+        { deviceId: "communications", kind: "audiooutput", label: "Communications - Realtek" },
+        { deviceId: "headset-1", kind: "audiooutput", label: "USB Headset" },
+        { deviceId: "mic-1", kind: "audioinput", label: "Microphone" },
+      ]);
+
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: getUserMediaMock,
+        enumerateDevices: enumerateDevicesMock,
+      },
+    });
+
+    const devices = await getAudioOutputDevices("System Default");
+    expect(getUserMediaMock).toHaveBeenCalledWith({ audio: true });
+    expect(stopMock).toHaveBeenCalled();
+    expect(enumerateDevicesMock).toHaveBeenCalledTimes(2);
+    expect(devices.map((d) => d.deviceId)).toEqual(["default", "communications", "headset-1"]);
+    expect(devices[2].label).toBe("USB Headset");
+
+    // Once granted, later enumerations already carry labels and never touch the mic again.
+    await getAudioOutputDevices("System Default");
+    expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the default entry and does not retry when the media request is denied", async () => {
+    const getUserMediaMock = vi.fn().mockRejectedValue(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
+    const enumerateDevicesMock = vi
+      .fn()
+      .mockResolvedValue([{ deviceId: "", kind: "audiooutput", label: "" }]);
+
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: getUserMediaMock,
+        enumerateDevices: enumerateDevicesMock,
+      },
+    });
+
+    const devices = await getAudioOutputDevices("System Default");
+    expect(devices).toEqual([{ deviceId: "default", label: "System Default", isDefault: true }]);
+    expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+
+    // Automatic enumerations (dropdown open, mount) do not nag the OS again...
+    await getAudioOutputDevices("System Default");
+    expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+
+    // ...but an explicit refresh retries.
+    await getAudioOutputDevices("System Default", "Audio Output Device", { retryIfDenied: true });
+    expect(getUserMediaMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips the media request when requestPermission is false", async () => {
+    const getUserMediaMock = vi.fn();
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: getUserMediaMock,
+        enumerateDevices: vi.fn().mockResolvedValue([{ deviceId: "", kind: "audiooutput", label: "" }]),
+      },
+    });
+
+    const devices = await getAudioOutputDevices("System Default", "Audio Output Device", {
+      requestPermission: false,
+    });
+    expect(getUserMediaMock).not.toHaveBeenCalled();
+    expect(devices).toHaveLength(1);
+    expect(devices[0].deviceId).toBe("default");
   });
 
   it("hydrates audio output device from backend settings and notifies listeners", () => {

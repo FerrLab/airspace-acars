@@ -92,20 +92,97 @@ export async function selectSystemAudioOutput(): Promise<AudioOutputDeviceInfo |
 }
 
 /**
+ * Whether the media permission unlock (see unlockOutputDeviceEnumeration) has
+ * already been attempted in this session and how it went. A denied attempt is
+ * not retried automatically so a machine with the microphone privacy switch
+ * off does not get hit on every dropdown open.
+ */
+let mediaPermissionState: "unknown" | "granted" | "denied" = "unknown";
+
+/**
+ * Chromium (WebView2 on Windows) only exposes audio output devices and their
+ * labels to an origin that holds media (microphone) permission; without it,
+ * enumerateDevices() returns at most a single unnamed "audiooutput" entry.
+ * This is why the picker looked empty. There is no output-only permission in
+ * Chromium, so the smallest possible microphone request is made once: the
+ * stream is stopped immediately. Wails answers the WebView2 permission
+ * request itself, so no OS prompt is shown.
+ */
+function isEnumerationLocked(outputDevices: MediaDeviceInfo[]): boolean {
+  return outputDevices.length === 0 || outputDevices.some((d) => !d.label?.trim());
+}
+
+async function unlockOutputDeviceEnumeration(retryIfDenied: boolean): Promise<boolean> {
+  if (mediaPermissionState === "granted") return true;
+  if (mediaPermissionState === "denied" && !retryIfDenied) return false;
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return false;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    for (const track of stream.getTracks()) {
+      try {
+        track.stop();
+      } catch {
+        // ignore
+      }
+    }
+    mediaPermissionState = "granted";
+    return true;
+  } catch (err) {
+    mediaPermissionState = "denied";
+    console.debug("[audio-manager] media permission unlock for device enumeration failed:", err);
+    return false;
+  }
+}
+
+/** Test hook: forget the outcome of the media permission unlock. */
+export function resetMediaPermissionStateForTests(): void {
+  mediaPermissionState = "unknown";
+}
+
+export interface GetAudioOutputDevicesOptions {
+  /**
+   * Request media permission when the enumeration comes back locked
+   * (Chromium only reveals output devices to origins holding it). Defaults to true.
+   */
+  requestPermission?: boolean;
+  /**
+   * Retry the permission request even if a previous attempt in this session
+   * was denied. Used by the explicit "refresh devices" action.
+   */
+  retryIfDenied?: boolean;
+}
+
+/**
  * Enumerate all available audio output devices on the operating system.
- * Works seamlessly across Windows (WASAPI / WebView2) and macOS (CoreAudio / WebKit)
- * without requesting microphone hardware access.
+ * Works across Windows (WASAPI / WebView2) and macOS (CoreAudio / WebKit).
+ *
+ * On Chromium the full list is only available once the origin holds media
+ * permission, so a one-off, immediately-stopped microphone request is made
+ * when the first enumeration comes back locked (see unlockOutputDeviceEnumeration).
  */
 export async function getAudioOutputDevices(
   defaultLabel = "System Default",
-  fallbackDeviceLabelPrefix = "Audio Output Device"
+  fallbackDeviceLabelPrefix = "Audio Output Device",
+  options: GetAudioOutputDevicesOptions = {}
 ): Promise<AudioOutputDeviceInfo[]> {
+  const { requestPermission = true, retryIfDenied = false } = options;
   const result: AudioOutputDeviceInfo[] = [];
 
   if (typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const outputDevices = devices.filter((d) => d.kind === "audiooutput");
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      let outputDevices = devices.filter((d) => d.kind === "audiooutput");
+
+      if (requestPermission && isEnumerationLocked(outputDevices)) {
+        const unlocked = await unlockOutputDeviceEnumeration(retryIfDenied);
+        if (unlocked) {
+          devices = await navigator.mediaDevices.enumerateDevices();
+          outputDevices = devices.filter((d) => d.kind === "audiooutput");
+        }
+      }
 
       let unnamedCount = 1;
       for (const d of outputDevices) {
@@ -145,7 +222,6 @@ export async function getAudioOutputDevices(
 
   return result;
 }
-
 
 /**
  * Apply the selected audio output device to an HTMLAudioElement or AudioContext.
