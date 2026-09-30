@@ -132,7 +132,7 @@ describe("audio-manager", () => {
     expect(devices[1].label).toBe("USB Headset");
   });
 
-  it("unlocks the full output list with a one-off, stopped media request when Chromium hides it", async () => {
+  it("unlocks the full output list with a one-off, stopped media request when asked to", async () => {
     // Without media permission Chromium returns a single unnamed output device.
     const stopMock = vi.fn();
     const getUserMediaMock = vi.fn().mockResolvedValue({
@@ -155,7 +155,9 @@ describe("audio-manager", () => {
       },
     });
 
-    const devices = await getAudioOutputDevices("System Default");
+    const devices = await getAudioOutputDevices("System Default", "Audio Output Device", {
+      requestPermission: true,
+    });
     expect(getUserMediaMock).toHaveBeenCalledWith({ audio: true });
     expect(stopMock).toHaveBeenCalled();
     expect(enumerateDevicesMock).toHaveBeenCalledTimes(2);
@@ -180,20 +182,27 @@ describe("audio-manager", () => {
       },
     });
 
-    const devices = await getAudioOutputDevices("System Default");
+    const devices = await getAudioOutputDevices("System Default", "Audio Output Device", {
+      requestPermission: true,
+    });
     expect(devices).toEqual([{ deviceId: "default", label: "System Default", isDefault: true }]);
     expect(getUserMediaMock).toHaveBeenCalledTimes(1);
 
-    // Automatic enumerations (dropdown open, mount) do not nag the OS again...
-    await getAudioOutputDevices("System Default");
+    // A later unlock without retryIfDenied does not nag the OS again...
+    await getAudioOutputDevices("System Default", "Audio Output Device", { requestPermission: true });
     expect(getUserMediaMock).toHaveBeenCalledTimes(1);
 
     // ...but an explicit refresh retries.
-    await getAudioOutputDevices("System Default", "Audio Output Device", { retryIfDenied: true });
+    await getAudioOutputDevices("System Default", "Audio Output Device", {
+      requestPermission: true,
+      retryIfDenied: true,
+    });
     expect(getUserMediaMock).toHaveBeenCalledTimes(2);
   });
 
-  it("skips the media request when requestPermission is false", async () => {
+  it("never touches the microphone unless requestPermission is set, even when the list is locked", async () => {
+    // An automatic enumeration (Settings mount, dropdown open, device plugged
+    // in) must not show up in the OS microphone indicator or privacy log.
     const getUserMediaMock = vi.fn();
     vi.stubGlobal("navigator", {
       mediaDevices: {
@@ -202,12 +211,17 @@ describe("audio-manager", () => {
       },
     });
 
-    const devices = await getAudioOutputDevices("System Default", "Audio Output Device", {
-      requestPermission: false,
-    });
+    let devices = await getAudioOutputDevices("System Default");
     expect(getUserMediaMock).not.toHaveBeenCalled();
     expect(devices).toHaveLength(1);
     expect(devices[0].deviceId).toBe("default");
+
+    devices = await getAudioOutputDevices("System Default", "Audio Output Device", {
+      requestPermission: false,
+      retryIfDenied: true,
+    });
+    expect(getUserMediaMock).not.toHaveBeenCalled();
+    expect(devices).toHaveLength(1);
   });
 
   it("hydrates audio output device from backend settings and notifies listeners", () => {

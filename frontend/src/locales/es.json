@@ -300,6 +300,7 @@
   "settings.audioOutputDeviceDesc": "Seleccione el dispositivo o canal de audio por donde se reproducirán los avisos de cabina y notificaciones.",
   "settings.audioDeviceDefault": "Predeterminado del Sistema",
   "settings.audioDeviceUnnamed": "Dispositivo de Audio",
+  "settings.audioDeviceRefreshHint": "Si la lista solo muestra el predeterminado del sistema, usa el botón de actualizar: Windows solo revela los nombres de los dispositivos tras un permiso de micrófono único, que se detiene de inmediato y nunca se graba.",
   "settings.audioTest": "Probar Audio",
   "settings.audioRefresh": "Actualizar dispositivos",
   "settings.audioVolume": "Volumen General",

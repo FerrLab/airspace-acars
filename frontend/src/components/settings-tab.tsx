@@ -54,19 +54,30 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const [testingAudio, setTestingAudio] = useState(false);
   const [volume, setVolume] = useState(() => getStoredVolumePercent());
 
-  const refreshAudioDevices = useCallback(async () => {
-    setRefreshingAudio(true);
-    try {
-      const defaultLabel = t("settings.audioDeviceDefault", "Padrão do Sistema");
-      const unnamedPrefix = t("settings.audioDeviceUnnamed", "Dispositivo de Áudio");
-      // An explicit refresh retries the media permission unlock even if it was
-      // denied earlier (e.g. the user just flipped the Windows microphone privacy switch).
-      const devs = await getAudioOutputDevices(defaultLabel, unnamedPrefix, { retryIfDenied: true });
-      setAudioDevices(devs);
-    } finally {
-      setRefreshingAudio(false);
-    }
-  }, [t]);
+  // Re-enumerates the output devices. Only the explicit refresh button passes
+  // `unlock`: Chromium reveals device names to an origin holding microphone
+  // permission, so that one action may make a one-off, immediately-stopped
+  // microphone request (and retries it if it was denied earlier, e.g. the
+  // pilot just flipped the Windows microphone privacy switch). Opening the
+  // dropdown or the tab never touches the microphone.
+  const refreshAudioDevices = useCallback(
+    async (unlock = false) => {
+      setRefreshingAudio(true);
+      try {
+        const defaultLabel = t("settings.audioDeviceDefault", "Padrão do Sistema");
+        const unnamedPrefix = t("settings.audioDeviceUnnamed", "Dispositivo de Áudio");
+        const devs = await getAudioOutputDevices(
+          defaultLabel,
+          unnamedPrefix,
+          unlock ? { requestPermission: true, retryIfDenied: true } : {}
+        );
+        setAudioDevices(devs);
+      } finally {
+        setRefreshingAudio(false);
+      }
+    },
+    [t]
+  );
 
   useEffect(() => {
     async function load() {
@@ -338,6 +349,12 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
               <p className="text-xs text-muted-foreground">
                 {t("settings.audioOutputDeviceDesc", "Selecione o canal ou dispositivo por onde o áudio do aplicativo será reproduzido.")}
               </p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "settings.audioDeviceRefreshHint",
+                  "Se a lista mostrar apenas o padrão do sistema, use o botão de atualizar: o Windows só revela os nomes dos dispositivos após uma permissão de microfone única, que é encerrada imediatamente e nunca gravada."
+                )}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Select
@@ -379,7 +396,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
                 variant="outline"
                 size="icon"
                 className="h-9 w-9 shrink-0 text-xs border-border/80"
-                onClick={refreshAudioDevices}
+                onClick={() => refreshAudioDevices(true)}
                 disabled={refreshingAudio}
                 title={t("settings.audioRefresh", "Atualizar dispositivos")}
               >
