@@ -35,6 +35,8 @@ export interface DocItem {
   visibility?: string;
   is_auto_generated: boolean;
   source?: string;
+  /** Stable key for auto-generated documents: airport, load_profile, fdm_profile. */
+  source_type?: string;
   content?: string;
   file_url?: string;
   sort_order: number;
@@ -194,6 +196,7 @@ function CompanyDocuments({
       { id: "briefing", label: t("documents.catBriefings", "Airport Briefings"), icon: Plane },
       { id: "fdm", label: t("documents.catFDM", "FDM Profiles"), icon: ShieldAlert },
       { id: "manuals", label: t("documents.catManuals", "Manuais & SOPs"), icon: BookOpen },
+      { id: "load", label: t("documents.catLoadProfiles", "Perfis de Carga"), icon: FileText },
     ];
   }, [t]);
 
@@ -203,19 +206,29 @@ function CompanyDocuments({
       const titleLower = doc.title.toLowerCase();
       const searchLower = search.toLowerCase().trim();
 
-      // Category matching
+      // Category matching. source_type is the server's stable key for
+      // generated documents; the title and label heuristics cover documents
+      // that were uploaded by hand.
       if (selectedCategory === "briefing") {
         const isBriefing =
+          doc.source_type === "airport" ||
           titleLower.includes("briefing") ||
           titleLower.includes("airport") ||
           doc.source?.toLowerCase().includes("airport");
         if (!isBriefing) return false;
       } else if (selectedCategory === "fdm") {
         const isFDM =
+          doc.source_type === "fdm_profile" ||
           titleLower.includes("fdm") ||
           titleLower.includes("safety") ||
           doc.source?.toLowerCase().includes("fdm");
         if (!isFDM) return false;
+      } else if (selectedCategory === "load") {
+        const isLoad =
+          doc.source_type === "load_profile" ||
+          titleLower.includes("load profile") ||
+          doc.source?.toLowerCase().includes("load");
+        if (!isLoad) return false;
       } else if (selectedCategory === "manuals") {
         const isManual =
           titleLower.includes("sop") ||

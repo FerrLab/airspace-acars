@@ -131,6 +131,7 @@
   "documents.catBriefings": "Airport Briefings",
   "documents.catFDM": "FDM Profiles",
   "documents.catManuals": "Manuales & SOPs",
+  "documents.catLoadProfiles": "Perfiles de Carga",
   "documents.listHeader": "Documentos ({{count}})",
   "documents.loading": "Cargando documentos...",
   "documents.noDocuments": "No se encontraron documentos.",

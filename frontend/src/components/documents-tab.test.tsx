@@ -235,3 +235,50 @@ it("pages through to last_page when multiple pages exist", async () => {
   expect(getDocsSpy).toHaveBeenCalledWith(2, "", "");
 });
 
+
+it("uses source_type to place generated documents in their category", async () => {
+  const neutralAirport: DocItem = {
+    id: "doc-st-1",
+    title: "SBKP",
+    type: "html",
+    is_auto_generated: true,
+    source: "Airport briefing",
+    source_type: "airport",
+    content: "<p>Campinas briefing.</p>",
+    sort_order: 1,
+  };
+  const loadProfile: DocItem = {
+    id: "doc-st-2",
+    title: "A320 CFM",
+    type: "html",
+    is_auto_generated: true,
+    source: "Load profile",
+    source_type: "load_profile",
+    content: "<p>Weight and balance envelope.</p>",
+    sort_order: 2,
+  };
+  vi.spyOn(DocumentService, "GetDocuments").mockResolvedValue({
+    status: "ok",
+    data: [neutralAirport, loadProfile],
+    current_page: 1,
+    last_page: 1,
+  });
+  vi.spyOn(DocumentService, "GetDocument").mockImplementation((id: string) =>
+    Promise.resolve({ status: "ok", data: id === "doc-st-1" ? neutralAirport : loadProfile })
+  );
+
+  render(view());
+  await screen.findAllByText("SBKP");
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Airport Briefings/i }));
+  });
+  expect(screen.getAllByText("SBKP").length).toBeGreaterThan(0);
+  expect(screen.queryByText("A320 CFM")).not.toBeInTheDocument();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Load Profiles/i }));
+  });
+  expect(screen.getAllByText("A320 CFM").length).toBeGreaterThan(0);
+  expect(screen.queryByText("SBKP")).not.toBeInTheDocument();
+});
