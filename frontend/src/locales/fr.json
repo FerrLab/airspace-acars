@@ -300,6 +300,7 @@
   "settings.audioOutputDeviceDesc": "Sélectionnez le périphérique ou la piste audio où les alertes de cabine et notifications seront diffusées.",
   "settings.audioDeviceDefault": "Par Défaut du Système",
   "settings.audioDeviceUnnamed": "Périphérique Audio",
+  "settings.audioDeviceRefreshHint": "Si la liste n'affiche que la sortie par défaut du système, utilisez le bouton d'actualisation : Windows ne révèle les noms des périphériques qu'après une autorisation micro unique, arrêtée immédiatement et jamais enregistrée.",
   "settings.audioTest": "Tester l'Audio",
   "settings.audioRefresh": "Actualiser les périphériques",
   "settings.audioVolume": "Volume Principal",

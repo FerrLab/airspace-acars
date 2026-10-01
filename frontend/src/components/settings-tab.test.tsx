@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
+import { act, fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
@@ -61,6 +61,27 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   localStorage.clear();
+});
+
+it("asks for the microphone unlock only from the explicit refresh button", async () => {
+  render(view());
+
+  // Mount enumerates without touching the microphone.
+  await waitFor(() => expect(audioManager.getAudioOutputDevices).toHaveBeenCalled());
+  for (const call of vi.mocked(audioManager.getAudioOutputDevices).mock.calls) {
+    expect(call[2]?.requestPermission).not.toBe(true);
+  }
+
+  const refresh = screen.getByTitle("Refresh devices");
+  await act(async () => {
+    fireEvent.click(refresh);
+  });
+
+  expect(audioManager.getAudioOutputDevices).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.any(String),
+    { requestPermission: true, retryIfDenied: true }
+  );
 });
 
 it("renders audio device selector, master volume, and test button", async () => {

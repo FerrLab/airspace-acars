@@ -104,9 +104,13 @@ let mediaPermissionState: "unknown" | "granted" | "denied" = "unknown";
  * labels to an origin that holds media (microphone) permission; without it,
  * enumerateDevices() returns at most a single unnamed "audiooutput" entry.
  * This is why the picker looked empty. There is no output-only permission in
- * Chromium, so the smallest possible microphone request is made once: the
- * stream is stopped immediately. Wails answers the WebView2 permission
- * request itself, so no OS prompt is shown.
+ * Chromium, so the smallest possible microphone request is made: the stream
+ * is stopped immediately and the microphone is never read. Wails answers the
+ * WebView2 permission request itself, so no OS prompt is shown; the OS
+ * microphone indicator and privacy log still record the app, which is why
+ * the request is only ever made from the pilot's explicit "refresh devices"
+ * action (see getAudioOutputDevices), never from opening the Settings tab
+ * or the device dropdown.
  */
 function isEnumerationLocked(outputDevices: MediaDeviceInfo[]): boolean {
   return outputDevices.length === 0 || outputDevices.some((d) => !d.label?.trim());
@@ -145,7 +149,8 @@ export function resetMediaPermissionStateForTests(): void {
 export interface GetAudioOutputDevicesOptions {
   /**
    * Request media permission when the enumeration comes back locked
-   * (Chromium only reveals output devices to origins holding it). Defaults to true.
+   * (Chromium only reveals output devices to origins holding it). Defaults to
+   * false: the microphone is touched only on the pilot's explicit request.
    */
   requestPermission?: boolean;
   /**
@@ -160,15 +165,19 @@ export interface GetAudioOutputDevicesOptions {
  * Works across Windows (WASAPI / WebView2) and macOS (CoreAudio / WebKit).
  *
  * On Chromium the full list is only available once the origin holds media
- * permission, so a one-off, immediately-stopped microphone request is made
- * when the first enumeration comes back locked (see unlockOutputDeviceEnumeration).
+ * permission. A one-off, immediately-stopped microphone request unlocks it
+ * (see unlockOutputDeviceEnumeration), but only when the caller opts in with
+ * `requestPermission`, which the Settings tab does for the explicit refresh
+ * button alone. Automatic enumerations (tab mount, dropdown open, a device
+ * being plugged in) never touch the microphone; once permission has been
+ * granted they get the full list anyway.
  */
 export async function getAudioOutputDevices(
   defaultLabel = "System Default",
   fallbackDeviceLabelPrefix = "Audio Output Device",
   options: GetAudioOutputDevicesOptions = {}
 ): Promise<AudioOutputDeviceInfo[]> {
-  const { requestPermission = true, retryIfDenied = false } = options;
+  const { requestPermission = false, retryIfDenied = false } = options;
   const result: AudioOutputDeviceInfo[] = [];
 
   if (typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {

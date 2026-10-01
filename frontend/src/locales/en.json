@@ -300,6 +300,7 @@
   "settings.audioOutputDeviceDesc": "Select the device or audio track where cabin alerts and notifications will play.",
   "settings.audioDeviceDefault": "System Default",
   "settings.audioDeviceUnnamed": "Audio Output Device",
+  "settings.audioDeviceRefreshHint": "If the list only shows the system default, use the refresh button: Windows only reveals device names after a one-off microphone permission, which is stopped immediately and never recorded.",
   "settings.audioTest": "Test Audio",
   "settings.audioRefresh": "Refresh devices",
   "settings.audioVolume": "Master Volume",
