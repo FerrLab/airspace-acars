@@ -21,6 +21,8 @@ is on the ground on a runway or a stand:
 }
 ```
 
+The backend-facing contract is [contracts/2026-10-07-position-runway-stand.md](contracts/2026-10-07-position-runway-stand.md).
+
 Reports queued in the outbox by an older version of the ACARS have neither
 key, so the server must treat a missing key as `null`.
 
