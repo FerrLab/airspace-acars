@@ -94,6 +94,7 @@ export function mockSettingsService() {
         simType: "auto",
         xplaneHost: "127.0.0.1",
         xplanePort: 49000,
+        xplanePath: "",
         apiBaseURL: "https://airspace.ferrlab.com",
         localMode: false,
         chatSound: "default",

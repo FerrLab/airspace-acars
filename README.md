@@ -8,6 +8,7 @@ Built with [Wails v3](https://wails.io) (Go + React).
 
 - **Flight tracking** — Adaptive position reporting with automatic frequency adjustment based on flight phase
 - **Simulator support** — MSFS 2020 (SimConnect) and X-Plane 11/12 (UDP) with auto-detection
+- **Runway and stand** — every position report names the runway (both ends, with position and elevation) or the stand the aircraft is on, read from the simulator's own scenery: the SimConnect Facilities API on MSFS, `apt.dat` and CIFP navdata on X-Plane. See [docs/runway-stand.md](docs/runway-stand.md)
 - **Aircraft profiles** — Per-add-on JSON profiles that re-bind individual data points; 37 aircraft covered (Fenix, FSLabs, PMDG, FlyByWire, iniBuilds, TFDi, Aerosoft, iFly, Zibo, IXEG, FlightFactor and more), refreshed weekly from the community variable database — see [docs/aircraft-profiles.md](docs/aircraft-profiles.md)
 - **Multi-tenant auth** — Connect to multiple virtual airline networks via device code authentication
 - **In-app chat** — Pilot messaging and communication

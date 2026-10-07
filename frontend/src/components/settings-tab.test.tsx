@@ -44,6 +44,7 @@ beforeEach(() => {
     confirmFinishFlight: false,
     aircraftProfile: "auto",
     audioOutputDevice: "default",
+    xplanePath: "",
   } as any);
 
   vi.spyOn(SettingsService, "UpdateSettings").mockResolvedValue();

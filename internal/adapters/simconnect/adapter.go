@@ -56,6 +56,10 @@ type Adapter struct {
 	extraCount     int
 	extraValues    map[string]float64
 	requestSeq     int
+
+	// layoutQueries carries airport lookups to the dispatch loop while a
+	// session is open; nil otherwise. See NearestAirportLayout.
+	layoutQueries chan layoutQuery
 }
 
 type simReport struct {
@@ -78,36 +82,36 @@ type simReport struct {
 	GS          float64 `name:"GROUND VELOCITY" unit:"knots"`
 
 	// Engine 1
-	Eng1Running     float64 `name:"GENERAL ENG COMBUSTION:1" unit:"Bool"`
-	Eng1N1          float64 `name:"TURB ENG N1:1" unit:"Percent"`
-	Eng1N2          float64 `name:"TURB ENG N2:1" unit:"Percent"`
-	Eng1Throttle    float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:1" unit:"Percent"`
-	Eng1Mixture     float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:1" unit:"Percent"`
-	Eng1Prop        float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:1" unit:"Percent"`
+	Eng1Running  float64 `name:"GENERAL ENG COMBUSTION:1" unit:"Bool"`
+	Eng1N1       float64 `name:"TURB ENG N1:1" unit:"Percent"`
+	Eng1N2       float64 `name:"TURB ENG N2:1" unit:"Percent"`
+	Eng1Throttle float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:1" unit:"Percent"`
+	Eng1Mixture  float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:1" unit:"Percent"`
+	Eng1Prop     float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:1" unit:"Percent"`
 
 	// Engine 2
-	Eng2Running     float64 `name:"GENERAL ENG COMBUSTION:2" unit:"Bool"`
-	Eng2N1          float64 `name:"TURB ENG N1:2" unit:"Percent"`
-	Eng2N2          float64 `name:"TURB ENG N2:2" unit:"Percent"`
-	Eng2Throttle    float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:2" unit:"Percent"`
-	Eng2Mixture     float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:2" unit:"Percent"`
-	Eng2Prop        float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:2" unit:"Percent"`
+	Eng2Running  float64 `name:"GENERAL ENG COMBUSTION:2" unit:"Bool"`
+	Eng2N1       float64 `name:"TURB ENG N1:2" unit:"Percent"`
+	Eng2N2       float64 `name:"TURB ENG N2:2" unit:"Percent"`
+	Eng2Throttle float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:2" unit:"Percent"`
+	Eng2Mixture  float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:2" unit:"Percent"`
+	Eng2Prop     float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:2" unit:"Percent"`
 
 	// Engine 3
-	Eng3Running     float64 `name:"GENERAL ENG COMBUSTION:3" unit:"Bool"`
-	Eng3N1          float64 `name:"TURB ENG N1:3" unit:"Percent"`
-	Eng3N2          float64 `name:"TURB ENG N2:3" unit:"Percent"`
-	Eng3Throttle    float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:3" unit:"Percent"`
-	Eng3Mixture     float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:3" unit:"Percent"`
-	Eng3Prop        float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:3" unit:"Percent"`
+	Eng3Running  float64 `name:"GENERAL ENG COMBUSTION:3" unit:"Bool"`
+	Eng3N1       float64 `name:"TURB ENG N1:3" unit:"Percent"`
+	Eng3N2       float64 `name:"TURB ENG N2:3" unit:"Percent"`
+	Eng3Throttle float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:3" unit:"Percent"`
+	Eng3Mixture  float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:3" unit:"Percent"`
+	Eng3Prop     float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:3" unit:"Percent"`
 
 	// Engine 4
-	Eng4Running     float64 `name:"GENERAL ENG COMBUSTION:4" unit:"Bool"`
-	Eng4N1          float64 `name:"TURB ENG N1:4" unit:"Percent"`
-	Eng4N2          float64 `name:"TURB ENG N2:4" unit:"Percent"`
-	Eng4Throttle    float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:4" unit:"Percent"`
-	Eng4Mixture     float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:4" unit:"Percent"`
-	Eng4Prop        float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:4" unit:"Percent"`
+	Eng4Running  float64 `name:"GENERAL ENG COMBUSTION:4" unit:"Bool"`
+	Eng4N1       float64 `name:"TURB ENG N1:4" unit:"Percent"`
+	Eng4N2       float64 `name:"TURB ENG N2:4" unit:"Percent"`
+	Eng4Throttle float64 `name:"GENERAL ENG THROTTLE LEVER POSITION:4" unit:"Percent"`
+	Eng4Mixture  float64 `name:"GENERAL ENG MIXTURE LEVER POSITION:4" unit:"Percent"`
+	Eng4Prop     float64 `name:"GENERAL ENG PROPELLER LEVER POSITION:4" unit:"Percent"`
 
 	// Sensors
 	OnGround         float64 `name:"SIM ON GROUND" unit:"Bool"`
@@ -464,9 +468,13 @@ func (s *Adapter) run(errCh chan<- error) {
 		return
 	}
 
+	lookup := newFacilityLookup(sc)
+	queries := make(chan layoutQuery)
+
 	s.mu.Lock()
 	s.sc = sc
 	s.report = report
+	s.layoutQueries = queries
 	s.mu.Unlock()
 
 	// Debug, because the app logs the attempt and its outcome itself, and a
@@ -494,14 +502,19 @@ func (s *Adapter) run(errCh chan<- error) {
 		s.extraKeys = nil
 		s.unproven = nil
 		s.extraValues = nil
+		s.layoutQueries = nil
 		s.mu.Unlock()
+		lookup.finish(nil, domain.ErrNoAirportData)
 	}()
 
 	for {
 		select {
 		case <-s.stopCh:
 			return
+		case q := <-queries:
+			lookup.start(q)
 		case <-requestTicker.C:
+			lookup.expire(time.Now())
 			s.installPendingPlan(sc)
 			sc.RequestDataOnSimObjectType(0, defineID, 0, sim.SIMOBJECT_TYPE_USER)
 
@@ -519,6 +532,9 @@ func (s *Adapter) run(errCh chan<- error) {
 			}
 
 			recvInfo := *(*sim.Recv)(ppData)
+			if lookup.dispatchFacility(ppData, recvInfo) {
+				continue
+			}
 
 			switch recvInfo.ID {
 			case sim.RECV_ID_SIMOBJECT_DATA_BYTYPE:
@@ -645,8 +661,8 @@ func (s *Adapter) run(errCh chan<- error) {
 						{OpenRatio: r.Door3Open},
 						{OpenRatio: r.Door4Open},
 					},
-					AircraftName:  trimNullBytes(r.AircraftTitle[:]),
-					AircraftType:  trimNullBytes(r.AircraftType[:]),
+					AircraftName: trimNullBytes(r.AircraftTitle[:]),
+					AircraftType: trimNullBytes(r.AircraftType[:]),
 					Weight: domain.WeightData{
 						TotalWeight: r.TotalWeight,
 						FuelWeight:  r.FuelWeight,
