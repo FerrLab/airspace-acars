@@ -56,6 +56,10 @@ type Adapter struct {
 	extraCount     int
 	extraValues    map[string]float64
 	requestSeq     int
+
+	// layoutQueries carries airport lookups to the dispatch loop while a
+	// session is open; nil otherwise. See NearestAirportLayout.
+	layoutQueries chan layoutQuery
 }
 
 type simReport struct {
@@ -464,9 +468,13 @@ func (s *Adapter) run(errCh chan<- error) {
 		return
 	}
 
+	lookup := newFacilityLookup(sc)
+	queries := make(chan layoutQuery)
+
 	s.mu.Lock()
 	s.sc = sc
 	s.report = report
+	s.layoutQueries = queries
 	s.mu.Unlock()
 
 	// Debug, because the app logs the attempt and its outcome itself, and a
@@ -494,14 +502,19 @@ func (s *Adapter) run(errCh chan<- error) {
 		s.extraKeys = nil
 		s.unproven = nil
 		s.extraValues = nil
+		s.layoutQueries = nil
 		s.mu.Unlock()
+		lookup.finish(nil, domain.ErrNoAirportData)
 	}()
 
 	for {
 		select {
 		case <-s.stopCh:
 			return
+		case q := <-queries:
+			lookup.start(q)
 		case <-requestTicker.C:
+			lookup.expire(time.Now())
 			s.installPendingPlan(sc)
 			sc.RequestDataOnSimObjectType(0, defineID, 0, sim.SIMOBJECT_TYPE_USER)
 
@@ -519,6 +532,9 @@ func (s *Adapter) run(errCh chan<- error) {
 			}
 
 			recvInfo := *(*sim.Recv)(ppData)
+			if lookup.dispatchFacility(ppData, recvInfo) {
+				continue
+			}
 
 			switch recvInfo.ID {
 			case sim.RECV_ID_SIMOBJECT_DATA_BYTYPE:

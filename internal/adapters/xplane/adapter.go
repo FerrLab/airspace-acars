@@ -1,6 +1,7 @@
 package xplane
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log/slog"
@@ -173,14 +174,29 @@ type Adapter struct {
 	// light. Lights.Landing is on when any of them is (see landingLightsOn).
 	landingMaster   bool
 	landingSwitches [landingLightCount]bool
+
+	// layouts reads airport layouts from the X-Plane installation; UDP has
+	// no way to ask for them. Nil means none are available.
+	layouts domain.AirportLayoutProvider
 }
 
-// NewAdapter creates a new X-Plane adapter.
-func NewAdapter(host string, port int) domain.SimConnector {
+// NewAdapter creates a new X-Plane adapter. layouts answers airport layout
+// lookups, and may be nil.
+func NewAdapter(host string, port int, layouts domain.AirportLayoutProvider) domain.SimConnector {
 	return &Adapter{
-		host: host,
-		port: port,
+		host:    host,
+		port:    port,
+		layouts: layouts,
 	}
+}
+
+// NearestAirportLayout implements domain.AirportLayoutProvider by handing
+// the lookup to the installation's scenery reader.
+func (x *Adapter) NearestAirportLayout(ctx context.Context, lat, lon float64) (*domain.AirportLayout, error) {
+	if x.layouts == nil {
+		return nil, domain.ErrNoAirportData
+	}
+	return x.layouts.NearestAirportLayout(ctx, lat, lon)
 }
 
 func (x *Adapter) Name() string { return "X-Plane" }

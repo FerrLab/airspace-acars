@@ -177,3 +177,32 @@ This is a new sub-package. It imports only domain.
 - Taxiway names, and runway occupancy while airborne (for example, over the
   threshold at 10 ft).
 - Per-end runway elevation, which neither source provides.
+
+## Changes made during implementation
+
+These differ from the approved design above:
+
+- **Per-end runway elevation on X-Plane.** This comes from CIFP `RWY:`
+  records. A pilot's AIRAC in `Custom Data/CIFP` takes priority over
+  `Resources/default data/CIFP`.
+  - We chose CIFP over GNS430 `Airports.txt` because XP12 no longer ships
+    GNS430 data, while every install has CIFP.
+  - MSFS still reports the runway-centre elevation for both ends.
+- **Finding the X-Plane folder.** The folder comes from the running
+  `X-Plane.exe` process (`/proc` on Linux) instead of
+  `x-plane_install_12.txt`. That file lists every install on the machine,
+  not the one in use.
+- **No Settings UI for `xplanePath`.** It lives in `settings.json`, next to
+  `xplaneHost`/`xplanePort`, which the UI does not show either. As a result
+  there are no new locale strings.
+- **MSFS decoding.** Runways and parking are fetched with two separate
+  facility definitions.
+  - Each row is either the airport (no parent) or one kind of child.
+  - The payload is found from the message size, never from header offsets.
+    The header differs between MSFS 2020 and 2024, and its packing is
+    undocumented.
+- **Choosing the X-Plane airport.** An airport whose runways and stands
+  surround the aircraft wins. Failing that, the nearest reference point
+  within 10 km.
+
+User-facing documentation: `docs/runway-stand.md`.

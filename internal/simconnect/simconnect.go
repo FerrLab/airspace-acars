@@ -16,6 +16,9 @@ var (
 	procGetNextDispatch            *syscall.LazyProc
 	procRequestDataOnSimObjectType *syscall.LazyProc
 	procClearDataDefinition        *syscall.LazyProc
+	procAddToFacilityDefinition    *syscall.LazyProc
+	procRequestFacilityData        *syscall.LazyProc
+	procRequestFacilitiesListEX1   *syscall.LazyProc
 )
 
 // SimConnect wraps a handle to the SimConnect session.
@@ -40,6 +43,9 @@ func New(name string, dllPath string) (*SimConnect, error) {
 		procGetNextDispatch = mod.NewProc("SimConnect_GetNextDispatch")
 		procRequestDataOnSimObjectType = mod.NewProc("SimConnect_RequestDataOnSimObjectType")
 		procClearDataDefinition = mod.NewProc("SimConnect_ClearDataDefinition")
+		procAddToFacilityDefinition = mod.NewProc("SimConnect_AddToFacilityDefinition")
+		procRequestFacilityData = mod.NewProc("SimConnect_RequestFacilityData")
+		procRequestFacilitiesListEX1 = mod.NewProc("SimConnect_RequestFacilitiesList_EX1")
 	}
 
 	s := &SimConnect{
@@ -167,6 +173,57 @@ func (s *SimConnect) RequestDataOnSimObjectType(requestID, defineID, radius, sim
 	r1, _, _ := procRequestDataOnSimObjectType.Call(args...)
 	if int32(r1) < 0 {
 		return hresultError("SimConnect_RequestDataOnSimObjectType", r1)
+	}
+	return nil
+}
+
+// AddToFacilityDefinition appends one field, or an "OPEN X" / "CLOSE X"
+// bracket, to a facility data definition.
+func (s *SimConnect) AddToFacilityDefinition(defineID DWORD, field string) error {
+	if err := procAddToFacilityDefinition.Find(); err != nil {
+		return fmt.Errorf("SimConnect_AddToFacilityDefinition: %w", err)
+	}
+	fieldPtr, _ := syscall.BytePtrFromString(field)
+	r1, _, _ := procAddToFacilityDefinition.Call(
+		uintptr(s.handle),
+		uintptr(defineID),
+		uintptr(unsafe.Pointer(fieldPtr)),
+	)
+	if int32(r1) < 0 {
+		return fmt.Errorf("SimConnect_AddToFacilityDefinition %s: %w", field, hresultError("call", r1))
+	}
+	return nil
+}
+
+// RequestFacilityData asks for the facility with the given ICAO, shaped by a
+// facility definition. The reply is a run of RECV_ID_FACILITY_DATA messages
+// closed by RECV_ID_FACILITY_DATA_END.
+func (s *SimConnect) RequestFacilityData(defineID, requestID DWORD, icao, region string) error {
+	icaoPtr, _ := syscall.BytePtrFromString(icao)
+	regionPtr, _ := syscall.BytePtrFromString(region)
+	r1, _, _ := procRequestFacilityData.Call(
+		uintptr(s.handle),
+		uintptr(defineID),
+		uintptr(requestID),
+		uintptr(unsafe.Pointer(icaoPtr)),
+		uintptr(unsafe.Pointer(regionPtr)),
+	)
+	if int32(r1) < 0 {
+		return hresultError("SimConnect_RequestFacilityData", r1)
+	}
+	return nil
+}
+
+// RequestFacilitiesListEX1 asks for the facilities of one type in the
+// simulator's cache around the user aircraft (the reality bubble).
+func (s *SimConnect) RequestFacilitiesListEX1(listType, requestID DWORD) error {
+	r1, _, _ := procRequestFacilitiesListEX1.Call(
+		uintptr(s.handle),
+		uintptr(listType),
+		uintptr(requestID),
+	)
+	if int32(r1) < 0 {
+		return hresultError("SimConnect_RequestFacilitiesList_EX1", r1)
 	}
 	return nil
 }

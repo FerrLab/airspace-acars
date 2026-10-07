@@ -514,7 +514,7 @@ func m(value interface{}, unit string) measurement {
 	return measurement{Value: value, Unit: unit}
 }
 
-func (a *App) buildPositionReport(fd *domain.FlightData) map[string]interface{} {
+func (a *App) buildPositionReport(fd *domain.FlightData, fix groundFix) map[string]interface{} {
 	a.flightMu.Lock()
 	callsign := a.callsign
 	departure := a.departure
@@ -641,6 +641,8 @@ func (a *App) buildPositionReport(fd *domain.FlightData) map[string]interface{} 
 			"total": m(fd.Weight.TotalWeight, "lbs"),
 			"fuel":  m(fd.Weight.FuelWeight, "lbs"),
 		},
+		"runway": newRunwayReport(fix.Runway),
+		"stand":  newStandReport(fix.Stand),
 	}
 }
 
@@ -689,6 +691,11 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 	uploader := a.startPositionUploader(bookingID)
 	defer uploader.Stop()
 
+	// The locator reads airport layouts on its own goroutine for the same
+	// reason: Observe must stay cheap enough for the 33ms flare tick.
+	locator := a.startGroundLocator()
+	defer locator.Stop()
+
 	for {
 		select {
 		case <-stopCh:
@@ -707,7 +714,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				slog.Warn("high-res collect tick: no data", "error", err)
 				continue
 			}
-			highResQueue = append(highResQueue, a.buildPositionReport(fd))
+			highResQueue = append(highResQueue, a.buildPositionReport(fd, locator.Observe(fd)))
 			observability.Count("position.highres_queued")
 			if len(highResQueue) >= maxHighResReports {
 				// Hand it over rather than start discarding samples. The old
@@ -805,7 +812,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 
 			// The ordinary once-a-tick report, while not in the flare.
 			if !collecting {
-				uploader.Submit([]map[string]interface{}{a.buildPositionReport(fd)})
+				uploader.Submit([]map[string]interface{}{a.buildPositionReport(fd, locator.Observe(fd))})
 			}
 		}
 	}
