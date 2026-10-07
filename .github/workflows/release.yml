@@ -185,6 +185,12 @@ jobs:
             bin/*.rpm
 
   build-macos:
+    # Temporarily skipped for beta (main) builds: Apple notarization is
+    # refusing every submission with "A required agreement is missing or has
+    # expired" (403) until the developer account's agreement is renewed.
+    # Production releases still build, sign and notarize for macOS. Remove
+    # this `if` once notarization works again.
+    if: github.ref_name != 'main'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -396,6 +402,13 @@ jobs:
   release:
     runs-on: windows-latest
     needs: [build, build-linux, build-macos]
+    # A skipped macOS build (beta, see build-macos) must not block the
+    # release; a failed one still does.
+    if: >-
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      needs.build-linux.result == 'success' &&
+      (needs.build-macos.result == 'success' || needs.build-macos.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
 
@@ -412,6 +425,7 @@ jobs:
           path: bin
 
       - name: Download macOS build artifacts
+        if: needs.build-macos.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: build-macos-output
