@@ -138,8 +138,8 @@ the PR.
 ### 4.1 Formatting and vetting
 
 - `gofmt` clean. Run `gofmt -l .` and fix what it lists in files you touched.
-  Some files are already unformatted (`internal/adapters/simconnect/adapter.go`,
-  `internal/domain/flight_data.go`, `internal/profiles/profiles_test.go`,
+  Some files are already unformatted (`internal/domain/flight_data.go`,
+  `internal/profiles/profiles_test.go`,
   `internal/app/fallback_test.go`, `mock_sim_connector_test.go`); format
   them only in a PR that is already changing them, so the diff stays readable.
 - `go vet ./...` clean for the packages you touched.
