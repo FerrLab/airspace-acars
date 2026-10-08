@@ -3,9 +3,14 @@
 package simconnect
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"math"
+	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"airspace-acars/internal/domain"
 	sim "airspace-acars/internal/simconnect"
@@ -106,6 +111,79 @@ func TestAnAirportLookupAssemblesTheNearestAirport(t *testing.T) {
 	if r.layout.ICAO != "EGLL" || len(r.layout.Runways) != 1 || len(r.layout.Stands) != 1 ||
 		r.layout.Runways[0].Ends[0].Designator != "09L" || r.layout.Stands[0].Name != "A12" {
 		t.Fatalf("layout = %+v", r.layout)
+	}
+}
+
+// Messages MSFS 2024 sent for SBRF, byte for byte, on the first airport
+// lookup of a session: the runway reply's airport row, one runway (36/18), its
+// end, then the parking reply's airport row and one stand (gate 9).
+const (
+	sbrfRunwayAirport = "40 00 00 00 06 00 00 00 1c 00 00 00 02 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff ff ff ff ff ff ff ff 00 00 c0 0b b6 40 20 c0 00 00 40 93 1d 76 41 c0 00 00 00 60 b8 9e 20 40"
+	sbrfRunway        = "5c 00 00 00 06 00 00 00 1c 00 00 00 02 00 10 00 01 00 00 00 00 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 40 0b eb 40 20 c0 00 00 00 80 25 76 41 c0 00 00 00 80 6a 3c 21 40 2a e4 aa 43 7d 7a 3b 45 49 8f 2e 42 24 00 00 00 00 00 00 00 12 00 00 00 00 00 00 00"
+	sbrfRunwayEnd     = "10 00 00 00 06 00 00 00 1d 00 00 00 02 00 10 00"
+	sbrfParkAirport   = "40 00 00 00 06 00 00 00 1c 00 00 00 03 00 10 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff ff ff ff ff ff ff ff 00 00 c0 0b b6 40 20 c0 00 00 40 93 1d 76 41 c0 00 00 00 60 b8 9e 20 40"
+	sbrfParking       = "44 00 00 00 06 00 00 00 1c 00 00 00 03 00 10 00 03 00 00 00 02 00 00 00 0f 00 00 00 01 00 00 00 00 00 00 00 29 00 00 00 0a 00 00 00 00 00 00 00 09 00 00 00 05 00 8f 42 00 00 c8 41 73 cd db 43 4f ab 3f c4"
+	sbrfParkingEnd    = "10 00 00 00 06 00 00 00 1d 00 00 00 03 00 10 00"
+)
+
+func fromHex(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(strings.ReplaceAll(s, " ", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// dispatch hands a message to the lookup the way the dispatch loop does, by
+// the type in its own header.
+func dispatch(t *testing.T, f *facilityLookup, msg []byte) {
+	t.Helper()
+	recv := *(*sim.Recv)(unsafe.Pointer(&msg[0]))
+	if !f.dispatchFacility(unsafe.Pointer(&msg[0]), recv) {
+		t.Fatalf("message type %d was not taken as a facility message", recv.ID)
+	}
+}
+
+// Replayed from MSFS 2024 at SBRF gate 7. Two faults hid every runway and
+// stand: the facility rows were waited for under the wrong message types, and
+// on a session's first lookup the airport's own unique ID is 0, so its runways
+// name parent 0 and were read as more airport rows rather than as children.
+func TestTheSimulatorsOwnSBRFRepliesBecomeALayout(t *testing.T) {
+	sc := &fakeFacilities{}
+	f := newFacilityLookup(sc)
+	reply := ask(f, -8.134039, -34.918344)
+
+	list := airportListMsg(6, 0, 1,
+		airportEntry{ICAO: "SDGN", Lat: -8.1318, Lon: -34.9041},
+		airportEntry{ICAO: "SBRF", Lat: -8.1264, Lon: -34.9228})
+	list = append(list, make([]byte, 6+3+facilityLatLonAltSize)...) // the struct's own rgData[1]
+	binary.LittleEndian.PutUint32(list, uint32(len(list)))
+	dispatch(t, f, withRequestID(list, uint32(sc.listReqs[0])))
+	if len(sc.dataICAOs) != 2 || sc.dataICAOs[0] != "SBRF" {
+		t.Fatalf("asked for %v, want SBRF's runways and parking", sc.dataICAOs)
+	}
+	if rw, pk := sc.requestFor(f.runwayDef), sc.requestFor(f.parkingDef); rw != 0x100002 || pk != 0x100003 {
+		t.Fatalf("request IDs %#x and %#x no longer match the captured replies", rw, pk)
+	}
+
+	for _, m := range []string{sbrfRunwayAirport, sbrfRunway, sbrfRunwayEnd, sbrfParkAirport, sbrfParking, sbrfParkingEnd} {
+		dispatch(t, f, fromHex(t, m))
+	}
+
+	r := answered(t, reply)
+	if r.err != nil {
+		t.Fatalf("lookup failed: %v", r.err)
+	}
+	l := r.layout
+	if l.ICAO != "SBRF" || len(l.Runways) != 1 || len(l.Stands) != 1 {
+		t.Fatalf("SBRF read as %d runways and %d stands, want 1 and 1 (%+v)", len(l.Runways), len(l.Stands), l)
+	}
+	if rw := l.Runways[0]; rw.Ends[0].Designator != "36" || rw.Ends[1].Designator != "18" || math.Abs(rw.WidthM-43.64) > 0.01 {
+		t.Errorf("runway read as %s/%s, %.2f m wide; want 36/18, 43.64 m", rw.Ends[0].Designator, rw.Ends[1].Designator, rw.WidthM)
+	}
+	if s := l.Stands[0]; s.Name != "9" || s.RadiusM != 25 {
+		t.Errorf("stand read as %q, radius %v; want gate 9, 25 m", s.Name, s.RadiusM)
 	}
 }
 

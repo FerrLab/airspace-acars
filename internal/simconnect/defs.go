@@ -54,10 +54,11 @@ const (
 	RECV_ID_EVENT_MULTIPLAYER_SESSION_ENDED
 	RECV_ID_EVENT_RACE_END
 	RECV_ID_EVENT_RACE_LAP
-	RECV_ID_PICK
-	RECV_ID_EVENT_EX1
-	RECV_ID_FACILITY_DATA     // 29
-	RECV_ID_FACILITY_DATA_END // 30
+	// The MSFS SDK has no RECV_ID_PICK here, unlike FSX's; listing it put
+	// every ID below one too high. See TestRecvIDsAreTheSimulatorsNumbers.
+	RECV_ID_EVENT_EX1         // 27
+	RECV_ID_FACILITY_DATA     // 28
+	RECV_ID_FACILITY_DATA_END // 29
 )
 
 // FACILITY_LIST_TYPE_AIRPORT selects airports in SimConnect_RequestFacilitiesList_EX1.

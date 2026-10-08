@@ -126,6 +126,11 @@ func messageBytes(msg []byte) ([]byte, error) {
 // decodeAirportList reads one airport list packet. Each entry's size is
 // whatever the message says it is: the ident is a NUL-terminated string at
 // its start, and the coordinates are its last three doubles.
+//
+// The simulator sizes the message as the SIMCONNECT_RECV_AIRPORT_LIST struct,
+// whose rgData[1] already holds one entry, plus every airport, so the body is
+// one entry longer than the airports in it. A body that only divides by the
+// airport count is accepted too, for a simulator that sizes it exactly.
 func decodeAirportList(msg []byte) (airportListPage, error) {
 	msg, err := messageBytes(msg)
 	if err != nil {
@@ -144,10 +149,10 @@ func decodeAirportList(msg []byte) (airportListPage, error) {
 	if count == 0 {
 		return page, nil
 	}
-	if len(body)%count != 0 || len(body)/count <= facilityLatLonAltSize {
+	size := airportEntrySize(len(body), count)
+	if size == 0 {
 		return airportListPage{}, fmt.Errorf("%w: %d bytes for %d airports", errMalformedFacility, len(body), count)
 	}
-	size := len(body) / count
 	for i := 0; i < count; i++ {
 		e := body[i*size : (i+1)*size]
 		at := size - facilityLatLonAltSize
@@ -160,6 +165,20 @@ func decodeAirportList(msg []byte) (airportListPage, error) {
 	return page, nil
 }
 
+// airportEntrySize is the size of one airport in a list body of bodyLen
+// bytes holding count airports, or 0 when no entry size fits. The trailing
+// struct element is tried first: it is what the simulator sends, and with it
+// a one-airport body of two 33-byte entries would otherwise read as a single
+// 66-byte airport whose coordinates are the padding's zeros.
+func airportEntrySize(bodyLen, count int) int {
+	for _, slots := range []int{count + 1, count} {
+		if bodyLen%slots == 0 && bodyLen/slots > facilityLatLonAltSize {
+			return bodyLen / slots
+		}
+	}
+	return 0
+}
+
 func cString(b []byte) string {
 	for i, c := range b {
 		if c == 0 {
@@ -170,17 +189,21 @@ func cString(b []byte) string {
 }
 
 // facilityRow is one SIMCONNECT_RECV_FACILITY_DATA message: the airport
-// itself (no parent) or one of its runways or parking spots.
+// itself or one of its runways or parking spots.
 type facilityRow struct {
 	RequestID uint32
-	IsChild   bool
 	Payload   []byte
 }
 
 // decodeFacilityRow splits a facility data message into its header and the
-// values of the object it carries. childSize is the payload size of the
-// child kind the request asked for.
-func decodeFacilityRow(msg []byte, childSize int) (facilityRow, error) {
+// values of the object it carries, whose payload is size bytes.
+//
+// Which object a row is cannot be read from its header in a way both
+// simulators share: MSFS 2020 has no Type field, and ParentUniqueRequestId is
+// no help because the airport's own unique ID is 0 on a session's first
+// lookup, so its children name parent 0 just as the airport does. The caller
+// knows instead, from the order: a reply sends the airport, then its children.
+func decodeFacilityRow(msg []byte, size int) (facilityRow, error) {
 	msg, err := messageBytes(msg)
 	if err != nil {
 		return facilityRow{}, err
@@ -188,11 +211,7 @@ func decodeFacilityRow(msg []byte, childSize int) (facilityRow, error) {
 	if len(msg) < minFacilityDataHeader {
 		return facilityRow{}, errMalformedFacility
 	}
-	row := facilityRow{RequestID: u32(msg, 12), IsChild: u32(msg, 20) != 0}
-	size := airportPayloadSize
-	if row.IsChild {
-		size = childSize
-	}
+	row := facilityRow{RequestID: u32(msg, 12)}
 	start := len(msg) - size
 	if start < minFacilityDataHeader || start > maxFacilityDataHeader {
 		return facilityRow{}, fmt.Errorf("%w: %d-byte row for a %d-byte payload", errMalformedFacility, len(msg), size)
