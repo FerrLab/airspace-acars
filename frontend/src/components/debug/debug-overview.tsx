@@ -14,9 +14,17 @@ export function DebugOverview({ snapshot, flightData: d, now }: Props) {
   const { t } = useTranslation();
   const g = snapshot?.ground;
 
+  // "No airport" is only an answer once a lookup has given it; before the
+  // first one, or after a failure, nothing is known about airports here.
+  const checked = !!g && !isUnsetTime(g.checkedAt);
   let lookup = t("debug.ground.notLoaded");
   if (g?.lastError) lookup = t("debug.ground.error", { error: g.lastError });
-  else if (g && !isUnsetTime(g.loadedAt)) lookup = t("debug.ground.loadedAgo", { age: secondsSince(g.loadedAt, now) });
+  else if (g?.airport) lookup = t("debug.ground.loadedAgo", { age: secondsSince(g.loadedAt, now) });
+  else if (checked) lookup = t("debug.ground.noneFoundAgo", { age: secondsSince(g?.checkedAt, now) });
+
+  let airport = "—";
+  if (g?.airport) airport = `${g.airport} · ${t("debug.ground.counts", { runways: g.runways, stands: g.stands })}`;
+  else if (checked && !g?.lastError) airport = t("debug.ground.noAirport");
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -26,9 +34,7 @@ export function DebugOverview({ snapshot, flightData: d, now }: Props) {
           rows={[
             {
               label: t("debug.ground.airport"),
-              value: g?.airport
-                ? `${g.airport} · ${t("debug.ground.counts", { runways: g.runways, stands: g.stands })}`
-                : t("debug.ground.noAirport"),
+              value: airport,
             },
             { label: t("debug.ground.runway"), value: g?.runway || "—" },
             { label: t("debug.ground.stand"), value: g?.stand || "—" },

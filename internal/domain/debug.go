@@ -12,6 +12,7 @@ type GroundStatus struct {
 	Runway    string    `json:"runway"`    // "36/18", "" when not on one
 	Stand     string    `json:"stand"`     // "7", "" when not on one
 	LoadedAt  time.Time `json:"loadedAt"`  // zero when no layout is held
+	CheckedAt time.Time `json:"checkedAt"` // when the last lookup finished, zero before any
 	LastError string    `json:"lastError"` // the last lookup's failure, "" after a success
 }
 

@@ -10,6 +10,7 @@ export interface GroundStatus {
   runway: string;
   stand: string;
   loadedAt: string;
+  checkedAt: string;
   lastError: string;
 }
 
@@ -29,7 +30,7 @@ export interface DebugSnapshot {
 const GO_ZERO_TIME = "0001-01-01T00:00:00Z";
 
 export const EMPTY_SNAPSHOT: DebugSnapshot = {
-  ground: { airport: "", runways: 0, stands: 0, runway: "", stand: "", loadedAt: GO_ZERO_TIME, lastError: "" },
+  ground: { airport: "", runways: 0, stands: 0, runway: "", stand: "", loadedAt: GO_ZERO_TIME, checkedAt: GO_ZERO_TIME, lastError: "" },
   report: { json: "", at: GO_ZERO_TIME, outcome: "", batchSize: 0 },
   profiles: [],
 };

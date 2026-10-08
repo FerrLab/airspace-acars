@@ -58,9 +58,15 @@ flight is started.
       Runway    string    `json:"runway"`    // "36/18", "" when not on one
       Stand     string    `json:"stand"`     // "7", "" when not on one
       LoadedAt  time.Time `json:"loadedAt"`  // zero when no layout
+      CheckedAt time.Time `json:"checkedAt"` // when the last lookup finished, zero before any
       LastError string    `json:"lastError"` // last lookup failure, "" after a success
   }
   ```
+
+  `CheckedAt` tells "not looked up yet" from "looked up, no airport here":
+  the Overview says "no airport nearby" only once a lookup has said so.
+  (Added after the final review; without it the two read the same, which is
+  how the broken MSFS decoding would have looked.)
 
   `LastError` carries the adapter's error text, which names an ICAO and a
   timeout at most; nothing pilot-identifying (AGENTS §4.3).

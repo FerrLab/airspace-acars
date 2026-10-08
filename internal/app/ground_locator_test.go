@@ -336,6 +336,22 @@ func TestStatusShowsTheLastLookupFailureUntilOneWorks(t *testing.T) {
 	}
 }
 
+// "Not looked up yet" and "looked up, no airport here" must read differently:
+// the second is the answer the broken MSFS decoding gave on every lookup, and
+// shown as the first it would have sent the diagnosis the wrong way.
+func TestStatusTellsALookupThatFoundNothingFromNoLookup(t *testing.T) {
+	l := newTestLocator(&fakeLayouts{err: domain.ErrNoAirportData})
+	if s := l.Status(); !s.CheckedAt.IsZero() {
+		t.Fatalf("checked at %v before any lookup, want zero", s.CheckedAt)
+	}
+	l.Observe(onRunway09L())
+	l.serve()
+	s := l.Status()
+	if !s.CheckedAt.Equal(l.clock) || s.Airport != "" || s.LastError != "" {
+		t.Fatalf("after a lookup that found no airport, status = %+v; want checked at %v, no airport, no error", s, l.clock)
+	}
+}
+
 // The locator runs for as long as a simulator is connected, flight or not,
 // so the stand can be checked at the gate before departure.
 func TestTheLocatorRunsWhileASimulatorIsConnected(t *testing.T) {
@@ -351,6 +367,22 @@ func TestTheLocatorRunsWhileASimulatorIsConnected(t *testing.T) {
 
 	a.DisconnectSim()
 	waitFor(t, "the locator stops with the connection", func() bool { return a.currentLocator() == nil })
+}
+
+// The point of the change: with a simulator connected and no flight, each
+// data stream tick places the aircraft and keeps the report that would be
+// sent. Unwired, every other test here still passes.
+func TestTheDataStreamPlacesTheAircraftBeforeAnyFlight(t *testing.T) {
+	sim := &fakeSim{answering: true}
+	a, _ := newSimApp(t, sim)
+	a.profileRegistry = profiles.NewRegistry()
+	a.reports = &reportTap{}
+
+	a.autoConnect()
+	waitFor(t, "the data stream keeps a preview report", func() bool {
+		return a.reports.snapshot().Outcome == domain.ReportPreview
+	})
+	a.DisconnectSim()
 }
 
 // A reconnect replaces the locator. The flight loop asks for the current one

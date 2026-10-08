@@ -51,8 +51,8 @@ type groundLocator struct {
 	stopCh   chan struct{}
 	stopped  chan struct{}
 
-	// mu guards layout, lastAttempt, fetching, failures, fix, loadedAt and
-	// lastErr.
+	// mu guards layout, lastAttempt, fetching, failures, fix, loadedAt,
+	// checkedAt and lastErr.
 	mu          sync.Mutex
 	layout      *domain.AirportLayout
 	lastAttempt time.Time
@@ -60,6 +60,7 @@ type groundLocator struct {
 	failures    int
 	fix         groundFix // the last Observe's answer, for Status
 	loadedAt    time.Time
+	checkedAt   time.Time
 	lastErr     string
 }
 
@@ -172,7 +173,7 @@ func (g *groundLocator) Status() domain.GroundStatus {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	s := domain.GroundStatus{LoadedAt: g.loadedAt, LastError: g.lastErr}
+	s := domain.GroundStatus{LoadedAt: g.loadedAt, CheckedAt: g.checkedAt, LastError: g.lastErr}
 	if l := g.layout; l != nil {
 		s.Airport, s.Runways, s.Stands = l.ICAO, len(l.Runways), len(l.Stands)
 	}
@@ -220,6 +221,7 @@ func (g *groundLocator) fetch(req layoutRequest) {
 	g.fetching = false
 	g.layout = layout
 	g.loadedAt, g.lastErr = time.Time{}, ""
+	g.checkedAt = g.now()
 	switch {
 	case err == nil:
 		g.loadedAt = g.now()

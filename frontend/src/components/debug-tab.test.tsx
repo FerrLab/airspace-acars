@@ -16,7 +16,7 @@ await i18n.init({ lng: "en", resources: { en: { translation: en } }, keySeparato
 
 const sentAt = new Date(Date.now() - 4000).toISOString();
 const atGate7: DebugSnapshot = {
-  ground: { airport: "SBRF", runways: 1, stands: 41, runway: "", stand: "7", loadedAt: sentAt, lastError: "" },
+  ground: { airport: "SBRF", runways: 1, stands: 41, runway: "", stand: "7", loadedAt: sentAt, checkedAt: sentAt, lastError: "" },
   report: { json: '{\n  "stand": {\n    "name": "7"\n  }\n}', at: sentAt, outcome: "preview", batchSize: 1 },
   profiles: ["fenix-a32x"],
 };
@@ -39,11 +39,24 @@ it("shows the airport and the stand the backend places the aircraft on", async (
   expect(screen.getByRole("row", { name: /Runway\s*—/ })).toBeInTheDocument();
 });
 
-it("says so when no airport is near", async () => {
+// Before any lookup the screen claims nothing about airports: "no airport
+// nearby" is only an answer once a lookup has given it.
+it("makes no airport claim before any lookup has run", async () => {
   vi.mocked(DebugService.GetDebugSnapshot).mockResolvedValue(EMPTY_SNAPSHOT);
   render(view());
+  expect(await screen.findByText(en["debug.ground.notLoaded"])).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /Airport\s*—/ })).toBeInTheDocument();
+  expect(screen.queryByText(en["debug.ground.noAirport"])).not.toBeInTheDocument();
+});
+
+it("says no airport was found once a lookup found none", async () => {
+  vi.mocked(DebugService.GetDebugSnapshot).mockResolvedValue({
+    ...EMPTY_SNAPSHOT,
+    ground: { ...EMPTY_SNAPSHOT.ground, checkedAt: sentAt },
+  });
+  render(view());
   expect(await screen.findByText(en["debug.ground.noAirport"])).toBeInTheDocument();
-  expect(screen.getByText(en["debug.ground.notLoaded"])).toBeInTheDocument();
+  expect(screen.getByText(/^No airport found \d+ s ago$/)).toBeInTheDocument();
 });
 
 it("shows the connection, adapter, profile and last report in the status strip", async () => {
