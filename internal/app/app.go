@@ -77,6 +77,14 @@ type App struct {
 	simWaitNotedAt   time.Time
 	userDisconnected bool
 
+	// locator is the running data stream's ground locator, nil while no
+	// simulator is connected. Guarded by simMu; the locator locks itself.
+	locator *groundLocator
+
+	// reports keeps the last position report for the debug screen. It
+	// locks itself.
+	reports *reportTap
+
 	// connectMu is held for the whole of a connection attempt, so the
 	// auto-connect loop and the pilot's Connect button never run one at the
 	// same time and pull each other's adapter out from under them.
@@ -155,6 +163,7 @@ func NewApp(
 		NewSimConnectAdapter: newSimConnect,
 		NewXPlaneAdapter:     newXPlane,
 		state:                "idle",
+		reports:              &reportTap{},
 		httpClient:           &http.Client{Timeout: 30 * time.Second},
 		audioClient:          &http.Client{Timeout: 15 * time.Second},
 		discordNudge:         make(chan struct{}, 1),

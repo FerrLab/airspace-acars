@@ -157,3 +157,9 @@ func (s *ProfileService) ProfilesDir() string              { return s.app.Profil
 type DiscordService struct{ app *app.App }
 
 func (s *DiscordService) SetEnabled(enabled bool) { s.app.SetDiscordEnabled(enabled) }
+
+// --- DebugService: the debug tab ---
+
+type DebugService struct{ app *app.App }
+
+func (s *DebugService) GetDebugSnapshot() domain.DebugSnapshot { return s.app.DebugSnapshot() }

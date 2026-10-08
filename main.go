@@ -107,6 +107,7 @@ func main() {
 	discordSvc := &DiscordService{app: appInstance}
 	profileSvc := &ProfileService{app: appInstance}
 	flightLogSvc := &FlightLogService{app: appInstance}
+	debugSvc := &DebugService{app: appInstance}
 
 	// --- Create Wails application ---
 	wailsApp := application.New(application.Options{
@@ -125,6 +126,7 @@ func main() {
 			application.NewService(discordSvc),
 			application.NewService(profileSvc),
 			application.NewService(flightLogSvc),
+			application.NewService(debugSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

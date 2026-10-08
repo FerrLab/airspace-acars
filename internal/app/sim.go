@@ -315,6 +315,23 @@ func (a *App) stopDataStreamLocked() {
 func (a *App) dataStreamLoop(stop <-chan struct{}) {
 	defer observability.Recover()
 
+	// The ground locator lives as long as this stream, so runway and stand
+	// are known at the gate, before any flight. It is published for the
+	// flight loop and the debug screen, and withdrawn only if no newer
+	// stream has replaced it.
+	locator := a.startGroundLocator()
+	a.simMu.Lock()
+	a.locator = locator
+	a.simMu.Unlock()
+	defer func() {
+		a.simMu.Lock()
+		if a.locator == locator {
+			a.locator = nil
+		}
+		a.simMu.Unlock()
+		locator.Stop()
+	}()
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -365,6 +382,7 @@ func (a *App) dataStreamLoop(stop <-chan struct{}) {
 			a.refreshAircraftProfile(connector)
 
 			a.UI.EmitEvent("flight-data", data)
+			a.observeGround(locator, data)
 
 			if recording {
 				if err := a.DB.SaveFlightData(data); err != nil {

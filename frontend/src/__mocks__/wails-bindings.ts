@@ -186,3 +186,14 @@ export function mockUpdateService() {
     TailLogs: () => Promise.resolve(""),
   };
 }
+
+export function mockDebugService() {
+  return {
+    GetDebugSnapshot: () =>
+      Promise.resolve({
+        ground: { airport: "", runways: 0, stands: 0, runway: "", stand: "", loadedAt: "0001-01-01T00:00:00Z", checkedAt: "0001-01-01T00:00:00Z", lastError: "" },
+        report: { json: "", at: "0001-01-01T00:00:00Z", outcome: "", batchSize: 0 },
+        profiles: [],
+      }),
+  };
+}
