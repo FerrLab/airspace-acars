@@ -77,6 +77,10 @@ type App struct {
 	simWaitNotedAt   time.Time
 	userDisconnected bool
 
+	// locator is the running data stream's ground locator, nil while no
+	// simulator is connected. Guarded by simMu; the locator locks itself.
+	locator *groundLocator
+
 	// connectMu is held for the whole of a connection attempt, so the
 	// auto-connect loop and the pilot's Connect button never run one at the
 	// same time and pull each other's adapter out from under them.

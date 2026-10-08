@@ -691,11 +691,6 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 	uploader := a.startPositionUploader(bookingID)
 	defer uploader.Stop()
 
-	// The locator reads airport layouts on its own goroutine for the same
-	// reason: Observe must stay cheap enough for the 33ms flare tick.
-	locator := a.startGroundLocator()
-	defer locator.Stop()
-
 	for {
 		select {
 		case <-stopCh:
@@ -714,7 +709,9 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				slog.Warn("high-res collect tick: no data", "error", err)
 				continue
 			}
-			highResQueue = append(highResQueue, a.buildPositionReport(fd, locator.Observe(fd)))
+			// The data stream owns the locator, and a reconnect replaces it,
+			// so it is asked for per sample. Observe never blocks.
+			highResQueue = append(highResQueue, a.buildPositionReport(fd, a.currentLocator().Observe(fd)))
 			observability.Count("position.highres_queued")
 			if len(highResQueue) >= maxHighResReports {
 				// Hand it over rather than start discarding samples. The old
@@ -812,7 +809,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 
 			// The ordinary once-a-tick report, while not in the flare.
 			if !collecting {
-				uploader.Submit([]map[string]interface{}{a.buildPositionReport(fd, locator.Observe(fd))})
+				uploader.Submit([]map[string]interface{}{a.buildPositionReport(fd, a.currentLocator().Observe(fd))})
 			}
 		}
 	}

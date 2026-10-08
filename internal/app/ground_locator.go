@@ -51,12 +51,16 @@ type groundLocator struct {
 	stopCh   chan struct{}
 	stopped  chan struct{}
 
-	// mu guards layout, lastAttempt, fetching and failures.
+	// mu guards layout, lastAttempt, fetching, failures, fix, loadedAt and
+	// lastErr.
 	mu          sync.Mutex
 	layout      *domain.AirportLayout
 	lastAttempt time.Time
 	fetching    bool
 	failures    int
+	fix         groundFix // the last Observe's answer, for Status
+	loadedAt    time.Time
+	lastErr     string
 }
 
 type layoutRequest struct{ lat, lon float64 }
@@ -89,6 +93,14 @@ func (a *App) layoutProvider() domain.AirportLayoutProvider {
 	return p
 }
 
+// currentLocator returns the running data stream's locator, or nil while no
+// simulator is connected. Callers ask per use: a reconnect replaces it.
+func (a *App) currentLocator() *groundLocator {
+	a.simMu.Lock()
+	defer a.simMu.Unlock()
+	return a.locator
+}
+
 // Observe places the aircraft on the airport. It never blocks: when the
 // layout it needs is not in hand it asks for it and reports nothing this
 // time.
@@ -96,6 +108,15 @@ func (g *groundLocator) Observe(fd *domain.FlightData) groundFix {
 	if g == nil || fd == nil {
 		return groundFix{}
 	}
+	fix := g.observe(fd)
+	g.mu.Lock()
+	g.fix = fix
+	g.mu.Unlock()
+	return fix
+}
+
+// observe is Observe without remembering the answer.
+func (g *groundLocator) observe(fd *domain.FlightData) groundFix {
 	lat, lon := fd.Position.Latitude, fd.Position.Longitude
 	onGround := fd.Sensors.OnGround
 	if !onGround && fd.Position.AltitudeAGL > layoutPrefetchAGLFt {
@@ -143,6 +164,27 @@ func (g *groundLocator) Stop() {
 	<-g.stopped
 }
 
+// Status is what the debug screen shows about the locator: the airport it
+// holds and where it last placed the aircraft.
+func (g *groundLocator) Status() domain.GroundStatus {
+	if g == nil {
+		return domain.GroundStatus{}
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := domain.GroundStatus{LoadedAt: g.loadedAt, LastError: g.lastErr}
+	if l := g.layout; l != nil {
+		s.Airport, s.Runways, s.Stands = l.ICAO, len(l.Runways), len(l.Stands)
+	}
+	if r := g.fix.Runway; r != nil {
+		s.Runway = r.Ends[0].Designator + "/" + r.Ends[1].Designator
+	}
+	if st := g.fix.Stand; st != nil {
+		s.Stand = st.Name
+	}
+	return s
+}
+
 func (g *groundLocator) run() {
 	defer close(g.stopped)
 	defer observability.Recover()
@@ -177,6 +219,13 @@ func (g *groundLocator) fetch(req layoutRequest) {
 	g.mu.Lock()
 	g.fetching = false
 	g.layout = layout
+	g.loadedAt, g.lastErr = time.Time{}, ""
+	switch {
+	case err == nil:
+		g.loadedAt = g.now()
+	case !errors.Is(err, domain.ErrNoAirportData):
+		g.lastErr = err.Error()
+	}
 	failures := g.failures
 	if err == nil || errors.Is(err, domain.ErrNoAirportData) {
 		g.failures = 0

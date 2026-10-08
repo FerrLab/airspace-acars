@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"airspace-acars/internal/domain"
+	"airspace-acars/internal/profiles"
 )
 
 // fakeLayouts answers layout lookups with one canned reply and counts them.
@@ -268,4 +269,107 @@ func TestTheReportCarriesRunwayAndStandOrNull(t *testing.T) {
 	if got.Stand.Name != "A12" {
 		t.Errorf("stand name = %q, want A12", got.Stand.Name)
 	}
+}
+
+// The debug screen reads where the locator last placed the aircraft.
+func TestStatusNamesTheAirportAndWhereTheAircraftIs(t *testing.T) {
+	l := newTestLocator(&fakeLayouts{layout: egll()})
+	if s := l.Status(); s.Airport != "" || !s.LoadedAt.IsZero() {
+		t.Fatalf("status before any lookup = %+v, want empty", s)
+	}
+
+	l.Observe(onRunway09L())
+	l.serve()
+	l.Observe(onRunway09L())
+
+	s := l.Status()
+	if s.Airport != "EGLL" || s.Runways != 1 || s.Runway != "09L/27R" || s.Stand != "" {
+		t.Fatalf("status = %+v, want EGLL with 1 runway, on 09L/27R, no stand", s)
+	}
+	if !s.LoadedAt.Equal(l.clock) {
+		t.Errorf("layout loaded at %v, want %v", s.LoadedAt, l.clock)
+	}
+
+	climbing := onRunway09L()
+	climbing.Sensors.OnGround = false
+	climbing.Position.AltitudeAGL = 500
+	l.Observe(climbing)
+	if s := l.Status(); s.Runway != "" || s.Airport != "EGLL" {
+		t.Fatalf("after lift-off, status = %+v; want EGLL kept and no runway", s)
+	}
+
+	var none *groundLocator
+	if s := none.Status(); s.Airport != "" {
+		t.Fatalf("a nil locator reported %+v", s)
+	}
+}
+
+// A failed lookup stays on screen until one works. "No airport here" is an
+// answer, not a failure, and shows no error.
+func TestStatusShowsTheLastLookupFailureUntilOneWorks(t *testing.T) {
+	captureLogs(t)
+	sim := &fakeLayouts{err: errors.New("facility data for SBRF incomplete after 8s")}
+	l := newTestLocator(sim)
+
+	l.Observe(onRunway09L())
+	l.serve()
+	if s := l.Status(); s.LastError != "facility data for SBRF incomplete after 8s" {
+		t.Fatalf("last error = %q, want the lookup's failure", s.LastError)
+	}
+
+	sim.err, sim.layout = nil, egll()
+	l.clock = l.clock.Add(layoutRetryEvery)
+	l.Observe(onRunway09L())
+	l.serve()
+	if s := l.Status(); s.LastError != "" || s.Airport != "EGLL" {
+		t.Fatalf("after a successful lookup, status = %+v", s)
+	}
+
+	sim.err, sim.layout = domain.ErrNoAirportData, nil
+	far := onRunway09L()
+	far.Position.Latitude = 40
+	l.clock = l.clock.Add(layoutRetryEvery)
+	l.Observe(far)
+	l.serve()
+	if s := l.Status(); s.LastError != "" || s.Airport != "" || !s.LoadedAt.IsZero() {
+		t.Fatalf("with no airport around, status = %+v, want empty with no error", s)
+	}
+}
+
+// The locator runs for as long as a simulator is connected, flight or not,
+// so the stand can be checked at the gate before departure.
+func TestTheLocatorRunsWhileASimulatorIsConnected(t *testing.T) {
+	sim := &fakeSim{answering: true}
+	a, _ := newSimApp(t, sim)
+	a.profileRegistry = profiles.NewRegistry()
+
+	if a.currentLocator() != nil {
+		t.Fatal("a locator was running before any simulator connected")
+	}
+	a.autoConnect()
+	waitFor(t, "the locator starts with the connection", func() bool { return a.currentLocator() != nil })
+
+	a.DisconnectSim()
+	waitFor(t, "the locator stops with the connection", func() bool { return a.currentLocator() == nil })
+}
+
+// A reconnect replaces the locator. The flight loop asks for the current one
+// on every sample; a stopped one would never look an airport up again.
+func TestAReconnectGetsAFreshLocator(t *testing.T) {
+	stalled := &fakeSim{answering: true}
+	fresh := &fakeSim{answering: true}
+	a, _ := newSimApp(t, stalled, fresh)
+	a.profileRegistry = profiles.NewRegistry()
+
+	a.autoConnect()
+	waitFor(t, "the first connection's locator", func() bool { return a.currentLocator() != nil })
+	first := a.currentLocator()
+
+	stalled.set(func(f *fakeSim) { f.stale = true })
+	waitFor(t, "the stale connection is dropped", func() bool { return a.currentLocator() == nil })
+	a.autoConnect()
+	waitFor(t, "the new connection's locator", func() bool {
+		l := a.currentLocator()
+		return l != nil && l != first
+	})
 }
