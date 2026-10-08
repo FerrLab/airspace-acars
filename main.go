@@ -15,6 +15,7 @@ import (
 	wailsadapter "airspace-acars/internal/adapters/wails"
 	"airspace-acars/internal/adapters/winaudio"
 	"airspace-acars/internal/adapters/xplane"
+	"airspace-acars/internal/adapters/xplane/aptdat"
 	"airspace-acars/internal/app"
 	"airspace-acars/internal/domain"
 	"airspace-acars/internal/profiles"
@@ -70,14 +71,22 @@ func main() {
 	}
 	defer db.Close()
 
+	// X-Plane's airports are read from its installation, which is found from
+	// the running simulator unless the pilot has named a folder. The source
+	// outlives any one connection so its index is built once per session.
+	var appInstance *app.App
+	xplaneLayouts := aptdat.NewSource(func() string { return appInstance.GetSettings().XPlanePath })
+
 	// --- Create app instance (inject adapters) ---
-	appInstance := app.NewApp(
+	appInstance = app.NewApp(
 		airspaceAdapter,
 		wailsEmitter,
 		db,
 		discordAdapter,
 		func() domain.SimConnector { return simconnectadapter.NewAdapter() },
-		func(host string, port int) domain.SimConnector { return xplane.NewAdapter(host, port) },
+		func(host string, port int) domain.SimConnector {
+			return xplane.NewAdapter(host, port, xplaneLayouts)
+		},
 	)
 
 	// Initialize settings and audio cache
@@ -98,6 +107,7 @@ func main() {
 	discordSvc := &DiscordService{app: appInstance}
 	profileSvc := &ProfileService{app: appInstance}
 	flightLogSvc := &FlightLogService{app: appInstance}
+	debugSvc := &DebugService{app: appInstance}
 
 	// --- Create Wails application ---
 	wailsApp := application.New(application.Options{
@@ -116,6 +126,7 @@ func main() {
 			application.NewService(discordSvc),
 			application.NewService(profileSvc),
 			application.NewService(flightLogSvc),
+			application.NewService(debugSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

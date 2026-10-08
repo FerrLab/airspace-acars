@@ -8,10 +8,12 @@ Built with [Wails v3](https://wails.io) (Go + React).
 
 - **Flight tracking** — Adaptive position reporting with automatic frequency adjustment based on flight phase
 - **Simulator support** — MSFS 2020 (SimConnect) and X-Plane 11/12 (UDP) with auto-detection
+- **Runway and stand** — every position report names the runway (both ends, with position and elevation) or the stand the aircraft is on, read from the simulator's own scenery: the SimConnect Facilities API on MSFS, `apt.dat` and CIFP navdata on X-Plane. See [docs/runway-stand.md](docs/runway-stand.md)
 - **Aircraft profiles** — Per-add-on JSON profiles that re-bind individual data points; 37 aircraft covered (Fenix, FSLabs, PMDG, FlyByWire, iniBuilds, TFDi, Aerosoft, iFly, Zibo, IXEG, FlightFactor and more), refreshed weekly from the community variable database — see [docs/aircraft-profiles.md](docs/aircraft-profiles.md)
+- **Debug tab** — Live ground position (airport, runway, stand), the last position report exactly as sent with its outcome, telemetry and logs
 - **Multi-tenant auth** — Connect to multiple virtual airline networks via device code authentication
 - **In-app chat** — Pilot messaging and communication
-- **Audio alerts** — Cabin audio and instruction playback
+- **Audio alerts** — Cabin audio and instruction playback, routed to the output device chosen in Settings. Refreshing the device list there may ask Windows once for microphone access, because WebView2 only reveals device names to an origin holding it; the stream is stopped at once and the microphone is never read or recorded, and nothing else in the app touches it
 - **Auto-update** — OTA updates via GitHub Releases with beta channel support
 - **Offline recording** — Local SQLite database for flight data persistence
 - **Error reporting** — Crashes and failures report to Sentry, scrubbed of tokens and anything identifying the pilot's machine; off unless a DSN is built in — see [docs/observability.md](docs/observability.md)

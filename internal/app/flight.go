@@ -514,12 +514,16 @@ func m(value interface{}, unit string) measurement {
 	return measurement{Value: value, Unit: unit}
 }
 
-func (a *App) buildPositionReport(fd *domain.FlightData) map[string]interface{} {
+func (a *App) buildPositionReport(fd *domain.FlightData, fix groundFix) map[string]interface{} {
 	a.flightMu.Lock()
 	callsign := a.callsign
 	departure := a.departure
 	arrival := a.arrival
-	elapsed := time.Since(a.startTime).Seconds()
+	elapsed := 0.0
+	if !a.startTime.IsZero() {
+		// A preview before any flight has no start to count from.
+		elapsed = time.Since(a.startTime).Seconds()
+	}
 	a.flightMu.Unlock()
 
 	zuluSec := int(fd.SimTime.ZuluTime)
@@ -641,6 +645,8 @@ func (a *App) buildPositionReport(fd *domain.FlightData) map[string]interface{} 
 			"total": m(fd.Weight.TotalWeight, "lbs"),
 			"fuel":  m(fd.Weight.FuelWeight, "lbs"),
 		},
+		"runway": newRunwayReport(fix.Runway),
+		"stand":  newStandReport(fix.Stand),
 	}
 }
 
@@ -707,7 +713,9 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				slog.Warn("high-res collect tick: no data", "error", err)
 				continue
 			}
-			highResQueue = append(highResQueue, a.buildPositionReport(fd))
+			// The data stream owns the locator, and a reconnect replaces it,
+			// so it is asked for per sample. Observe never blocks.
+			highResQueue = append(highResQueue, a.buildPositionReport(fd, a.currentLocator().Observe(fd)))
 			observability.Count("position.highres_queued")
 			if len(highResQueue) >= maxHighResReports {
 				// Hand it over rather than start discarding samples. The old
@@ -805,7 +813,7 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 
 			// The ordinary once-a-tick report, while not in the flare.
 			if !collecting {
-				uploader.Submit([]map[string]interface{}{a.buildPositionReport(fd)})
+				uploader.Submit([]map[string]interface{}{a.buildPositionReport(fd, a.currentLocator().Observe(fd))})
 			}
 		}
 	}

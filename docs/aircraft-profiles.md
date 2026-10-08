@@ -341,7 +341,7 @@ and hand-written:
 | `salty-747` | Salty 747-8i | MSFS | 100 | 3 |
 | `tfdi-md11` | TFDi MD-11 | MSFS | 100 | 4 |
 | `xplane-com-833` | X-Plane 8.33 kHz radios | X-Plane | 10 | 2 |
-| `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 5 |
+| `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 6 |
 
 `rotate-md11` is the exception to the first line. HubHop has nothing readable
 for the aircraft, so its flap handle variable comes from a shared-cockpit

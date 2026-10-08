@@ -931,6 +931,40 @@ func TestRotateMD11MatchesWithoutItsName(t *testing.T) {
 		[]SourceKind{SourceSimVar, SourceLVar}).ProfileIDs(), "rotate-md11", "the MSFS MD-11")
 }
 
+// The Zibo's POSITION switch has three positions — 1 STROBE & STEADY, 0 OFF,
+// -1 STEADY — and only its own handlers push X-Plane's strobe command. Anything
+// that sets the switch dataref directly (a hardware panel, a Stream Deck, the
+// position_light_strobe command) leaves sim/cockpit/electrical/strobe_lights_on
+// behind, and the pilot was flagged for taking off with the strobes off when
+// the switch was at STROBE. The switch is what the pilot set, so it decides.
+func TestZibo737StrobeFollowsThePositionSwitch(t *testing.T) {
+	reg := NewRegistry()
+	ctx := Context{AircraftName: "Boeing 737-800X", AircraftType: "B738", Simulator: SimXPlane, EngineCount: 2}
+	plan := reg.Resolve(ctx, []SourceKind{SourceDataRef})
+	require.Contains(t, plan.ProfileIDs(), "zibo-b738")
+
+	var strobe ResolvedBinding
+	for _, b := range plan.Bindings {
+		if b.Point == "lights.strobe" {
+			strobe = b
+		}
+	}
+	require.Len(t, strobe.Sources, 1, "lights.strobe should read the Zibo switch alone")
+	assert.Equal(t, "laminar/B738/toggle_switch/position_light_pos", strobe.Sources[0].Name)
+	key := strobe.Sources[0].Key
+
+	for pos, want := range map[float64]bool{1: true, 0: false, -1: false} {
+		fd := &domain.FlightData{}
+		plan.Apply(fd, map[string]float64{key: pos})
+		assert.Equal(t, want, fd.Lights.Strobe, "switch at %v", pos)
+	}
+
+	// Until the switch reports, the adapter's own reading stands.
+	fd := &domain.FlightData{Lights: domain.LightData{Strobe: true}}
+	plan.Apply(fd, map[string]float64{})
+	assert.True(t, fd.Lights.Strobe, "a switch X-Plane has not reported must not turn the strobes off")
+}
+
 // A transform is a pipeline, so a second comparison operates on the 1 or 0 the
 // first one produced, not on the original reading. Chaining two is almost
 // always someone writing a range check as if the steps were anded conditions —

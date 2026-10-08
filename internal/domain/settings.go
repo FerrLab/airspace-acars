@@ -19,6 +19,10 @@ type Settings struct {
 	// pins that profile ID regardless of its selector.
 	AircraftProfile   string `json:"aircraftProfile"`
 	AudioOutputDevice string `json:"audioOutputDevice"`
+	// XPlanePath is the X-Plane installation folder whose scenery gives
+	// runway and stand. Empty finds it from the running simulator; set it
+	// when X-Plane runs on another machine and its folder is shared.
+	XPlanePath string `json:"xplanePath"`
 }
 
 func DefaultSettings() Settings {

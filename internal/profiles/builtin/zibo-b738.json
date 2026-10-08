@@ -1,8 +1,8 @@
 {
   "id": "zibo-b738",
   "name": "Zibo 737-800",
-  "description": "Zibo modified 737-800 on X-Plane. The Zibo autopilot and gear indications run on their own datarefs, so CMD A/B, LNAV, the approach mode and the three green lights are read from laminar/B738 rather than from the generic X-Plane datarefs.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). X-Plane datarefs are read directly, so this profile is active today. Matching uses the aircraft description X-Plane reports, which the ACARS reads character by character from acf_descrip.",
+  "description": "Zibo modified 737-800 on X-Plane. The Zibo autopilot and gear indications run on their own datarefs, so CMD A/B, LNAV, the approach mode and the three green lights are read from laminar/B738 rather than from the generic X-Plane datarefs. The strobes are read from the POSITION switch itself (1 STROBE & STEADY, 0 OFF, -1 STEADY).",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). X-Plane datarefs are read directly, so this profile is active today. Matching uses the aircraft description X-Plane reports, which the ACARS reads character by character from acf_descrip. The position light values come from the Zibo's B738.lighting.lua: only its up/down command handlers push sim/lights/strobe_lights_on, so a tool that writes position_light_pos directly leaves sim/cockpit/electrical/strobe_lights_on stale. Until the switch has read non-zero once, the adapter keeps the stock strobe reading.",
   "priority": 100,
   "match": {
     "all": [
@@ -120,6 +120,19 @@
               "op": "bool"
             }
           ]
+        }
+      ]
+    },
+    "lights.strobe": {
+      "sim": "xplane",
+      "source": {
+        "kind": "dataref",
+        "name": "laminar/B738/toggle_switch/position_light_pos"
+      },
+      "transform": [
+        {
+          "op": "gt",
+          "value": 0.5
         }
       ]
     },
