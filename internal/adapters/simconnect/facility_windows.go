@@ -105,6 +105,9 @@ type facilityLookup struct {
 	parkings    []parkingRow
 	runwaysDone bool
 	parkingDone bool
+	// The requests whose airport row has arrived: every row after it in
+	// the same reply is a child.
+	airportRowSeen map[sim.DWORD]bool
 }
 
 // newFacilityLookup registers the two facility definitions. A simulator that
@@ -206,8 +209,9 @@ func (f *facilityLookup) onFacilityData(msg []byte) {
 	if f.pending == nil || f.icao == "" || len(msg) < recvFacilityDataFixedSize {
 		return
 	}
+	req := sim.DWORD(u32(msg, 12))
 	var childSize int
-	switch sim.DWORD(u32(msg, 12)) {
+	switch req {
 	case f.runwayReq:
 		childSize = runwayPayloadSize
 	case f.parkingReq:
@@ -215,13 +219,22 @@ func (f *facilityLookup) onFacilityData(msg []byte) {
 	default:
 		return
 	}
-	row, err := decodeFacilityRow(msg, childSize)
+	isAirport := !f.airportRowSeen[req]
+	size := childSize
+	if isAirport {
+		size = airportPayloadSize
+	}
+	row, err := decodeFacilityRow(msg, size)
 	if err != nil {
 		slog.Debug("skipped a facility row", "error", err)
 		return
 	}
 	switch {
-	case !row.IsChild:
+	case isAirport:
+		if f.airportRowSeen == nil {
+			f.airportRowSeen = map[sim.DWORD]bool{}
+		}
+		f.airportRowSeen[req] = true
 		ap := readAirportRow(row.Payload)
 		f.airport = &ap
 	case childSize == runwayPayloadSize:

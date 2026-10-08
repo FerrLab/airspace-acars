@@ -3,6 +3,7 @@ package simconnect
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 
@@ -71,6 +72,41 @@ func TestTheAirportListReadsTheSameFromBothSimulators(t *testing.T) {
 	}
 }
 
+// SimConnect sizes an airport list as sizeof(SIMCONNECT_RECV_AIRPORT_LIST),
+// which already holds one rgData[1] element, plus every airport: the message
+// runs one entry past the last airport. MSFS 2024 at KBFI sent 50 airports of
+// 33 bytes in 28 + 51 × 33 = 1711 bytes. Read as 50 entries of 1683/50 bytes,
+// the page was rejected as malformed, every lookup timed out as "no airport",
+// and no MSFS position report ever carried a runway or a stand.
+func TestTheAirportListAllowsTheTrailingStructElement(t *testing.T) {
+	airports := []airportEntry{
+		{ICAO: "SBRF", Lat: -8.1265, Lon: -34.9236},
+		{ICAO: "SBJP", Lat: -7.1484, Lon: -34.9505},
+	}
+	for name, identLen := range map[string]int{"MSFS 2020": 6, "MSFS 2024": 9} {
+		for n := 1; n <= len(airports); n++ {
+			t.Run(fmt.Sprintf("%s, %d airports", name, n), func(t *testing.T) {
+				msg := airportListMsg(identLen, 0, 1, airports[:n]...)
+				msg = append(msg, make([]byte, identLen+3+facilityLatLonAltSize)...)
+				binary.LittleEndian.PutUint32(msg, uint32(len(msg)))
+
+				page, err := decodeAirportList(msg)
+				if err != nil {
+					t.Fatalf("a page as the simulator sends it was rejected: %v", err)
+				}
+				if len(page.Airports) != n {
+					t.Fatalf("read %d airports, want %d", len(page.Airports), n)
+				}
+				for i, want := range airports[:n] {
+					if page.Airports[i] != want {
+						t.Errorf("airport %d = %+v, want %+v", i, page.Airports[i], want)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestAMangledAirportListIsRejected(t *testing.T) {
 	good := airportListMsg(9, 0, 1, airportEntry{ICAO: "EGLL"})
 	cases := map[string][]byte{
@@ -94,7 +130,7 @@ func TestAMangledAirportListIsRejected(t *testing.T) {
 // facilityDataMsg builds a SIMCONNECT_RECV_FACILITY_DATA message with the
 // header of the given simulator around payload.
 func facilityDataMsg(sim2024 bool, requestID, parent uint32, payload []byte) []byte {
-	m := recvHeader(29).u32(requestID).u32(42).u32(parent)
+	m := recvHeader(28).u32(requestID).u32(42).u32(parent)
 	if sim2024 {
 		m.u32(1) // Type
 	}
@@ -121,11 +157,11 @@ func TestFacilityRowsReadTheSameFromBothSimulators(t *testing.T) {
 	for name, is2024 := range map[string]bool{"MSFS 2020": false, "MSFS 2024": true} {
 		t.Run(name, func(t *testing.T) {
 			airport, err := decodeFacilityRow(facilityDataMsg(is2024, 5, 0,
-				(&msgBuilder{}).f64(51.4775).f64(-0.4614).f64(25).b), runwayPayloadSize)
+				(&msgBuilder{}).f64(51.4775).f64(-0.4614).f64(25).b), airportPayloadSize)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if airport.IsChild || readAirportRow(airport.Payload).Lat != 51.4775 {
+			if readAirportRow(airport.Payload).Lat != 51.4775 {
 				t.Fatalf("airport row read as %+v", airport)
 			}
 
@@ -134,7 +170,7 @@ func TestFacilityRowsReadTheSameFromBothSimulators(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := readRunwayRow(row.Payload)
-			if !row.IsChild || row.RequestID != 5 || got.PrimaryNumber != 9 || got.SecondaryDesignator != 2 ||
+			if row.RequestID != 5 || got.PrimaryNumber != 9 || got.SecondaryDesignator != 2 ||
 				got.Lat != want.Lat || math.Abs(got.Length-3902) > 0.01 {
 				t.Fatalf("runway row read as %+v (%+v)", got, row)
 			}
