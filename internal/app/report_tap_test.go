@@ -115,3 +115,15 @@ func TestTheDebugSnapshotCombinesGroundAndReport(t *testing.T) {
 		t.Fatalf("snapshot with nothing connected = %+v", empty)
 	}
 }
+
+// The generated bindings type profiles as an array, so it goes out as [],
+// never null, when no aircraft profile is active.
+func TestTheDebugSnapshotSendsProfilesAsAnArray(t *testing.T) {
+	raw, err := json.Marshal((&App{}).DebugSnapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"profiles":[]`) {
+		t.Fatalf("snapshot encodes profiles as %s, want []", raw)
+	}
+}

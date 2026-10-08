@@ -23,7 +23,7 @@ export interface PositionReportSnapshot {
 export interface DebugSnapshot {
   ground: GroundStatus;
   report: PositionReportSnapshot;
-  profiles: string[] | null;
+  profiles: string[];
 }
 
 const GO_ZERO_TIME = "0001-01-01T00:00:00Z";
@@ -31,7 +31,7 @@ const GO_ZERO_TIME = "0001-01-01T00:00:00Z";
 export const EMPTY_SNAPSHOT: DebugSnapshot = {
   ground: { airport: "", runways: 0, stands: 0, runway: "", stand: "", loadedAt: GO_ZERO_TIME, lastError: "" },
   report: { json: "", at: GO_ZERO_TIME, outcome: "", batchSize: 0 },
-  profiles: null,
+  profiles: [],
 };
 
 /** Go encodes an unset time.Time as year 1. */

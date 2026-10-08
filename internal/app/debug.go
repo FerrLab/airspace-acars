@@ -26,9 +26,13 @@ func (a *App) DebugSnapshot() domain.DebugSnapshot {
 	snap := domain.DebugSnapshot{
 		Ground: a.currentLocator().Status(),
 		Report: a.reports.snapshot(),
+		// [] rather than null: the generated bindings type it as an array.
+		Profiles: []string{},
 	}
 	if plan := a.GetActiveProfile(); plan != nil {
-		snap.Profiles = plan.ProfileIDs()
+		if ids := plan.ProfileIDs(); ids != nil {
+			snap.Profiles = ids
+		}
 	}
 	return snap
 }

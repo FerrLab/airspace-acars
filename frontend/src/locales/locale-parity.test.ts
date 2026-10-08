@@ -29,6 +29,15 @@ describe("Locale Parity", () => {
     { name: "fr", data: fr },
   ];
 
+  it("ensures all debug keys in en.json exist in pt, es, and fr", () => {
+    const enDebugKeys = Object.keys(en).filter((k) => k.startsWith("debug."));
+    expect(enDebugKeys.length).toBeGreaterThan(0);
+    for (const locale of locales) {
+      const missingKeys = enDebugKeys.filter((k) => !(k in locale.data));
+      expect(missingKeys, `${locale.name}.json is missing debug keys`).toEqual([]);
+    }
+  });
+
   it("ensures all myFlights keys in en.json exist in pt, es, and fr", () => {
     const enFlightKeys = Object.keys(en).filter((k) => k.startsWith("myFlights."));
 

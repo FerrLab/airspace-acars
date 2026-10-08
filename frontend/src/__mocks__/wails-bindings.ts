@@ -193,7 +193,7 @@ export function mockDebugService() {
       Promise.resolve({
         ground: { airport: "", runways: 0, stands: 0, runway: "", stand: "", loadedAt: "0001-01-01T00:00:00Z", lastError: "" },
         report: { json: "", at: "0001-01-01T00:00:00Z", outcome: "", batchSize: 0 },
-        profiles: null,
+        profiles: [],
       }),
   };
 }
