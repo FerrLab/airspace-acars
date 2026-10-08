@@ -53,11 +53,16 @@ key, so the server must treat a missing key as `null`.
 
 ## Where the data comes from
 
-The airport is looked up when the aircraft is on the ground, or below
-2,500 ft AGL so the runway is already known at touchdown. It is looked up
-again once the aircraft leaves the airport's area. Lookups are at least
-30 s apart, so the first report or two after arriving somewhere new may be
-`null`.
+The airport is looked up whenever a simulator is connected, flight or not,
+while the aircraft is on the ground or below 2,500 ft AGL, so the runway is
+already known at touchdown. It is looked up again once the aircraft leaves
+the airport's area. Lookups are at least 30 s apart, so the first report or
+two after arriving somewhere new may be `null`.
+
+The **Debug** tab shows the result: the airport, runway and stand under
+Overview, and under Payload the last position report exactly as it was sent
+(or, before a flight, the one that would be sent), with whether it was sent,
+queued in the outbox or dropped.
 
 **MSFS** (`internal/adapters/simconnect/facility*.go`):
 - The nearest airport within 10 km comes from
