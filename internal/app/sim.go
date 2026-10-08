@@ -382,7 +382,7 @@ func (a *App) dataStreamLoop(stop <-chan struct{}) {
 			a.refreshAircraftProfile(connector)
 
 			a.UI.EmitEvent("flight-data", data)
-			locator.Observe(data)
+			a.observeGround(locator, data)
 
 			if recording {
 				if err := a.DB.SaveFlightData(data); err != nil {

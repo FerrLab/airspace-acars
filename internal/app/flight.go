@@ -519,7 +519,11 @@ func (a *App) buildPositionReport(fd *domain.FlightData, fix groundFix) map[stri
 	callsign := a.callsign
 	departure := a.departure
 	arrival := a.arrival
-	elapsed := time.Since(a.startTime).Seconds()
+	elapsed := 0.0
+	if !a.startTime.IsZero() {
+		// A preview before any flight has no start to count from.
+		elapsed = time.Since(a.startTime).Seconds()
+	}
 	a.flightMu.Unlock()
 
 	zuluSec := int(fd.SimTime.ZuluTime)

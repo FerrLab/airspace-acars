@@ -135,6 +135,7 @@ func (u *positionUploader) send(reports []map[string]interface{}) {
 		}
 		if err == nil {
 			observability.Add("position.reports_sent", int64(len(reports)))
+			u.app.reports.record(reports, domain.ReportSent)
 			return
 		}
 		if attempt == uploadAttempts {
@@ -174,8 +175,10 @@ func (u *positionUploader) persist(reports []map[string]interface{}, reason stri
 		slog.Warn("position reports dropped: no booking to file them under",
 			"count", len(reports), "reason", reason)
 		observability.Add("position.reports_dropped", int64(len(reports)))
+		u.app.reports.record(reports, domain.ReportDropped)
 		return
 	}
+	queued := 0
 	for _, report := range reports {
 		raw, err := json.Marshal(report)
 		if err != nil {
@@ -189,9 +192,15 @@ func (u *positionUploader) persist(reports []map[string]interface{}, reason stri
 			observability.Count("position.reports_dropped")
 			continue
 		}
+		queued++
 		observability.Count("position.reports_queued")
 		observability.Count("position.outbox_enqueued")
 	}
+	outcome := domain.ReportOutbox
+	if queued == 0 {
+		outcome = domain.ReportDropped
+	}
+	u.app.reports.record(reports, outcome)
 }
 
 // MarshalJSON writes a reading, turning one that is not a number into null.
