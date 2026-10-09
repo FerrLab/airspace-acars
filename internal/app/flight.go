@@ -58,12 +58,16 @@ func (a *App) GetActiveFlightInfo() map[string]string {
 	if cooldown < 0 {
 		cooldown = 0
 	}
-	return map[string]string{
+	res := map[string]string{
 		"callsign":          a.callsign,
 		"departure":         a.departure,
 		"arrival":           a.arrival,
 		"finishCooldownSec": strconv.Itoa(int((cooldown + time.Second - 1) / time.Second)),
 	}
+	if !a.startTime.IsZero() {
+		res["startTimeMs"] = strconv.FormatInt(a.startTime.UnixMilli(), 10)
+	}
+	return res
 }
 
 // GetBooking fetches the current booking from the API.
