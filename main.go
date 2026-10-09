@@ -143,14 +143,17 @@ func main() {
 	})
 
 	// Wire the Wails app back to the emitter and set quit function
+	windowStateMgr := newWindowStateManager("")
 	wailsEmitter.SetApp(wailsApp)
-	appInstance.QuitFunc = func() { wailsApp.Quit() }
+	appInstance.QuitFunc = func() {
+		windowStateMgr.saveSync()
+		wailsApp.Quit()
+	}
 
-	// --- Create window ---
-	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	windowOpts := application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",
-		Width:  1100,
-		Height: 700,
+		Width:  domain.DefaultWindowWidth,
+		Height: domain.DefaultWindowHeight,
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,
@@ -158,6 +161,19 @@ func main() {
 		},
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
+	}
+	var screens []*application.Screen
+	if wailsApp.Screen != nil {
+		screens = wailsApp.Screen.GetAll()
+	}
+	windowStateMgr.applyToOptions(&windowOpts, screens)
+
+	// --- Create window ---
+	window := wailsApp.Window.NewWithOptions(windowOpts)
+	windowStateMgr.bind(window)
+
+	wailsApp.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		windowStateMgr.onApplicationStarted(window)
 	})
 
 	si.SetOnShow(func() {
@@ -166,6 +182,7 @@ func main() {
 	})
 
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		windowStateMgr.saveSync()
 		if appInstance.GetSettings().ConfirmCloseApp {
 			wailsApp.Event.Emit("request-window-close", true)
 			window.Show()
@@ -196,6 +213,7 @@ func main() {
 	})
 	trayMenu.AddSeparator()
 	trayMenu.Add(labels[1]).OnClick(func(ctx *application.Context) {
+		windowStateMgr.saveSync()
 		wailsApp.Quit()
 	})
 
