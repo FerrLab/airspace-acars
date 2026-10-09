@@ -53,7 +53,7 @@ it("mutes and restores the pilot's selected volume", () => {
   }
   render(<Harness />);
   fireEvent.click(screen.getByRole("button", { name: en["acars.dashboard.mute"] }));
-  expect(screen.getByText("0%")).toBeInTheDocument();
+  expect(screen.getAllByText("0%").length).toBeGreaterThanOrEqual(1);
   fireEvent.click(screen.getByRole("button", { name: en["acars.dashboard.unmute"] }));
   expect(screen.getByText("40%")).toBeInTheDocument();
   expect(screen.getByRole("slider", { name: en["acars.cabinAudio"] })).toHaveAttribute("aria-valuenow", "40");

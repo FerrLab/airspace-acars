@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import type { FlightData } from "@/hooks/use-flight-data";
+import { FlightProgressBar } from "@/components/flight-progress-bar";
 
 interface Props {
   localMode: boolean;
@@ -30,7 +31,7 @@ interface Props {
   connecting: boolean;
   flightState: "idle" | "active" | "finishing";
   booking: any;
-  activeFlightInfo: { callsign?: string; departure?: string; arrival?: string } | null;
+  activeFlightInfo: { callsign?: string; departure?: string; arrival?: string; startTimeMs?: string } | null;
   flightData: FlightData | null;
   onGround: boolean;
   groundSpeed: number;
@@ -174,22 +175,27 @@ export function AcarsDashboard(p: Props) {
           </div>
 
           <div className="px-5 py-6 sm:px-6">
-            <div className="grid grid-cols-[1fr_minmax(40px,0.6fr)_1fr] items-center gap-3">
-              <div>
+            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4 sm:gap-6">
+              <div className="min-w-20">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{t("acars.departure")}</p>
                 <p className="mt-1 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">{route?.departure || "— — —"}</p>
                 {!active && booking?.departure_airport?.city && (
                   <p className="mt-1 truncate text-xs font-medium text-muted-foreground">{booking.departure_airport.city}</p>
                 )}
               </div>
-              <div className="flex items-center gap-2 text-sky-500" aria-hidden="true">
-                <span className="h-px flex-1 border-t border-dashed border-current opacity-30" />
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-500/10 border border-sky-500/20">
-                  <Plane className="h-4 w-4 rotate-45 text-sky-400" />
-                </div>
-                <span className="h-px flex-1 border-t border-dashed border-current opacity-30" />
+              <div className="flex-1 px-1 sm:px-3">
+                <FlightProgressBar
+                  flightState={p.flightState}
+                  departureAirport={booking?.departure_airport ?? (route?.departure ? { icao: route.departure } : null)}
+                  arrivalAirport={booking?.alternate_airport ?? booking?.arrival_airport ?? (route?.arrival ? { icao: route.arrival } : null)}
+                  currentLat={data?.position?.latitude}
+                  currentLon={data?.position?.longitude}
+                  onGround={p.onGround}
+                  groundSpeed={p.groundSpeed}
+                  flightStartTime={p.activeFlightInfo?.startTimeMs}
+                />
               </div>
-              <div className="text-right">
+              <div className="min-w-20 text-right">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{t("acars.arrival")}</p>
                 <p className="mt-1 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">{route?.arrival || "— — —"}</p>
                 {!active && booking?.alternate_airport ? (
