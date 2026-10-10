@@ -142,13 +142,9 @@ func main() {
 		},
 	})
 
-	// Wire the Wails app back to the emitter and set quit function
+	// Wire the Wails app back to the emitter
 	windowStateMgr := newWindowStateManager("")
 	wailsEmitter.SetApp(wailsApp)
-	appInstance.QuitFunc = func() {
-		windowStateMgr.saveSync()
-		wailsApp.Quit()
-	}
 
 	windowOpts := application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",
@@ -172,9 +168,13 @@ func main() {
 	window := wailsApp.Window.NewWithOptions(windowOpts)
 	windowStateMgr.bind(window)
 
-	wailsApp.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
-		windowStateMgr.onApplicationStarted(window)
-	})
+	// Both quit paths run off the UI thread (a service call and a menu
+	// callback), which the flush waits on to read the window.
+	quit := func() {
+		windowStateMgr.flush(window)
+		wailsApp.Quit()
+	}
+	appInstance.QuitFunc = quit
 
 	si.SetOnShow(func() {
 		window.Show()
@@ -182,7 +182,6 @@ func main() {
 	})
 
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
-		windowStateMgr.saveSync()
 		if appInstance.GetSettings().ConfirmCloseApp {
 			wailsApp.Event.Emit("request-window-close", true)
 			window.Show()
@@ -213,8 +212,7 @@ func main() {
 	})
 	trayMenu.AddSeparator()
 	trayMenu.Add(labels[1]).OnClick(func(ctx *application.Context) {
-		windowStateMgr.saveSync()
-		wailsApp.Quit()
+		quit()
 	})
 
 	systray := wailsApp.SystemTray.New()
