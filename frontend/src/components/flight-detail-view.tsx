@@ -177,6 +177,13 @@ export function FlightDetailView({ flight, company, onBack }: FlightDetailViewPr
                 selectedFlightId={flight.id}
                 onSelectFlight={noopSelectFlight}
                 className="h-full w-full"
+                trackCoordinates={
+                  Array.isArray((flight as unknown as Record<string, unknown>).track_coordinates)
+                    ? ((flight as unknown as Record<string, unknown>).track_coordinates as [number, number][])
+                    : Array.isArray((flight as unknown as Record<string, unknown>).track)
+                      ? ((flight as unknown as Record<string, unknown>).track as [number, number][])
+                      : undefined
+                }
               />
             </div>
 
