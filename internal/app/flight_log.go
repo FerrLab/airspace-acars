@@ -215,6 +215,8 @@ type flightWire struct {
 	DepartureICAO    string              `json:"departure_airport_icao"`
 	ArrivalICAO      string              `json:"arrival_airport_icao"`
 	Aircraft         *flightWireAircraft `json:"aircraft"`
+	Route            string              `json:"route"`
+	TrackCoordinates [][2]float64        `json:"track_coordinates"`
 	FlightTime       interface{}         `json:"flight_time"`
 	DurationMinutes  interface{}         `json:"duration_minutes"`
 	Duration         interface{}         `json:"duration"`
@@ -277,6 +279,8 @@ func (f flightWire) toDomain() (domain.FlightLog, error) {
 		DepartureAirport:  depAirport,
 		ArrivalAirport:    arrAirport,
 		Aircraft:          f.Aircraft.toDomain(),
+		Route:             strings.TrimSpace(f.Route),
+		TrackCoordinates:  f.TrackCoordinates,
 		FlightTimeMinutes: flightTime,
 		DistanceNM:        dist,
 		LandingRateFPM:    landingRate,

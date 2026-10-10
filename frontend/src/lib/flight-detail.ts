@@ -184,7 +184,7 @@ export function getFlightFacts(flight: FlightLog): FlightFactItem[] {
   const flightNum = flight.flight_number || flight.callsign;
   const aircraftName = flight.aircraft ? `${flight.aircraft.icao_code || ""} ${flight.aircraft.name ? `(${flight.aircraft.name})` : ""}`.trim() : "—";
 
-  return [
+  const facts: FlightFactItem[] = [
     { labelKey: "myFlights.factFlightNumber", defaultLabel: "Número do Voo", value: flightNum },
     { labelKey: "myFlights.factCallsign", defaultLabel: "Callsign", value: flight.callsign },
     { labelKey: "myFlights.factRegistration", defaultLabel: "Matrícula", value: flight.aircraft?.registration || "—" },
@@ -194,6 +194,13 @@ export function getFlightFacts(flight: FlightLog): FlightFactItem[] {
     { labelKey: "myFlights.factAirTime", defaultLabel: "Tempo de Voo", value: formatDurationHoursMinutes(flight.flight_time_minutes) },
     { labelKey: "myFlights.factStatus", defaultLabel: "Status do Voo", value: flight.status || "Accepted" },
   ];
+
+  const routeStr = (flight as unknown as Record<string, unknown>).route;
+  if (typeof routeStr === "string" && routeStr.trim()) {
+    facts.push({ labelKey: "myFlights.routeLabel", defaultLabel: "Rota", value: routeStr.trim() });
+  }
+
+  return facts;
 }
 
 export function getScoreCategories(flight: FlightLog): ScoreCategory[] {
