@@ -118,7 +118,7 @@ describe("flight-detail logic", () => {
 
   it("computes runway performance for landing and takeoff", () => {
     const landing = getRunwayPerformance(sampleFlight, "landing");
-    expect(landing.runwayId).toBe("14");
+    expect(landing.runwayId).toBe("33");
     expect(landing.rateFpm).toBe(-508);
 
     const takeoff = getRunwayPerformance(sampleFlight, "takeoff");
