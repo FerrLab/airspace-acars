@@ -142,15 +142,14 @@ func main() {
 		},
 	})
 
-	// Wire the Wails app back to the emitter and set quit function
+	// Wire the Wails app back to the emitter
+	windowStateMgr := newWindowStateManager("")
 	wailsEmitter.SetApp(wailsApp)
-	appInstance.QuitFunc = func() { wailsApp.Quit() }
 
-	// --- Create window ---
-	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	windowOpts := application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",
-		Width:  1100,
-		Height: 700,
+		Width:  domain.DefaultWindowWidth,
+		Height: domain.DefaultWindowHeight,
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,
@@ -158,7 +157,24 @@ func main() {
 		},
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
-	})
+	}
+	var screens []*application.Screen
+	if wailsApp.Screen != nil {
+		screens = wailsApp.Screen.GetAll()
+	}
+	windowStateMgr.applyToOptions(&windowOpts, screens)
+
+	// --- Create window ---
+	window := wailsApp.Window.NewWithOptions(windowOpts)
+	windowStateMgr.bind(window)
+
+	// Both quit paths run off the UI thread (a service call and a menu
+	// callback), which the flush waits on to read the window.
+	quit := func() {
+		windowStateMgr.flush(window)
+		wailsApp.Quit()
+	}
+	appInstance.QuitFunc = quit
 
 	si.SetOnShow(func() {
 		window.Show()
@@ -196,7 +212,7 @@ func main() {
 	})
 	trayMenu.AddSeparator()
 	trayMenu.Add(labels[1]).OnClick(func(ctx *application.Context) {
-		wailsApp.Quit()
+		quit()
 	})
 
 	systray := wailsApp.SystemTray.New()
