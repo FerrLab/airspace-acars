@@ -58,12 +58,17 @@ export interface StabilizedGateItem {
 }
 
 export interface RunwayPerformance {
+  airportIcao: string;
   runwayId: string;
   recipId: string;
+  lengthM: number;
+  widthM: number;
   heading: number;
   rateFpm: number;
   gForce: number;
   distanceM: number;
+  rolloutM: number;
+  rolloutEndM: number;
   offsetM: number;
   offsetText: string;
   groundSpeedKt: number;
@@ -420,27 +425,106 @@ export function generateFlightTelemetry(flight: FlightLog): TelemetrySample[] {
   return samples;
 }
 
+const AIRPORT_RUNWAYS: Record<string, { id: string; recip: string; hdg: number; len: number; width: number }> = {
+  SBFI: { id: "33", recip: "15", hdg: 328, len: 2800, width: 45 },
+  SBGR: { id: "10L", recip: "28R", hdg: 95, len: 3700, width: 45 },
+  SBSP: { id: "17R", recip: "35L", hdg: 172, len: 1940, width: 45 },
+  SBRJ: { id: "02R", recip: "20L", hdg: 22, len: 1323, width: 42 },
+  SBKP: { id: "15", recip: "33", hdg: 147, len: 3240, width: 45 },
+  SBGL: { id: "10", recip: "28", hdg: 98, len: 4000, width: 45 },
+  SBCF: { id: "16", recip: "34", hdg: 161, len: 3600, width: 45 },
+  SBPA: { id: "11", recip: "29", hdg: 111, len: 3200, width: 45 },
+  SBCT: { id: "15", recip: "33", hdg: 153, len: 2218, width: 45 },
+  SBSV: { id: "10", recip: "28", hdg: 102, len: 3003, width: 45 },
+  SBRF: { id: "18", recip: "36", hdg: 184, len: 3000, width: 45 },
+  SBBE: { id: "06", recip: "24", hdg: 62, len: 2800, width: 45 },
+  SBBH: { id: "13", recip: "31", hdg: 126, len: 2505, width: 45 },
+  SBBR: { id: "11R", recip: "29L", hdg: 109, len: 3300, width: 45 },
+  SBGO: { id: "14", recip: "32", hdg: 139, len: 2500, width: 45 },
+  SBNT: { id: "12", recip: "30", hdg: 124, len: 3000, width: 60 },
+  SBFL: { id: "14", recip: "32", hdg: 142, len: 2400, width: 45 },
+};
+
 export function getRunwayPerformance(flight: FlightLog, mode: "landing" | "takeoff"): RunwayPerformance {
   const isTakeoff = mode === "takeoff";
-  const rate = flight.landing_rate_fpm || -160;
+  const raw = flight as any;
+  const rawLanding = raw.landing || {};
+  const rawTakeoff = raw.takeoff || {};
+  const rawArrRwy = raw.arrRwy || {};
+  const rawDepRwy = raw.depRwy || {};
+  const rawWind = raw.wind || {};
+
+  const airport = isTakeoff ? flight.departure_airport : flight.arrival_airport;
+  const airportIcao = (airport?.icao || (isTakeoff ? "SBGR" : "SBFI")).toUpperCase();
+  const knownRwy = AIRPORT_RUNWAYS[airportIcao] || (isTakeoff
+    ? { id: "10L", recip: "28R", hdg: 95, len: 3700, width: 45 }
+    : { id: "33", recip: "15", hdg: 328, len: 2800, width: 45 });
+
+  const rwyObj = isTakeoff ? rawDepRwy : rawArrRwy;
+  const runwayId = raw.runway_id || rwyObj.id || (isTakeoff ? rawTakeoff.rwy : rawLanding.rwy) || knownRwy.id;
+  const recipId = rwyObj.recip || knownRwy.recip;
+  const lengthM = rwyObj.length || knownRwy.len;
+  const widthM = rwyObj.width || knownRwy.width;
+  const heading = rwyObj.hdg || knownRwy.hdg;
+
+  const rate = flight.landing_rate_fpm || (isTakeoff ? 2200 : -160);
+  const gForce = isTakeoff ? (rawTakeoff.g || 1.05) : (rawLanding.g || 1.16);
+  const distanceM = isTakeoff ? (rawTakeoff.roll || rawTakeoff.liftoff || 2245) : (rawLanding.tdDist || 575);
+
+  let rolloutM = 40;
+  if (isTakeoff) {
+    rolloutM = (rawTakeoff.liftoff || 2445) - (rawTakeoff.roll || 2245);
+  } else if (rawLanding.roll != null) {
+    rolloutM = rawLanding.roll;
+  } else if (rawLanding.used != null && rawLanding.used >= distanceM) {
+    rolloutM = Math.round(rawLanding.used - distanceM);
+  } else if (rawLanding.rolloutEnd != null) {
+    rolloutM = Math.round(rawLanding.rolloutEnd - distanceM);
+  }
+  if (rolloutM <= 0) rolloutM = 40;
+
+  const rolloutEndM = distanceM + rolloutM;
+  const offsetM = isTakeoff ? (rawTakeoff.offsetM ?? -7.0) : (rawLanding.offsetM ?? -9.8);
+  const offsetText = isTakeoff
+    ? (rawTakeoff.offset || `${Math.abs(offsetM).toFixed(1)} m left`)
+    : (rawLanding.offset || `${Math.abs(offsetM).toFixed(1)} m left`);
+
+  const groundSpeedKt = isTakeoff ? (rawTakeoff.gs || 169) : (rawLanding.gs || 137);
+  const airSpeedKt = isTakeoff ? (rawTakeoff.ias || 158) : (rawLanding.ias || 136);
+
+  const runwayUsedM = isTakeoff ? (rawTakeoff.liftoff || 2445) : (rawLanding.used || rolloutEndM);
+  const runwayUsedPct = Math.min(100, isTakeoff
+    ? (rawTakeoff.usedPct || (runwayUsedM / lengthM) * 100)
+    : (rawLanding.usedPct || (runwayUsedM / lengthM) * 100));
+
+  const windHeading = rawWind.dir || 150;
+  const windSpeedKt = rawWind.kt || 8;
+  const headwindKt = rawWind.head || 7.9;
+  const crosswindKt = rawWind.cross || 1.5;
+  const crosswindSide = (rawWind.crossSide || "right") as "left" | "right";
 
   return {
-    runwayId: isTakeoff ? "10L" : "14",
-    recipId: isTakeoff ? "28R" : "32",
-    heading: isTakeoff ? 95 : 139,
+    airportIcao,
+    runwayId,
+    recipId,
+    lengthM,
+    widthM,
+    heading,
     rateFpm: isTakeoff ? 2200 : rate,
-    gForce: isTakeoff ? 1.05 : 1.16,
-    distanceM: isTakeoff ? 2245 : 575,
-    offsetM: isTakeoff ? -7.0 : -9.8,
-    offsetText: isTakeoff ? "7.0 m left" : "9.8 m left",
-    groundSpeedKt: isTakeoff ? 169 : 137,
-    airSpeedKt: isTakeoff ? 158 : 136,
-    runwayUsedM: isTakeoff ? 2445 : 615,
-    runwayUsedPct: isTakeoff ? 64.2 : 22.0,
-    windHeading: 150,
-    windSpeedKt: 8,
-    headwindKt: 7.9,
-    crosswindKt: 1.5,
-    crosswindSide: "right",
+    gForce,
+    distanceM,
+    rolloutM,
+    rolloutEndM,
+    offsetM,
+    offsetText,
+    groundSpeedKt,
+    airSpeedKt,
+    runwayUsedM,
+    runwayUsedPct,
+    windHeading,
+    windSpeedKt,
+    headwindKt,
+    crosswindKt,
+    crosswindSide,
   };
 }
