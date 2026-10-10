@@ -56,6 +56,7 @@ func TestGetMyFlightsSuccessWithNestedDataAndStats(t *testing.T) {
 				"landing_rate": -142.5,
 				"fuel_used": 1450.0,
 				"score": 98,
+				"route": "BITIS UZ25 KASUK BCO",
 				"created_at": "2026-09-20T14:30:00Z"
 			},
 			{
@@ -117,6 +118,9 @@ func TestGetMyFlightsSuccessWithNestedDataAndStats(t *testing.T) {
 	}
 	if f1.LandingRateFPM != -142.5 {
 		t.Errorf("expected landing rate -142.5, got %v", f1.LandingRateFPM)
+	}
+	if f1.Route != "BITIS UZ25 KASUK BCO" {
+		t.Errorf("expected route 'BITIS UZ25 KASUK BCO', got %q", f1.Route)
 	}
 
 	// Flight 2: flat ICAO with 0 distance triggering Great Circle calculation

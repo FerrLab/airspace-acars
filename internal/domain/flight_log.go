@@ -27,6 +27,8 @@ type FlightLog struct {
 	DepartureAirport  AirportInfo   `json:"departure_airport"`
 	ArrivalAirport    AirportInfo   `json:"arrival_airport"`
 	Aircraft          *AircraftInfo `json:"aircraft,omitempty"`
+	Route             string        `json:"route,omitempty"`
+	TrackCoordinates  [][2]float64  `json:"track_coordinates,omitempty"`
 	FlightTimeMinutes int           `json:"flight_time_minutes"`
 	DistanceNM        float64       `json:"distance_nm"`
 	LandingRateFPM    float64       `json:"landing_rate_fpm"`

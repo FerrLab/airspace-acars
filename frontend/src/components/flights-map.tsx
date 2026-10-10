@@ -6,12 +6,15 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "../context/theme-context";
 import type { FlightLog } from "../../bindings/airspace-acars/internal/domain/models";
 
+import { generateFlightTrackCoordinates } from "@/lib/flight-track";
+
 interface FlightsMapProps {
   flights: FlightLog[];
   selectedFlightId: string | null;
   onSelectFlight: (flightId: string) => void;
   className?: string;
   overlayContent?: React.ReactNode;
+  trackCoordinates?: [number, number][];
 }
 
 function escapeHtml(value: unknown): string {
@@ -33,42 +36,6 @@ const ARCGIS_LIGHT_BASE =
   "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
 const ARCGIS_LIGHT_REF =
   "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}";
-
-// Generate intermediate arc points between two coordinates for flight-like curvature
-function calculateArcCoordinates(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-  numPoints = 28
-): [number, number][] {
-  if ((lat1 === lat2 && lon1 === lon2) || (!lat1 && !lon1) || (!lat2 && !lon2)) {
-    return [[lat1, lon1]];
-  }
-
-  const dLat = lat2 - lat1;
-  const dLon = lon2 - lon1;
-  const distance = Math.hypot(dLat, dLon);
-
-  // Curve height proportional to distance, with a reasonable cap
-  const maxArcHeight = Math.min(distance * 0.15, 6.0);
-
-  // Normal vector perpendicular to the line connecting points
-  const normalLat = -dLon / (distance || 1);
-  const normalLon = dLat / (distance || 1);
-
-  const points: [number, number][] = [];
-  for (let i = 0; i <= numPoints; i++) {
-    const t = i / numPoints;
-    // Parabolic arc displacement
-    const arcOffset = 4 * t * (1 - t) * maxArcHeight;
-
-    const lat = lat1 + dLat * t + normalLat * arcOffset;
-    const lon = lon1 + dLon * t + normalLon * arcOffset;
-    points.push([lat, lon]);
-  }
-  return points;
-}
 
 function createAirportIcon(
   icao: string,
@@ -130,6 +97,7 @@ export function FlightsMap({
   onSelectFlight,
   className = "",
   overlayContent,
+  trackCoordinates,
 }: FlightsMapProps) {
   const { t } = useTranslation();
   const { theme } = useTheme();
@@ -268,21 +236,48 @@ export function FlightsMap({
         });
       }
 
-      // Draw curved flight path
-      const arcPoints = calculateArcCoordinates(
-        dep.latitude,
-        dep.longitude,
-        arr.latitude,
-        arr.longitude
-      );
+      // Draw realistic aeronautical flight track
+      const flightAny = flight as unknown as Record<string, unknown>;
+      const routeText = typeof flightAny.route === "string" ? flightAny.route : undefined;
+      const customTrack =
+        isSingleFlight && trackCoordinates && trackCoordinates.length >= 2
+          ? trackCoordinates
+          : Array.isArray(flightAny.track_coordinates)
+            ? (flightAny.track_coordinates as [number, number][])
+            : Array.isArray(flightAny.track)
+              ? (flightAny.track as [number, number][])
+              : undefined;
+
+      const trackPoints = generateFlightTrackCoordinates({
+        depLat: dep.latitude,
+        depLon: dep.longitude,
+        arrLat: arr.latitude,
+        arrLon: arr.longitude,
+        depIcao: dep.icao,
+        arrIcao: arr.icao,
+        routeText,
+        trackCoordinates: customTrack,
+      });
 
       // Primary Route line with theme-aware colors
       const normalColor = isDark ? "#0284c7" : "#475569";
       const activeColor = isDark ? "#38bdf8" : "#0284c7";
 
-      const polyline = L.polyline(arcPoints, {
+      // Subtle atmospheric glow line behind selected route
+      if (isSelected || isSingleFlight) {
+        const glowLine = L.polyline(trackPoints, {
+          color: activeColor,
+          weight: 6,
+          opacity: isDark ? 0.22 : 0.18,
+          lineCap: "round",
+          lineJoin: "round",
+        });
+        layersGroup.addLayer(glowLine);
+      }
+
+      const polyline = L.polyline(trackPoints, {
         color: isSelected ? activeColor : normalColor,
-        weight: isSelected ? 4 : 2,
+        weight: isSelected ? 3.5 : 2,
         opacity: isSelected ? 0.95 : isDark ? 0.45 : 0.4,
         dashArray: isSelected ? undefined : "6, 8",
         lineCap: "round",
@@ -354,11 +349,8 @@ export function FlightsMap({
 
       layersGroup.addLayer(polyline);
 
-      if (isSelected) {
-        selectedFlightBounds = L.latLngBounds([
-          [dep.latitude, dep.longitude],
-          [arr.latitude, arr.longitude],
-        ]);
+      if (isSelected || (isSingleFlight && !selectedFlightBounds)) {
+        selectedFlightBounds = polyline.getBounds();
       }
     });
 
