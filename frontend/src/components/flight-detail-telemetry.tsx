@@ -149,7 +149,7 @@ export function FlightDetailTelemetry({ flight }: TelemetryProps) {
 
       {/* Synchronized Telemetry Interactive Canvas */}
       <div
-        className="relative w-full rounded-lg bg-zinc-950 p-3 border border-border/50 cursor-crosshair overflow-hidden"
+        className="relative w-full rounded-lg border border-border/40 p-3 cursor-crosshair overflow-hidden"
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoverIndex(null)}
       >
@@ -204,7 +204,7 @@ export function FlightDetailTelemetry({ flight }: TelemetryProps) {
 
         {/* Current Readout Overlay Badge */}
         <div
-          className="absolute bottom-2 pointer-events-none transform -translate-x-1/2 bg-zinc-900/90 backdrop-blur border border-border/80 px-2 py-0.5 rounded text-[10px] font-mono font-bold text-foreground"
+          className="absolute bottom-2 pointer-events-none transform -translate-x-1/2 bg-card/95 backdrop-blur border border-border/80 px-2 py-0.5 rounded text-[10px] font-mono font-bold text-foreground shadow-sm"
           style={{ left: `${cursorXPercent}%` }}
         >
           {currentSample.alt.toLocaleString()} ft · {currentSample.gs} kt

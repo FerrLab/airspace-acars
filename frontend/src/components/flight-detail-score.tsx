@@ -158,7 +158,7 @@ export function FlightDetailScore({ flight }: ScoreProps) {
               </button>
 
               {expandedKeys[cat.key] && (
-                <div className="mt-2 rounded bg-zinc-950 p-2 border border-border/40 text-[10px] font-mono text-muted-foreground leading-relaxed">
+                <div className="mt-2 rounded bg-muted/20 p-2 border border-border/40 text-[10px] font-mono text-muted-foreground leading-relaxed">
                   {cat.formula}
                 </div>
               )}
