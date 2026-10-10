@@ -46,7 +46,7 @@ export function FlightDetailRunway({ flight, mode }: RunwayProps) {
         </div>
 
         {/* SVG Runway Canvas strictly matching the Airspace platform design */}
-        <div className="relative w-full overflow-hidden rounded-lg bg-zinc-950 p-3 border border-border/50">
+        <div className="relative w-full overflow-hidden pt-1">
           <svg viewBox="0 0 1000 305" className="w-full h-auto block select-none">
             {/* Dimension Line Above: TOQUE (in Emerald Green) */}
             <path d="M 60 56 V 100 M 241 56 V 122 M 60 62 H 241" stroke="#10b981" strokeWidth="1" fill="none" />
@@ -220,7 +220,7 @@ export function FlightDetailRunway({ flight, mode }: RunwayProps) {
             <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground block">
               {t("myFlights.climbProfile", "Perfil de Subida")}
             </span>
-            <div className="relative h-28 w-full bg-zinc-950 rounded-lg p-2 border border-border/50">
+            <div className="relative h-28 w-full rounded-lg p-2 border border-border/40 bg-muted/20">
               <svg viewBox="0 0 400 100" preserveAspectRatio="none" className="w-full h-full">
                 <path d="M 10 90 L 100 88 Q 180 80, 240 50 L 390 10" fill="none" stroke="#38bdf8" strokeWidth="2" />
                 <path d="M 10 90 L 100 88 Q 180 80, 240 50 L 390 10 L 390 95 L 10 95 Z" fill="#38bdf8" opacity="0.1" />
