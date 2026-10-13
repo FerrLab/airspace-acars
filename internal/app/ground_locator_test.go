@@ -405,3 +405,22 @@ func TestAReconnectGetsAFreshLocator(t *testing.T) {
 		return l != nil && l != first
 	})
 }
+
+// AirportAt names the airport the simulator's scenery puts the aircraft on,
+// and nothing once the aircraft is off it or no layout is held.
+func TestAirportAtNamesTheFieldTheAircraftIsOn(t *testing.T) {
+	field := domain.AirportInfo{ICAO: "SBGR", Latitude: -23.435556, Longitude: -46.473056}
+	g := layoutAt(field)
+
+	if got := g.AirportAt(field.Latitude, field.Longitude); got != "SBGR" {
+		t.Errorf("on the field: %q, want SBGR", got)
+	}
+	awayLat, awayLon := domain.Destination(field.Latitude, field.Longitude, 90, 20_000)
+	if got := g.AirportAt(awayLat, awayLon); got != "" {
+		t.Errorf("20 km away: %q, want none", got)
+	}
+	var none *groundLocator
+	if got := none.AirportAt(field.Latitude, field.Longitude); got != "" {
+		t.Errorf("no locator: %q, want none", got)
+	}
+}

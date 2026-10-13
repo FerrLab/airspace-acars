@@ -11,6 +11,7 @@ type Settings struct {
 	DiscordPresence     bool   `json:"discordPresence"`
 	Language            string `json:"language"`
 	AutoStartFlight     bool   `json:"autoStartFlight"`
+	AutoFinishFlight    bool   `json:"autoFinishFlight"`
 	ConfirmCloseApp     bool   `json:"confirmCloseApp"`
 	ConfirmCancelFlight bool   `json:"confirmCancelFlight"`
 	ConfirmFinishFlight bool   `json:"confirmFinishFlight"`
@@ -36,6 +37,7 @@ func DefaultSettings() Settings {
 		DiscordPresence:     true,
 		Language:            "en",
 		AutoStartFlight:     true,
+		AutoFinishFlight:    true,
 		ConfirmCloseApp:     false,
 		ConfirmCancelFlight: false,
 		ConfirmFinishFlight: false,
