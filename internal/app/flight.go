@@ -184,6 +184,9 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 	a.stopCh = make(chan struct{})
 
 	go a.positionLoop(a.stopCh)
+	if bookingID != "" {
+		a.bookingWatch = a.startBookingWatcher(bookingID, arrival)
+	}
 
 	slog.Info("flight started", "callsign", callsign, "dep", departure, "arr", arrival)
 	a.UI.EmitEvent("flight-state", "active")
@@ -411,6 +414,8 @@ func (a *App) endFlight() {
 		close(a.stopCh)
 		a.stopCh = nil
 	}
+	a.bookingWatch.Stop()
+	a.bookingWatch = nil
 	a.state = "idle"
 	a.callsign = ""
 	a.departure = ""

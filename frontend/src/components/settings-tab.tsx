@@ -26,6 +26,7 @@ import {
   type AudioOutputDeviceInfo,
 } from "@/lib/audio-manager";
 import { LANGUAGES } from "@/lib/i18n";
+import { AutoFlightSettings } from "@/components/auto-flight-settings";
 
 interface SettingsTabProps {
   localMode?: boolean;
@@ -39,7 +40,6 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
   const [simType, setSimType] = useState("auto");
   const [chatSound, setChatSound] = useState<ChatSoundType>("default");
   const [discordPresence, setDiscordPresence] = useState(true);
-  const [autoStartFlight, setAutoStartFlight] = useState(true);
   const [confirmCloseApp, setConfirmCloseApp] = useState(false);
   const [confirmCancelFlight, setConfirmCancelFlight] = useState(false);
   const [confirmFinishFlight, setConfirmFinishFlight] = useState(false);
@@ -86,7 +86,6 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
         setSimType(settings.simType);
         setChatSound((settings.chatSound as ChatSoundType) || "default");
         setDiscordPresence(settings.discordPresence !== false);
-        setAutoStartFlight(settings.autoStartFlight !== false);
         setConfirmCloseApp(settings.confirmCloseApp === true);
         setConfirmCancelFlight(settings.confirmCancelFlight === true);
         setConfirmFinishFlight(settings.confirmFinishFlight === true);
@@ -179,14 +178,6 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
       const settings = await SettingsService.GetSettings();
       await SettingsService.UpdateSettings({ ...settings, discordPresence: checked });
       await DiscordService.SetEnabled(checked);
-    } catch { /* ignore */ }
-  };
-
-  const handleAutoStartToggle = async (checked: boolean) => {
-    setAutoStartFlight(checked);
-    try {
-      const settings = await SettingsService.GetSettings();
-      await SettingsService.UpdateSettings({ ...settings, autoStartFlight: checked });
     } catch { /* ignore */ }
   };
 
@@ -519,15 +510,7 @@ export function SettingsTab({ localMode = false, onLocalModeChange }: SettingsTa
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{t("settings.autoStartFlight")}</p>
-              <p className="text-xs text-muted-foreground">
-                {t("settings.autoStartFlightDesc")}
-              </p>
-            </div>
-            <Switch checked={autoStartFlight} onCheckedChange={handleAutoStartToggle} />
-          </div>
+          <AutoFlightSettings />
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">{t("settings.confirmCloseApp")}</p>

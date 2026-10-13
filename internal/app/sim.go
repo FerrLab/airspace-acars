@@ -2,11 +2,9 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"airspace-acars/internal/domain"
@@ -469,95 +467,4 @@ func (a *App) autoConnect() {
 		return
 	}
 	slog.Info("auto-connected to simulator", "adapter", adapter)
-}
-
-// checkAutoFlight evaluates conditions for auto-start.
-// Called once per tick from dataStreamLoop (single goroutine, no mutex needed for armed flags).
-func (a *App) checkAutoFlight(data *domain.FlightData) {
-	settings := a.GetSettings()
-	if settings.LocalMode {
-		return
-	}
-
-	a.flightMu.Lock()
-	flightState := a.state
-	a.flightMu.Unlock()
-
-	// --- Auto-start: beacon on, engine(s) running, on ground, stationary, flight idle ---
-	if settings.AutoStartFlight && flightState == "idle" {
-		anyEngineRunning := false
-		for _, e := range data.Engines {
-			if e.Running {
-				anyEngineRunning = true
-				break
-			}
-		}
-		startConditions := data.Lights.Beacon && anyEngineRunning &&
-			data.Sensors.OnGround && data.Attitude.GS < 1.0
-
-		if startConditions && !a.autoStartArmed {
-			a.autoStartArmed = true
-			go a.tryAutoStartFlight()
-		} else if !startConditions {
-			a.autoStartArmed = false
-		}
-	}
-}
-
-// tryAutoStartFlight fetches the booking and starts the flight automatically.
-func (a *App) tryAutoStartFlight() {
-	defer observability.Recover()
-
-	body, status, err := a.Airspace.DoRequest("GET", "/api/v2/acars/booking", nil)
-	if err == nil {
-		err = domain.NewStatusError("GET", "/api/v2/acars/booking", status, body)
-	}
-	if err != nil {
-		slog.Debug("auto-start: failed to fetch booking", "error", err)
-		return
-	}
-	var booking map[string]interface{}
-	if err := json.Unmarshal(body, &booking); err != nil {
-		slog.Debug("auto-start: failed to parse booking", "error", err)
-		return
-	}
-
-	callsign, _ := booking["callsign"].(string)
-	if callsign == "" {
-		if fn, ok := booking["flight_number"].(string); ok {
-			callsign = fn
-		}
-	}
-	if callsign == "" {
-		slog.Debug("auto-start: no booking available")
-		return
-	}
-
-	var departure, arrival string
-	if dep, ok := booking["departure_airport"].(map[string]interface{}); ok {
-		departure, _ = dep["icao"].(string)
-	}
-	if alt, ok := booking["alternate_airport"].(map[string]interface{}); ok {
-		arrival, _ = alt["icao"].(string)
-	}
-	if arrival == "" {
-		if arr, ok := booking["arrival_airport"].(map[string]interface{}); ok {
-			arrival, _ = arr["icao"].(string)
-		}
-	}
-
-	var bookingID string
-	switch v := booking["id"].(type) {
-	case string:
-		bookingID = v
-	case float64:
-		bookingID = strconv.FormatInt(int64(v), 10)
-	}
-
-	a.UI.EmitEvent("auto-flight-start", callsign)
-	if err := a.StartFlight(callsign, departure, arrival, bookingID); err != nil {
-		slog.Warn("auto-start: failed to start flight", "error", err)
-	} else {
-		slog.Info("auto-start: flight started", "callsign", callsign, "dep", departure, "arr", arrival)
-	}
 }
