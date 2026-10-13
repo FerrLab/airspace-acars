@@ -99,6 +99,8 @@ export function mockSettingsService() {
         localMode: false,
         chatSound: "default",
         discordPresence: true,
+        autoStartFlight: true,
+        autoFinishFlight: true,
       }),
     UpdateSettings: (_settings: unknown) => Promise.resolve(),
   };
