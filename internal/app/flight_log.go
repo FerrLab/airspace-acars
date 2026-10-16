@@ -233,6 +233,8 @@ type flightWire struct {
 	DepartureICAO    string              `json:"departure_airport_icao"`
 	ArrivalICAO      string              `json:"arrival_airport_icao"`
 	Aircraft         *flightWireAircraft `json:"aircraft"`
+	Route            json.RawMessage     `json:"route"`
+	TrackCoordinates json.RawMessage     `json:"track_coordinates"`
 	FlightTime       interface{}         `json:"flight_time"`
 	DurationMinutes  interface{}         `json:"duration_minutes"`
 	Duration         interface{}         `json:"duration"`
@@ -243,6 +245,74 @@ type flightWire struct {
 	DepartureTime    string              `json:"departure_time"`
 	ArrivalTime      string              `json:"arrival_time"`
 	CreatedAt        string              `json:"created_at"`
+}
+
+func parseRoute(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.TrimSpace(s)
+	}
+	return ""
+}
+
+func parseTrackCoordinates(raw json.RawMessage) [][2]float64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	// Variant 1: array of [lat, lon] pairs
+	var pairs [][2]float64
+	if err := json.Unmarshal(raw, &pairs); err == nil {
+		var valid [][2]float64
+		for _, p := range pairs {
+			if p[0] >= -90 && p[0] <= 90 && p[1] >= -180 && p[1] <= 180 {
+				valid = append(valid, p)
+			}
+		}
+		return valid
+	}
+
+	// Variant 2: array of objects with lat/lon or latitude/longitude
+	type coordObj struct {
+		Lat  *float64 `json:"lat"`
+		Lon  *float64 `json:"lon"`
+		Lat2 *float64 `json:"latitude"`
+		Lon2 *float64 `json:"longitude"`
+	}
+	var objs []coordObj
+	if err := json.Unmarshal(raw, &objs); err == nil {
+		var valid [][2]float64
+		for _, obj := range objs {
+			lat := 0.0
+			hasLat := false
+			if obj.Lat != nil {
+				lat = *obj.Lat
+				hasLat = true
+			} else if obj.Lat2 != nil {
+				lat = *obj.Lat2
+				hasLat = true
+			}
+
+			lon := 0.0
+			hasLon := false
+			if obj.Lon != nil {
+				lon = *obj.Lon
+				hasLon = true
+			} else if obj.Lon2 != nil {
+				lon = *obj.Lon2
+				hasLon = true
+			}
+
+			if hasLat && hasLon && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 {
+				valid = append(valid, [2]float64{lat, lon})
+			}
+		}
+		return valid
+	}
+
+	return nil
 }
 
 func (f flightWire) toDomain() (domain.FlightLog, error) {
@@ -303,6 +373,8 @@ func (f flightWire) toDomain() (domain.FlightLog, error) {
 		DepartureTime:     f.DepartureTime,
 		ArrivalTime:       f.ArrivalTime,
 		CreatedAt:         f.CreatedAt,
+		Route:             parseRoute(f.Route),
+		TrackCoordinates:  parseTrackCoordinates(f.TrackCoordinates),
 	}, nil
 }
 
