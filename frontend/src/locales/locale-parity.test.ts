@@ -52,6 +52,15 @@ describe("Locale Parity", () => {
     }
   });
 
+  it("ensures all auto-flight keys in en.json exist in pt, es, and fr", () => {
+    const enAutoKeys = Object.keys(en).filter((k) => /^(acars|settings)\.auto(Start|Finish)/.test(k));
+    expect(enAutoKeys.length).toBeGreaterThan(0);
+    for (const locale of locales) {
+      const missingKeys = enAutoKeys.filter((k) => !(k in locale.data));
+      expect(missingKeys, `${locale.name}.json is missing auto-flight keys`).toEqual([]);
+    }
+  });
+
   it("ensures no duplicate keys in JSON source files", () => {
     const files = ["en.json", "pt.json", "es.json", "fr.json"];
     for (const file of files) {

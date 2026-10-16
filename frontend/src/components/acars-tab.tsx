@@ -11,7 +11,7 @@ import { useDevMode } from "@/hooks/use-dev-mode";
 import { FlightDataService, FlightService, SettingsService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
 import { translateError } from "@/lib/translate-error";
-import { playAutoStartDing } from "@/lib/notification-sounds";
+import { useAutoFlightNotices } from "@/hooks/use-auto-flight-notices";
 
 interface AcarsTabProps {
   localMode?: boolean;
@@ -57,6 +57,12 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     volumeRef.current = volume;
   }, [volume]);
 
+  const notify = useCallback((message: string) => {
+    setAutoNotification(message);
+    setTimeout(() => setAutoNotification(null), 5000);
+  }, []);
+  useAutoFlightNotices(notify, volumeRef);
+
   useEffect(() => {
     FlightDataService.ConnectedAdapter().then(setConnectedAdapter).catch(() => {});
     if (!localMode) {
@@ -74,11 +80,12 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       if (d?.sensors) setOnGround(d.sensors.onGround ?? false);
       if (d?.attitude) setGroundSpeed(d.attitude.gs ?? 0);
     });
-    const cancelAutoStart = Events.On("auto-flight-start", (event: any) => {
-      const callsign = event.data ?? "";
-      setAutoNotification(t("acars.autoStarted", { callsign }));
-      setTimeout(() => setAutoNotification(null), 5000);
-      playAutoStartDing(volumeRef.current);
+    // A diversion declared mid-flight moves the arrival; the backend reads
+    // the booking every 30 s while a flight is active.
+    const cancelArrival = Events.On("flight-arrival-changed", (event: { data?: unknown }) => {
+      const arrival = typeof event.data === "string" ? event.data : "";
+      if (!arrival) return;
+      setActiveFlightInfo((info) => (info ? { ...info, arrival } : info));
     });
     const cancelFinishProgress = Events.On("flight-finish-progress", (event: any) => {
       const pending = event?.data?.pending ?? 0;
@@ -104,7 +111,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       cancelConn();
       cancelFlight();
       cancelData();
-      cancelAutoStart();
+      cancelArrival();
       cancelFinishProgress();
       cancelFinishComplete();
       cancelFinishFailed();

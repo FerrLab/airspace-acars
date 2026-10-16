@@ -156,6 +156,22 @@ func (g *groundLocator) observe(fd *domain.FlightData) groundFix {
 	}
 }
 
+// AirportAt returns the ICAO of the airport the locator holds the layout of,
+// when that layout covers the position, and "" otherwise: no simulator
+// scenery, no airport here, or one not looked up yet. It never blocks on a
+// lookup.
+func (g *groundLocator) AirportAt(lat, lon float64) string {
+	if g == nil {
+		return ""
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.layout.Covers(lat, lon) {
+		return ""
+	}
+	return g.layout.ICAO
+}
+
 // Stop ends the locator's goroutine.
 func (g *groundLocator) Stop() {
 	if g == nil {

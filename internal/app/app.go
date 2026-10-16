@@ -105,6 +105,10 @@ type App struct {
 	startTime      time.Time
 	stopCh         chan struct{}
 	finishCancelCh chan struct{}
+	// bookingWatch keeps arrival current while the flight lasts, nil when
+	// the flight has no booking. Guarded by flightMu; the watcher locks
+	// itself.
+	bookingWatch *bookingWatcher
 
 	// Aircraft profiles
 	profileMu        sync.RWMutex
@@ -136,8 +140,9 @@ type App struct {
 	NewSimConnectAdapter func() domain.SimConnector
 	NewXPlaneAdapter     func(host string, port int) domain.SimConnector
 
-	// Auto-flight detection state (only accessed from dataStreamLoop goroutine)
-	autoStartArmed bool
+	// auto decides when a flight starts or finishes on its own. It locks
+	// itself.
+	auto autoFlight
 
 	// Discord loop control
 	discordNudge chan struct{}
