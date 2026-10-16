@@ -307,3 +307,150 @@ func TestFlightWireRejectsNonFiniteNumbers(t *testing.T) {
 		t.Fatalf("flight must stay serialisable: %v", err)
 	}
 }
+
+func TestFlightWireRouteAndTrackCoordinatesVariants(t *testing.T) {
+	// Variant 1: standard string route and [][2]float64 coordinates
+	payloadPairs := `{"id":1,"route":"BITIS UZ25 KASUK","track_coordinates":[[-23.4356,-46.4731],[-25.5958,-54.4875]]}`
+	var w1 flightWire
+	if err := json.Unmarshal([]byte(payloadPairs), &w1); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	fl1, err := w1.toDomain()
+	if err != nil {
+		t.Fatalf("toDomain error: %v", err)
+	}
+	if fl1.Route != "BITIS UZ25 KASUK" {
+		t.Errorf("expected route %q, got %q", "BITIS UZ25 KASUK", fl1.Route)
+	}
+	if len(fl1.TrackCoordinates) != 2 {
+		t.Fatalf("expected 2 coordinates, got %d", len(fl1.TrackCoordinates))
+	}
+	if fl1.TrackCoordinates[0][0] != -23.4356 || fl1.TrackCoordinates[0][1] != -46.4731 {
+		t.Errorf("unexpected coord[0]: %v", fl1.TrackCoordinates[0])
+	}
+
+	// Variant 2: track_coordinates as objects with lat/lon and latitude/longitude
+	payloadObjects := `{"id":2,"track_coordinates":[{"lat":-23.4356,"lon":-46.4731},{"latitude":-25.5958,"longitude":-54.4875}]}`
+	var w2 flightWire
+	if err := json.Unmarshal([]byte(payloadObjects), &w2); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	fl2, err := w2.toDomain()
+	if err != nil {
+		t.Fatalf("toDomain error: %v", err)
+	}
+	if len(fl2.TrackCoordinates) != 2 {
+		t.Fatalf("expected 2 coordinates from object shape, got %d", len(fl2.TrackCoordinates))
+	}
+	if fl2.TrackCoordinates[1][0] != -25.5958 || fl2.TrackCoordinates[1][1] != -54.4875 {
+		t.Errorf("unexpected coord[1]: %v", fl2.TrackCoordinates[1])
+	}
+
+	// Out of bounds lat/lon filtered out
+	payloadOOB := `{"id":3,"track_coordinates":[[-95.0, 10.0],[10.0, 200.0],[10.0, 20.0]]}`
+	var w3 flightWire
+	if err := json.Unmarshal([]byte(payloadOOB), &w3); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	fl3, err := w3.toDomain()
+	if err != nil {
+		t.Fatalf("toDomain error: %v", err)
+	}
+	if len(fl3.TrackCoordinates) != 1 {
+		t.Fatalf("expected 1 valid coordinate after filtering out-of-bounds, got %d", len(fl3.TrackCoordinates))
+	}
+	if fl3.TrackCoordinates[0][0] != 10.0 || fl3.TrackCoordinates[0][1] != 20.0 {
+		t.Errorf("unexpected coord: %v", fl3.TrackCoordinates[0])
+	}
+}
+
+func TestFlightWireLenientWithUnexpectedRouteAndTrackShapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "route is an object instead of string",
+			payload: `{"id":10,"route":{"waypoints":["BITIS","KASUK"]}}`,
+		},
+		{
+			name:    "track_coordinates is a string instead of array",
+			payload: `{"id":11,"track_coordinates":"invalid-string"}`,
+		},
+		{
+			name:    "track_coordinates is an object instead of array",
+			payload: `{"id":12,"track_coordinates":{"points":[[1,2]]}}`,
+		},
+		{
+			name:    "track_coordinates is a flat array of numbers",
+			payload: `{"id":13,"track_coordinates":[12.3, 45.6]}`,
+		},
+		{
+			name:    "track_coordinates is null",
+			payload: `{"id":14,"track_coordinates":null,"route":null}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var w flightWire
+			if err := json.Unmarshal([]byte(tc.payload), &w); err != nil {
+				t.Fatalf("flightWire unmarshal must not fail for unexpected shape: %v", err)
+			}
+			fl, err := w.toDomain()
+			if err != nil {
+				t.Fatalf("toDomain must not fail for unexpected shape: %v", err)
+			}
+			if fl.ID != "10" && fl.ID != "11" && fl.ID != "12" && fl.ID != "13" && fl.ID != "14" {
+				t.Errorf("unexpected flight id: %q", fl.ID)
+			}
+		})
+	}
+}
+
+func TestGetMyFlightsDoesNotDropFlightsOnUnexpectedTrackOrRoute(t *testing.T) {
+	payload := `{
+		"data": [
+			{
+				"id": 201,
+				"callsign": "GLO201",
+				"departure_airport_icao": "SBGR",
+				"arrival_airport_icao": "SBRJ",
+				"route": {"unexpected": "object"},
+				"track_coordinates": [{"lat": -23.4, "lon": -46.4}]
+			},
+			{
+				"id": 202,
+				"callsign": "GLO202",
+				"departure_airport_icao": "SBRJ",
+				"arrival_airport_icao": "SBBR",
+				"route": "DIRECT",
+				"track_coordinates": "unexpected-string"
+			}
+		],
+		"meta": {"total": 2, "current_page": 1, "last_page": 1}
+	}`
+
+	api := &flightLogAPI{stubAPI: stubAPI{
+		status: 200,
+		body:   []byte(payload),
+	}}
+	a := &App{Airspace: api}
+
+	res, err := a.GetMyFlights(1, 10)
+	if err != nil {
+		t.Fatalf("GetMyFlights unexpected error: %v", err)
+	}
+	if len(res.Flights) != 2 {
+		t.Fatalf("expected 2 flights, got %d (logbook must not be emptied by unexpected server shapes)", len(res.Flights))
+	}
+	if len(res.Flights[0].TrackCoordinates) != 1 {
+		t.Errorf("expected 1 track coordinate for flight 201, got %d", len(res.Flights[0].TrackCoordinates))
+	}
+	if res.Flights[1].Route != "DIRECT" {
+		t.Errorf("expected route DIRECT for flight 202, got %q", res.Flights[1].Route)
+	}
+	if len(res.Flights[1].TrackCoordinates) != 0 {
+		t.Errorf("expected 0 track coordinates for flight 202, got %d", len(res.Flights[1].TrackCoordinates))
+	}
+}

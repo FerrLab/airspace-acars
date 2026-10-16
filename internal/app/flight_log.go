@@ -49,13 +49,31 @@ var knownAirportCoords = map[string][2]float64{
 	"SBCA": {-24.953889, -53.500833},
 	"SBLN": {-12.483611, -55.686111},
 	"SBMA": {-22.345, -49.068333},
+	"SBBE": {-1.3847, -48.4789},
+	"SBIL": {-14.8164, -39.0331},
+	"SBAR": {-10.9840, -37.0703},
+	"SBPV": {-8.7094, -63.9028},
+	"SBRB": {-9.8689, -67.8983},
+	"SBPL": {-9.3625, -40.5647},
+	"SBJU": {-7.2189, -39.2703},
+	"SBCH": {-27.1344, -52.6564},
+	"SBUG": {-29.7825, -57.0378},
+	"SBTT": {-4.2497, -69.9419},
+	"SBAT": {-9.8664, -56.1050},
+	"SBCZ": {-7.5997, -72.7694},
+	"SBBW": {-15.8619, -52.3892},
 	// International
 	"SAEZ": {-34.822222, -58.535833},
 	"SABE": {-34.559167, -58.415556},
+	"SAWH": {-54.8433, -68.2956},
 	"SCEL": {-33.393001, -70.785797},
 	"SPJC": {-12.021944, -77.114444},
 	"SKBO": {4.701667, -74.146944},
 	"SEQM": {-0.129167, -78.3575},
+	"SLVR": {-17.6447, -63.1353},
+	"SVMI": {10.6031, -66.9906},
+	"MPTO": {9.0714, -79.3835},
+	"MMMX": {19.4361, -99.0719},
 	"SUMU": {-34.838333, -56.030833},
 	"SGAS": {-25.239722, -57.518889},
 	"EGLL": {51.4706, -0.461941},
@@ -215,6 +233,8 @@ type flightWire struct {
 	DepartureICAO    string              `json:"departure_airport_icao"`
 	ArrivalICAO      string              `json:"arrival_airport_icao"`
 	Aircraft         *flightWireAircraft `json:"aircraft"`
+	Route            json.RawMessage     `json:"route"`
+	TrackCoordinates json.RawMessage     `json:"track_coordinates"`
 	FlightTime       interface{}         `json:"flight_time"`
 	DurationMinutes  interface{}         `json:"duration_minutes"`
 	Duration         interface{}         `json:"duration"`
@@ -225,6 +245,74 @@ type flightWire struct {
 	DepartureTime    string              `json:"departure_time"`
 	ArrivalTime      string              `json:"arrival_time"`
 	CreatedAt        string              `json:"created_at"`
+}
+
+func parseRoute(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.TrimSpace(s)
+	}
+	return ""
+}
+
+func parseTrackCoordinates(raw json.RawMessage) [][2]float64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	// Variant 1: array of [lat, lon] pairs
+	var pairs [][2]float64
+	if err := json.Unmarshal(raw, &pairs); err == nil {
+		var valid [][2]float64
+		for _, p := range pairs {
+			if p[0] >= -90 && p[0] <= 90 && p[1] >= -180 && p[1] <= 180 {
+				valid = append(valid, p)
+			}
+		}
+		return valid
+	}
+
+	// Variant 2: array of objects with lat/lon or latitude/longitude
+	type coordObj struct {
+		Lat  *float64 `json:"lat"`
+		Lon  *float64 `json:"lon"`
+		Lat2 *float64 `json:"latitude"`
+		Lon2 *float64 `json:"longitude"`
+	}
+	var objs []coordObj
+	if err := json.Unmarshal(raw, &objs); err == nil {
+		var valid [][2]float64
+		for _, obj := range objs {
+			lat := 0.0
+			hasLat := false
+			if obj.Lat != nil {
+				lat = *obj.Lat
+				hasLat = true
+			} else if obj.Lat2 != nil {
+				lat = *obj.Lat2
+				hasLat = true
+			}
+
+			lon := 0.0
+			hasLon := false
+			if obj.Lon != nil {
+				lon = *obj.Lon
+				hasLon = true
+			} else if obj.Lon2 != nil {
+				lon = *obj.Lon2
+				hasLon = true
+			}
+
+			if hasLat && hasLon && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 {
+				valid = append(valid, [2]float64{lat, lon})
+			}
+		}
+		return valid
+	}
+
+	return nil
 }
 
 func (f flightWire) toDomain() (domain.FlightLog, error) {
@@ -285,6 +373,8 @@ func (f flightWire) toDomain() (domain.FlightLog, error) {
 		DepartureTime:     f.DepartureTime,
 		ArrivalTime:       f.ArrivalTime,
 		CreatedAt:         f.CreatedAt,
+		Route:             parseRoute(f.Route),
+		TrackCoordinates:  parseTrackCoordinates(f.TrackCoordinates),
 	}, nil
 }
 

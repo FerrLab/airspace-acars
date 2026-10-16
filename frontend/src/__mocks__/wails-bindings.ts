@@ -111,6 +111,15 @@ export function mockFlightService() {
     GetFlightState: () => Promise.resolve("idle"),
     GetActiveFlightInfo: () =>
       Promise.resolve(null as { departure?: string; arrival?: string; callsign?: string } | null),
+    GetAirportCoordinates: (icao: string) => {
+      const coords: Record<string, { latitude: number; longitude: number }> = {
+        EGLL: { latitude: 51.4706, longitude: -0.461941 },
+        KJFK: { latitude: 40.639751, longitude: -73.778925 },
+        SBGR: { latitude: -23.435556, longitude: -46.473056 },
+        SBRJ: { latitude: -22.910278, longitude: -43.163056 },
+      };
+      return Promise.resolve(coords[icao.toUpperCase()] ?? null);
+    },
     GetBooking: () =>
       Promise.resolve({
         id: "bk_test_1",

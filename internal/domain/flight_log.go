@@ -1,5 +1,11 @@
 package domain
 
+// AirportCoordinates holds latitude and longitude for an airport.
+type AirportCoordinates struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
 // AirportInfo contains geographic and identification data for an airport.
 type AirportInfo struct {
 	ICAO      string  `json:"icao"`
@@ -35,6 +41,8 @@ type FlightLog struct {
 	DepartureTime     string        `json:"departure_time,omitempty"`
 	ArrivalTime       string        `json:"arrival_time,omitempty"`
 	CreatedAt         string        `json:"created_at,omitempty"`
+	Route             string        `json:"route,omitempty"`
+	TrackCoordinates  [][2]float64  `json:"track_coordinates,omitempty"`
 }
 
 // PilotSummaryStats holds aggregated statistics for the pilot.
