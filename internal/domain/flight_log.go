@@ -1,5 +1,11 @@
 package domain
 
+// AirportCoordinates holds latitude and longitude for an airport.
+type AirportCoordinates struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
 // AirportInfo contains geographic and identification data for an airport.
 type AirportInfo struct {
 	ICAO      string  `json:"icao"`
