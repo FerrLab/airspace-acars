@@ -7,6 +7,7 @@ Built with [Wails v3](https://wails.io) (Go + React).
 ## Features
 
 - **Flight tracking** — Adaptive position reporting with automatic frequency adjustment based on flight phase
+- **Flight progress bar** — Dynamic in-flight progress bar on the dashboard tracking great-circle progress, elapsed and remaining time, flight phase, and remaining distance
 - **Auto-start and auto-finish** — the flight starts on its own when the aircraft is ready to depart at the booking's departure airport, and finishes once it has flown and is shut down at the arrival airport. The booking is re-read every 30 s during the flight, so a diversion to an alternate moves the arrival. See [docs/auto-flight.md](docs/auto-flight.md)
 - **Simulator support** — MSFS 2020 (SimConnect) and X-Plane 11/12 (UDP) with auto-detection
 - **Runway and stand** — every position report names the runway (both ends, with position and elevation) or the stand the aircraft is on, read from the simulator's own scenery: the SimConnect Facilities API on MSFS, `apt.dat` and CIFP navdata on X-Plane. See [docs/runway-stand.md](docs/runway-stand.md)
