@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"log"
 	"log/slog"
+	"sync"
 	"time"
 
 	"airspace-acars/internal/adapters/airspace"
@@ -14,6 +15,7 @@ import (
 	"airspace-acars/internal/adapters/storage"
 	wailsadapter "airspace-acars/internal/adapters/wails"
 	"airspace-acars/internal/adapters/winaudio"
+	windowadapter "airspace-acars/internal/adapters/window"
 	"airspace-acars/internal/adapters/xplane"
 	"airspace-acars/internal/adapters/xplane/aptdat"
 	"airspace-acars/internal/app"
@@ -142,15 +144,14 @@ func main() {
 		},
 	})
 
-	// Wire the Wails app back to the emitter and set quit function
+	// Wire the Wails app back to the emitter
+	windowMgr := windowadapter.New("")
 	wailsEmitter.SetApp(wailsApp)
-	appInstance.QuitFunc = func() { wailsApp.Quit() }
 
-	// --- Create window ---
-	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	windowOpts := application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",
-		Width:  1100,
-		Height: 700,
+		Width:  domain.DefaultWindowWidth,
+		Height: domain.DefaultWindowHeight,
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,
@@ -158,18 +159,77 @@ func main() {
 		},
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
-	})
+	}
+	initial := windowMgr.InitialBounds()
+	windowOpts.Width = initial.Width
+	windowOpts.Height = initial.Height
+	if initial.HasPosition {
+		windowOpts.X = initial.X
+		windowOpts.Y = initial.Y
+		windowOpts.InitialPosition = application.WindowXY
+	} else {
+		windowOpts.InitialPosition = application.WindowCentered
+	}
+	windowOpts.StartState = application.WindowStateNormal
+	windowOpts.Hidden = initial.Hidden
 
-	si.SetOnShow(func() {
+	// --- Create window ---
+	window := wailsApp.Window.NewWithOptions(windowOpts)
+	wrappedWin := wailsWindow{w: window}
+
+	changed := func(*application.WindowEvent) { windowMgr.ScheduleObserve(wrappedWin) }
+	for _, ev := range []events.WindowEventType{
+		events.Common.WindowDidResize,
+		events.Common.WindowDidMove,
+		events.Common.WindowMaximise,
+		events.Common.WindowUnMaximise,
+		events.Common.WindowFullscreen,
+		events.Common.WindowUnFullscreen,
+	} {
+		window.OnWindowEvent(ev, changed)
+	}
+
+	var once sync.Once
+	reveal := func() {
+		once.Do(func() {
+			var screens []*application.Screen
+			if wailsApp.Screen != nil {
+				screens = wailsApp.Screen.GetAll()
+			}
+			windowMgr.Reveal(wrappedWin, screenBounds(screens))
+		})
+	}
+
+	if windowMgr.StartsHidden() {
+		// The runtime-ready event also fires on every reload in development;
+		// once makes only the first count.
+		window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) { reveal() })
+		time.AfterFunc(windowadapter.RevealTimeout, func() {
+			defer observability.Recover()
+			reveal()
+		})
+	}
+
+	// Both quit paths run off the UI thread (a service call and a menu
+	// callback), which the flush waits on to read the window.
+	quit := func() {
+		windowMgr.Flush(wrappedWin)
+		wailsApp.Quit()
+	}
+	appInstance.QuitFunc = quit
+
+	showWindow := func() {
+		reveal()
 		window.Show()
 		window.Focus()
-	})
+	}
+
+	si.SetOnShow(showWindow)
 
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		if appInstance.GetSettings().ConfirmCloseApp {
 			wailsApp.Event.Emit("request-window-close", true)
-			window.Show()
-			window.Focus()
+			showWindow()
 			e.Cancel()
 			return
 		}
@@ -191,12 +251,11 @@ func main() {
 	}
 	trayMenu := wailsApp.NewMenu()
 	trayMenu.Add(labels[0]).OnClick(func(ctx *application.Context) {
-		window.Show()
-		window.Focus()
+		showWindow()
 	})
 	trayMenu.AddSeparator()
 	trayMenu.Add(labels[1]).OnClick(func(ctx *application.Context) {
-		wailsApp.Quit()
+		quit()
 	})
 
 	systray := wailsApp.SystemTray.New()
@@ -204,8 +263,7 @@ func main() {
 	systray.SetTooltip("Airspace ACARS")
 	systray.SetMenu(trayMenu)
 	systray.OnClick(func() {
-		window.Show()
-		window.Focus()
+		showWindow()
 	})
 
 	// --- Start background services ---
@@ -233,4 +291,43 @@ func main() {
 	if err := wailsApp.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// wailsWindow wraps *application.WebviewWindow to satisfy windowadapter.Window
+// without exposing Wails types through the adapter interface.
+type wailsWindow struct {
+	w *application.WebviewWindow
+}
+
+func (w wailsWindow) IsMaximised() bool    { return w.w.IsMaximised() }
+func (w wailsWindow) IsFullscreen() bool   { return w.w.IsFullscreen() }
+func (w wailsWindow) IsMinimised() bool    { return w.w.IsMinimised() }
+func (w wailsWindow) Size() (int, int)     { return w.w.Size() }
+func (w wailsWindow) Position() (int, int) { return w.w.Position() }
+func (w wailsWindow) SetBounds(x, y, width, height int) {
+	w.w.SetBounds(application.Rect{X: x, Y: y, Width: width, Height: height})
+}
+func (w wailsWindow) Center()     { w.w.Center() }
+func (w wailsWindow) Maximise()   { w.w.Maximise() }
+func (w wailsWindow) Fullscreen() { w.w.Fullscreen() }
+func (w wailsWindow) Show()       { w.w.Show() }
+
+// screenBounds converts Wails' displays to the domain's, preferring the work
+// area, which excludes the taskbar.
+func screenBounds(screens []*application.Screen) []domain.ScreenBounds {
+	var out []domain.ScreenBounds
+	for _, s := range screens {
+		if s == nil {
+			continue
+		}
+		area := s.WorkArea
+		if area.Width == 0 || area.Height == 0 {
+			area = s.Bounds
+		}
+		out = append(out, domain.ScreenBounds{
+			X: area.X, Y: area.Y, Width: area.Width, Height: area.Height,
+			Primary: s.IsPrimary,
+		})
+	}
+	return out
 }
