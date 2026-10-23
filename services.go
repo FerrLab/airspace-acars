@@ -42,8 +42,8 @@ func (s *FlightService) GetFlightState() string { return s.app.GetFlightState() 
 func (s *FlightService) GetActiveFlightInfo() map[string]string {
 	return s.app.GetActiveFlightInfo()
 }
-func (s *FlightService) GetAirportCoordinates(icao string) *domain.AirportCoordinates {
-	return s.app.GetAirportCoordinates(icao)
+func (s *FlightService) GetFlightRoute() (*domain.FlightRoute, error) {
+	return s.app.GetFlightRoute()
 }
 func (s *FlightService) GetBooking() (map[string]interface{}, error) { return s.app.GetBooking() }
 func (s *FlightService) GetPilot() (map[string]interface{}, error)   { return s.app.GetPilot() }

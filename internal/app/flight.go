@@ -48,9 +48,8 @@ func (a *App) GetFlightState() string {
 // GetActiveFlightInfo returns callsign, departure and arrival for the current
 // flight, plus finishCooldownSec — how long until minFlightDuration allows the
 // flight to be finished (0 once finishable) — and startTimeMs, the flight start
-// timestamp in Unix milliseconds (present only when a flight is active).
-// When departure and arrival airport coordinates can be resolved, it also
-// returns departureLat, departureLon, arrivalLat, and arrivalLon.
+// timestamp in Unix milliseconds, which lets the dashboard's elapsed time
+// survive a reload of the webview.
 func (a *App) GetActiveFlightInfo() map[string]string {
 	a.flightMu.Lock()
 	defer a.flightMu.Unlock()
@@ -70,35 +69,7 @@ func (a *App) GetActiveFlightInfo() map[string]string {
 	if !a.startTime.IsZero() {
 		res["startTimeMs"] = strconv.FormatInt(a.startTime.UnixMilli(), 10)
 	}
-	if a.departure != "" {
-		dep := airportFromICAO(a.departure)
-		if dep.Latitude != 0 || dep.Longitude != 0 {
-			res["departureLat"] = strconv.FormatFloat(dep.Latitude, 'f', 6, 64)
-			res["departureLon"] = strconv.FormatFloat(dep.Longitude, 'f', 6, 64)
-		}
-	}
-	arr := a.bookingWatch.Arrival()
-	if arr.Latitude == 0 && arr.Longitude == 0 && a.arrival != "" {
-		arr = airportFromICAO(a.arrival)
-	}
-	if arr.Latitude != 0 || arr.Longitude != 0 {
-		res["arrivalLat"] = strconv.FormatFloat(arr.Latitude, 'f', 6, 64)
-		res["arrivalLon"] = strconv.FormatFloat(arr.Longitude, 'f', 6, 64)
-	}
 	return res
-}
-
-// GetAirportCoordinates returns resolved geographic coordinates for an airport code.
-// It returns nil if the airport is not recognized in the known catalog.
-func (a *App) GetAirportCoordinates(icao string) *domain.AirportCoordinates {
-	lat, lon := resolveCoordinates(icao, 0, 0)
-	if lat == 0 && lon == 0 {
-		return nil
-	}
-	return &domain.AirportCoordinates{
-		Latitude:  lat,
-		Longitude: lon,
-	}
 }
 
 // GetBooking fetches the current booking from the API.
@@ -220,7 +191,7 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 
 	go a.positionLoop(a.stopCh)
 	if bookingID != "" {
-		a.bookingWatch = a.startBookingWatcher(bookingID, arrival)
+		a.bookingWatch = a.startBookingWatcher(bookingID, departure, arrival)
 	}
 
 	slog.Info("flight started", "callsign", callsign, "dep", departure, "arr", arrival)

@@ -42,8 +42,6 @@
   "acars.dashboard.enRoute": "En route",
   "acars.dashboard.approachPhase": "Approach",
   "acars.dashboard.completedPhase": "Arrived",
-  "acars.dashboard.distanceRemaining": "{{distance}} NM remaining",
-  "acars.dashboard.distanceTotal": "{{distance}} NM total",
   "acars.dashboard.elapsed": "Elapsed",
   "acars.dashboard.remaining": "Remaining",
   "acars.dashboard.duration": "Duration",

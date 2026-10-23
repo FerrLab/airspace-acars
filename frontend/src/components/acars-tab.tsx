@@ -12,7 +12,7 @@ import { FlightDataService, FlightService, SettingsService } from "../../binding
 import { Events } from "@wailsio/runtime";
 import { translateError } from "@/lib/translate-error";
 import { useAutoFlightNotices } from "@/hooks/use-auto-flight-notices";
-import type { Coordinates } from "@/lib/flight-progress";
+import { useFlightRoute } from "@/hooks/use-flight-route";
 
 interface AcarsTabProps {
   localMode?: boolean;
@@ -32,13 +32,11 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
   const isConnected = connectedAdapter !== "";
   const [flightState, setFlightState] = useState<"idle" | "active" | "finishing">("idle");
   const [booking, setBooking] = useState<any>(null);
-  const [bookingDepCoords, setBookingDepCoords] = useState<Coordinates | null>(null);
-  const [bookingArrCoords, setBookingArrCoords] = useState<Coordinates | null>(null);
   const [startingFlight, setStartingFlight] = useState(false);
   const [endingFlight, setEndingFlight] = useState(false);
   const [onGround, setOnGround] = useState(false);
   const [groundSpeed, setGroundSpeed] = useState(0);
-  const [activeFlightInfo, setActiveFlightInfo] = useState<{ callsign?: string; departure?: string; arrival?: string } | null>(null);
+  const [activeFlightInfo, setActiveFlightInfo] = useState<{ callsign?: string; departure?: string; arrival?: string; startTimeMs?: string } | null>(null);
   const [autoNotification, setAutoNotification] = useState<string | null>(null);
   const [finishPending, setFinishPending] = useState<number | null>(null);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
@@ -127,33 +125,9 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       const result = await FlightService.GetBooking();
       setBooking(result);
       setBookingError(false);
-      if (result) {
-        const depIcao = result.departure_airport?.icao;
-        const arrIcao = result.alternate_airport?.icao ?? result.arrival_airport?.icao;
-        if (depIcao) {
-          FlightService.GetAirportCoordinates(depIcao)
-            .then((c) => {
-              if (c && typeof c.latitude === "number" && typeof c.longitude === "number") {
-                setBookingDepCoords({ lat: c.latitude, lon: c.longitude });
-              }
-            })
-            .catch(() => {});
-        }
-        if (arrIcao) {
-          FlightService.GetAirportCoordinates(arrIcao)
-            .then((c) => {
-              if (c && typeof c.latitude === "number" && typeof c.longitude === "number") {
-                setBookingArrCoords({ lat: c.latitude, lon: c.longitude });
-              }
-            })
-            .catch(() => {});
-        }
-      }
     } catch {
       setBooking(null);
       setBookingError(true);
-      setBookingDepCoords(null);
-      setBookingArrCoords(null);
     }
   }, []);
 
@@ -318,6 +292,11 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
     }
   };
 
+  const bookingKey = booking
+    ? [booking.id, booking.departure_airport?.icao, booking.alternate_airport?.icao ?? booking.arrival_airport?.icao].join(":")
+    : null;
+  const routeCoords = useFlightRoute(flightState, bookingKey);
+
   const refreshBooking = async () => {
     setRefreshingBooking(true);
     try { await fetchBooking(); } finally { setRefreshingBooking(false); }
@@ -330,7 +309,7 @@ export function AcarsTab({ localMode = false, volume, onVolumeChange }: AcarsTab
       <AcarsDashboard
         localMode={localMode} connectedAdapter={connectedAdapter} connecting={connecting}
         flightState={flightState} booking={booking} activeFlightInfo={activeFlightInfo}
-        departureCoords={bookingDepCoords} arrivalCoords={bookingArrCoords}
+        routeCoords={routeCoords}
         flightData={flightData} onGround={onGround} groundSpeed={groundSpeed}
         starting={startingFlight} ending={endingFlight} finishCooldown={finishCooldown}
         finishPending={finishPending} volume={volume} refreshing={refreshingBooking}

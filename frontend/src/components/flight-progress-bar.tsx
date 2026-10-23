@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import {
   computeFlightProgress,
   formatFlightDuration,
+  progressPhaseKey,
   type Coordinates,
 } from "@/lib/flight-progress";
 
@@ -32,39 +33,16 @@ export function FlightProgressBar({
   cruiseSpeed,
   className,
 }: FlightProgressBarProps) {
-  const { t } = useTranslation();
-
-  // Remember initial aircraft position when tracking starts
-  const [initialPos, setInitialPos] = useState<Coordinates | null>(null);
-
-  // Live timer ticker and fallback internal start time
-  const [internalStartTime, setInternalStartTime] = useState<number | null>(null);
+  const { t, i18n } = useTranslation();
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
 
+  // Tick every second so the elapsed time counts up live. The start time is
+  // the backend's, so it survives a remount or a reload of the webview.
   useEffect(() => {
-    if (flightState === "active" && !initialPos && currentLat && currentLon) {
-      setInitialPos({ lat: currentLat, lon: currentLon });
-    } else if (flightState === "idle") {
-      setInitialPos(null);
-    }
-  }, [flightState, currentLat, currentLon, initialPos]);
-
-  useEffect(() => {
-    if (flightState === "active") {
-      if (!internalStartTime && !flightStartTime) {
-        setInternalStartTime(Date.now());
-      }
-      // Tick every 1 second so elapsed flight duration updates live in real time
-      const timer = window.setInterval(() => {
-        setCurrentTime(Date.now());
-      }, 1000);
-      return () => window.clearInterval(timer);
-    } else if (flightState === "idle") {
-      setInternalStartTime(null);
-    }
-  }, [flightState, internalStartTime, flightStartTime]);
-
-  const effectiveStartTime = flightStartTime ?? internalStartTime;
+    if (flightState !== "active") return;
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [flightState]);
 
   const {
     progressPercent,
@@ -83,8 +61,7 @@ export function FlightProgressBar({
         currentLon,
         onGround,
         groundSpeed,
-        initialRecordedPosition: initialPos,
-        flightStartTime: effectiveStartTime,
+        flightStartTime,
         currentTime,
         cruiseSpeed,
       }),
@@ -96,8 +73,7 @@ export function FlightProgressBar({
       currentLon,
       onGround,
       groundSpeed,
-      initialPos,
-      effectiveStartTime,
+      flightStartTime,
       currentTime,
       cruiseSpeed,
     ]
@@ -109,7 +85,7 @@ export function FlightProgressBar({
 
   const elapsedText = formatFlightDuration(elapsedMinutes);
   const remainingText = remainingMinutes !== null ? formatFlightDuration(remainingMinutes) : "—:—";
-  const durationText = durationMinutes !== null ? formatFlightDuration(durationMinutes) : elapsedText;
+  const durationText = durationMinutes !== null ? formatFlightDuration(durationMinutes) : "—:—";
 
   return (
     <div
@@ -132,15 +108,7 @@ export function FlightProgressBar({
                 : "text-yellow-400/90"
           )}
         >
-          {flightState === "active"
-            ? statusPhase === "approach"
-              ? t("acars.dashboard.approachPhase")
-              : statusPhase === "taxi"
-                ? t("acars.dashboard.preflightPhase")
-                : t("acars.dashboard.enRoute")
-            : flightState === "finishing"
-              ? t("acars.dashboard.completedPhase")
-              : t("acars.dashboard.preflightPhase")}
+          {t(progressPhaseKey(flightState, statusPhase))}
         </span>
       </div>
 
@@ -237,7 +205,7 @@ export function FlightProgressBar({
         </span>
         {totalDistanceNm !== null && (
           <span className="text-[10px] text-muted-foreground/70 ml-1.5 hidden sm:inline tabular-nums">
-            ({Math.round(totalDistanceNm).toLocaleString()} NM)
+            ({Math.round(totalDistanceNm).toLocaleString(i18n.language)} NM)
           </span>
         )}
       </div>

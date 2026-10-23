@@ -1,9 +1,10 @@
 package domain
 
-// AirportCoordinates holds latitude and longitude for an airport.
-type AirportCoordinates struct {
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
+// FlightRoute is where the pilot's flight goes from and to. An airport whose
+// coordinates are unknown has both at zero.
+type FlightRoute struct {
+	Departure AirportInfo `json:"departure"`
+	Arrival   AirportInfo `json:"arrival"`
 }
 
 // AirportInfo contains geographic and identification data for an airport.
