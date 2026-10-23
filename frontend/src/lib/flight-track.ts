@@ -1,8 +1,8 @@
 /**
  * Flight Track Generation Utility
  *
- * Computes great-circle (orthodromic) geodesic routes using spherical interpolation (Slerp),
- * or utilizes real telemetry GPS track coordinates from the server when available.
+ * Computes great-circle (orthodromic) geodesic routes using spherical
+ * interpolation (Slerp) between a flight's departure and arrival.
  */
 
 export interface FlightTrackOptions {
@@ -10,13 +10,23 @@ export interface FlightTrackOptions {
   depLon: number;
   arrLat: number;
   arrLon: number;
-  trackCoordinates?: [number, number][];
   numPoints?: number;
 }
 
 /**
+ * nearestLongitude returns lon moved by whole turns to within 180° of
+ * reference. Leaflet draws a longitude beyond ±180 on the neighbouring copy of
+ * the world, so a route kept continuous this way crosses the antimeridian as
+ * a short line instead of jumping across the whole map.
+ */
+export function nearestLongitude(lon: number, reference: number): number {
+  return lon - 360 * Math.round((lon - reference) / 360);
+}
+
+/**
  * Spherical Slerp (Great-Circle geodesic interpolation) between two coordinates.
- * Computes shortest-path trajectory points on Earth.
+ * Computes shortest-path trajectory points on Earth. Longitudes are continuous
+ * from the departure's, so a transpacific route may end beyond ±180.
  */
 export function interpolateGreatCircle(
   lat1: number,
@@ -46,12 +56,13 @@ export function interpolateGreatCircle(
   if (omega < 1e-6) {
     return [
       [lat1, lon1],
-      [lat2, lon2],
+      [lat2, nearestLongitude(lon2, lon1)],
     ];
   }
 
   const sinOmega = Math.sin(omega);
   const points: [number, number][] = [];
+  let previousLon = lon1;
 
   for (let i = 0; i <= numPoints; i++) {
     const f = i / numPoints;
@@ -67,11 +78,13 @@ export function interpolateGreatCircle(
     const z = a * Math.sin(phi1) + b * Math.sin(phi2);
 
     const phi = Math.atan2(z, Math.hypot(x, y));
-    const lambda = Math.atan2(y, x);
+    // atan2 keeps longitudes in ±180; carry on from the previous point instead.
+    const lon = nearestLongitude(Math.atan2(y, x) * toDeg, previousLon);
+    previousLon = lon;
 
     points.push([
       Math.round(phi * toDeg * 100000) / 100000,
-      Math.round(lambda * toDeg * 100000) / 100000,
+      Math.round(lon * 100000) / 100000,
     ]);
   }
 
@@ -79,18 +92,13 @@ export function interpolateGreatCircle(
 }
 
 /**
- * Generates the flight track coordinate sequence.
- * Uses real recorded telemetry breadcrumbs if present, or spherical great-circle interpolation.
+ * Generates the flight track coordinate sequence: the great circle between
+ * departure and arrival, or nothing when either is not placed.
  */
 export function generateFlightTrackCoordinates(
   options: FlightTrackOptions
 ): [number, number][] {
-  const { depLat, depLon, arrLat, arrLon, trackCoordinates, numPoints = 32 } =
-    options;
-
-  if (Array.isArray(trackCoordinates) && trackCoordinates.length >= 2) {
-    return trackCoordinates;
-  }
+  const { depLat, depLon, arrLat, arrLon, numPoints = 32 } = options;
 
   const hasDep = !isNaN(depLat) && !isNaN(depLon) && (depLat !== 0 || depLon !== 0);
   const hasArr = !isNaN(arrLat) && !isNaN(arrLon) && (arrLat !== 0 || arrLon !== 0);

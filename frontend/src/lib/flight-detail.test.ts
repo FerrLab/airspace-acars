@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { FlightLog } from "../../bindings/airspace-acars/internal/domain/models";
 import {
   formatDurationHoursMinutes,
-  computeLandingRateCategory,
-  formatScoreTier,
+  formatScore,
+  landingRateBand,
   getFlightKPIs,
   getFlightFacts,
 } from "./flight-detail";
@@ -12,7 +12,7 @@ const mockFlight: FlightLog = {
   id: "880",
   callsign: "SXB9404",
   flight_number: "4J9404",
-  status: "accepted",
+  status: "acceptedSystem",
   departure_airport: {
     icao: "SBGR",
     name: "Guarulhos",
@@ -40,7 +40,6 @@ const mockFlight: FlightLog = {
   created_at: "2026-10-08T14:36:00Z",
   departure_time: "2026-10-08T14:36:00Z",
   arrival_time: "2026-10-08T16:10:00Z",
-  route: "BITIS UZ25 KASUK",
 };
 
 describe("flight-detail lib", () => {
@@ -60,49 +59,46 @@ describe("flight-detail lib", () => {
     });
   });
 
-  describe("computeLandingRateCategory", () => {
-    it("classifies smooth/butter landings", () => {
-      const cat = computeLandingRateCategory(-100);
-      expect(cat.label).toBe("Butter");
-      expect(cat.colorClass).toContain("emerald");
+  // The same touchdown must get the same word as on the platform's flight
+  // page, whose LandingRateBand is <=100 butter, <=200 good, <=400 firm.
+  describe("landingRateBand", () => {
+    it.each([
+      [-100, "myFlights.landingBand.butter"],
+      [-110, "myFlights.landingBand.good"],
+      [-200, "myFlights.landingBand.good"],
+      [-400, "myFlights.landingBand.firm"],
+      [-450, "myFlights.landingBand.hard"],
+    ])("a %d fpm touchdown is %s", (rate, key) => {
+      expect(landingRateBand(rate).labelKey).toBe(key);
     });
 
-    it("classifies good landings", () => {
-      const cat = computeLandingRateCategory(-220);
-      expect(cat.label).toBe("Good");
-      expect(cat.colorClass).toContain("sky");
-    });
-
-    it("classifies firm landings", () => {
-      const cat = computeLandingRateCategory(-480);
-      expect(cat.label).toBe("Firm");
-      expect(cat.colorClass).toContain("rose");
+    it("names no band when no touchdown was recorded", () => {
+      expect(landingRateBand(0).labelKey).toBeNull();
     });
   });
 
-  describe("formatScoreTier", () => {
-    it("returns Gold for 90+", () => {
-      expect(formatScoreTier(95).tier).toBe("Gold");
-      expect(formatScoreTier(9.5).tier).toBe("Gold");
-    });
-
-    it("returns Silver for 75-89", () => {
-      expect(formatScoreTier(80).tier).toBe("Silver");
-    });
-
-    it("returns Bronze for <75", () => {
-      expect(formatScoreTier(60).tier).toBe("Bronze");
+  // The server's score is the composite × 10, from 0 to 100. A guess that
+  // read low scores as already out of 10 showed 8/100 as 8.0.
+  describe("formatScore", () => {
+    it.each([
+      [92, "9.2"],
+      [8, "0.8"],
+      [100, "10.0"],
+      [0, "—"],
+    ])("a score of %d reads %s / 10", (score, shown) => {
+      expect(formatScore(score)).toBe(shown);
     });
   });
 
   describe("getFlightKPIs", () => {
     it("extracts real KPIs directly from FlightLog data", () => {
-      const kpis = getFlightKPIs(mockFlight);
+      const kpis = getFlightKPIs(mockFlight, "en");
       expect(kpis).toHaveLength(5);
 
       const touchdown = kpis.find((k) => k.labelKey === "myFlights.touchdownRate");
       expect(touchdown?.value).toBe("-142");
       expect(touchdown?.unit).toBe("ft/min");
+      expect(touchdown?.subKey).toBe("myFlights.landingBand.good");
 
       const dist = kpis.find((k) => k.labelKey === "myFlights.kpiTotalDistance");
       expect(dist?.value).toBe("456");
@@ -117,21 +113,22 @@ describe("flight-detail lib", () => {
 
       const score = kpis.find((k) => k.labelKey === "myFlights.operationalScore");
       expect(score?.value).toBe("9.2");
-      expect(score?.sub).toContain("Gold");
+      expect(score?.sub).toBeUndefined();
+    });
+
+    it("groups numbers the way the pilot's language does", () => {
+      const fuel = getFlightKPIs(mockFlight, "pt").find((k) => k.labelKey === "myFlights.fuelBurned");
+      expect(fuel?.value).toBe("3.427");
     });
   });
 
   describe("getFlightFacts", () => {
-    it("extracts flight facts including route if present", () => {
+    it("extracts flight facts with the times in Zulu", () => {
       const facts = getFlightFacts(mockFlight);
-      const callsign = facts.find((f) => f.labelKey === "myFlights.factCallsign");
-      expect(callsign?.value).toBe("SXB9404");
-
-      const reg = facts.find((f) => f.labelKey === "myFlights.factRegistration");
-      expect(reg?.value).toBe("PR-SBG");
-
-      const route = facts.find((f) => f.labelKey === "myFlights.routeLabel");
-      expect(route?.value).toBe("BITIS UZ25 KASUK");
+      expect(facts.find((f) => f.labelKey === "myFlights.factCallsign")?.value).toBe("SXB9404");
+      expect(facts.find((f) => f.labelKey === "myFlights.factRegistration")?.value).toBe("PR-SBG");
+      expect(facts.find((f) => f.labelKey === "myFlights.factDepartureTime")?.value).toBe("08/10 14:36z");
+      expect(facts.find((f) => f.labelKey === "myFlights.factArrivalTime")?.value).toBe("08/10 16:10z");
     });
   });
 });

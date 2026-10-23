@@ -26,6 +26,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { FlightDetailView } from "./flight-detail-view";
+import { getFlightStatusBadge, normalizeFlightStatus } from "./flight-status-badge";
+import { formatUtcDate } from "@/lib/flight-format";
 
 export function MyFlightsTab({ localMode = false }: { localMode?: boolean }) {
   const { tenant, tokenSynced } = useAuth();
@@ -45,17 +47,6 @@ function formatDuration(minutes: number): string {
   const m = minutes % 60;
   if (h === 0) return `${m}m`;
   return `${h}h ${m}m`;
-}
-
-function formatUtcDate(val?: string): string {
-  if (!val) return "—";
-  const d = new Date(val);
-  if (Number.isNaN(d.getTime())) return "—";
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const hours = String(d.getUTCHours()).padStart(2, "0");
-  const mins = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${day}/${month} ${hours}:${mins}z`;
 }
 
 function getLandingRateBadge(rate: number) {
@@ -103,75 +94,6 @@ function getLandingRateBadge(rate: number) {
       className="text-[10px] py-0 px-1.5 border-red-500/30 text-red-400 bg-red-500/10 font-mono"
     >
       {Math.round(rate)} ft/min
-    </Badge>
-  );
-}
-
-export function normalizeFlightStatus(status?: string): string {
-  if (!status || !status.trim()) return "unknown";
-  return status.trim().toLowerCase();
-}
-
-export function getFlightStatusBadge(status: string | undefined, t: (key: string, fallback: string) => string) {
-  const norm = normalizeFlightStatus(status);
-  if (norm === "unknown") {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] py-0 px-2 border-border text-muted-foreground bg-muted/20 font-medium"
-      >
-        —
-      </Badge>
-    );
-  }
-  // The platform auto-accepts flights that raised FDM warnings under
-  // warningSystem / warningStaff; they count as accepted.
-  if (norm.includes("warning")) {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] py-0 px-2 border-amber-500/30 text-amber-400 bg-amber-500/10 font-medium"
-      >
-        {t("myFlights.statusWarning", "Aceito com aviso")}
-      </Badge>
-    );
-  }
-  if (norm.includes("accept") || norm.includes("approved") || norm.includes("closed")) {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] py-0 px-2 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-medium"
-      >
-        {t("myFlights.statusApproved", "Aprovado")}
-      </Badge>
-    );
-  }
-  if (norm.includes("pending") || norm.includes("review")) {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] py-0 px-2 border-amber-500/30 text-amber-400 bg-amber-500/10 font-medium"
-      >
-        {t("myFlights.statusPending", "Pendente")}
-      </Badge>
-    );
-  }
-  if (norm.includes("reject") || norm.includes("denied")) {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] py-0 px-2 border-red-500/30 text-red-400 bg-red-500/10 font-medium"
-      >
-        {t("myFlights.statusRejected", "Rejeitado")}
-      </Badge>
-    );
-  }
-  return (
-    <Badge
-      variant="outline"
-      className="text-[10px] py-0 px-2 border-red-500/30 text-red-400 bg-red-500/10 font-medium"
-    >
-      {status}
     </Badge>
   );
 }

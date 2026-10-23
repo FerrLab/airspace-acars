@@ -18,6 +18,7 @@ vi.mock("react-i18next", () => ({
         return fallback.defaultValue;
       return key;
     },
+    i18n: { language: "en" },
   }),
 }));
 
@@ -25,7 +26,7 @@ const mockFlight: FlightLog = {
   id: "880",
   callsign: "SXB9404",
   flight_number: "4J9404",
-  status: "accepted",
+  status: "acceptedSystem",
   departure_airport: {
     icao: "SBGR",
     name: "Guarulhos",
@@ -53,7 +54,6 @@ const mockFlight: FlightLog = {
   created_at: "2026-10-08T14:36:00Z",
   departure_time: "2026-10-08T14:36:00Z",
   arrival_time: "2026-10-08T16:10:00Z",
-  route: "BITIS UZ25 KASUK",
 };
 
 describe("FlightDetailView Component", () => {
@@ -63,29 +63,37 @@ describe("FlightDetailView Component", () => {
     vi.clearAllMocks();
   });
 
-  it("renders header with callsign, route, and status", () => {
-    render(
-      <FlightDetailView
-        flight={mockFlight}
-        company="Voe Samba"
-        onBack={onBackMock}
-      />
-    );
+  function view(flight: FlightLog = mockFlight) {
+    return render(<FlightDetailView flight={flight} company="Voe Samba" onBack={onBackMock} />);
+  }
+
+  it("renders header with callsign, route, date and status", () => {
+    view();
 
     expect(screen.getAllByText("SXB9404").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/SBGR/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/SBFI/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("accepted").length).toBeGreaterThan(0);
+    expect(screen.getByText(en["myFlights.statusApproved"])).toBeDefined();
+    expect(screen.getByText(/Voe Samba/).textContent).toContain("08/10 14:36z");
+  });
+
+  // The status badge is the logbook list's: translated, and coloured by what
+  // happened to the flight. A rejected PIREP must not read as a green raw
+  // "rejectedStaff", and a flight without a status must not claim "Accepted".
+  it("shows the status the way the logbook list does", () => {
+    const { unmount } = view({ ...mockFlight, status: "rejectedStaff" });
+    const rejected = screen.getByText(en["myFlights.statusRejected"]);
+    expect(rejected.className).not.toContain("emerald");
+    expect(screen.queryByText("rejectedStaff")).toBeNull();
+    unmount();
+
+    view({ ...mockFlight, status: "" });
+    expect(screen.queryByText("Accepted")).toBeNull();
+    expect(screen.queryByText(en["myFlights.statusApproved"])).toBeNull();
   });
 
   it("triggers onBack when back button is clicked using en.json key", () => {
-    render(
-      <FlightDetailView
-        flight={mockFlight}
-        company="Voe Samba"
-        onBack={onBackMock}
-      />
-    );
+    view();
 
     const backBtn = screen.getByRole("button", {
       name: new RegExp(en["myFlights.backToFlights"], "i"),
@@ -95,16 +103,11 @@ describe("FlightDetailView Component", () => {
   });
 
   it("renders real flight KPI cards in hero strip using en.json keys", () => {
-    render(
-      <FlightDetailView
-        flight={mockFlight}
-        company="Voe Samba"
-        onBack={onBackMock}
-      />
-    );
+    view();
 
     expect(screen.getByText(en["myFlights.touchdownRate"])).toBeDefined();
     expect(screen.getByText("-142 ft/min")).toBeDefined();
+    expect(screen.getByText(en["myFlights.landingBand.good"])).toBeDefined();
 
     expect(screen.getByText(en["myFlights.kpiTotalDistance"])).toBeDefined();
     expect(screen.getAllByText("456 NM").length).toBeGreaterThan(0);
@@ -119,21 +122,13 @@ describe("FlightDetailView Component", () => {
     expect(screen.getByText("9.2 / 10")).toBeDefined();
   });
 
-  it("renders flight facts summary with real data and route", () => {
-    render(
-      <FlightDetailView
-        flight={mockFlight}
-        company="Voe Samba"
-        onBack={onBackMock}
-      />
-    );
+  it("renders flight facts summary with real data", () => {
+    view();
 
     expect(screen.getByText(en["myFlights.flightSummary"])).toBeDefined();
     expect(screen.getByText(en["myFlights.factRegistration"])).toBeDefined();
     expect(screen.getByText("PR-SBG")).toBeDefined();
-
-    expect(screen.getByText(en["myFlights.routeLabel"])).toBeDefined();
-    expect(screen.getByText("BITIS UZ25 KASUK")).toBeDefined();
+    expect(screen.getByText("08/10 16:10z")).toBeDefined();
 
     expect(screen.getByTestId("flights-map-mock")).toBeDefined();
   });

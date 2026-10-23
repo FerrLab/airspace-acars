@@ -1,4 +1,5 @@
 import type { FlightLog } from "../../bindings/airspace-acars/internal/domain/models";
+import { formatUtcDate } from "@/lib/flight-format";
 
 export interface FlightFactItem {
   labelKey: string;
@@ -11,6 +12,8 @@ export interface FlightKPI {
   defaultLabel: string;
   value: string;
   unit: string;
+  // A line under the value: subKey is translated, sub is shown as it is.
+  subKey?: string;
   sub?: string;
   colorClass: string;
 }
@@ -23,36 +26,39 @@ export function formatDurationHoursMinutes(minutes: number): string {
   return `${h}h ${String(m).padStart(2, "0")}m`;
 }
 
-export function formatScoreTier(score: number): {
-  tier: "Gold" | "Silver" | "Bronze" | "";
-  color: string;
-} {
-  if (score <= 0) return { tier: "", color: "" };
-  const normalized = score > 10 ? score : score * 10;
-  if (normalized >= 90) return { tier: "Gold", color: "#e0a526" };
-  if (normalized >= 75) return { tier: "Silver", color: "#94a3b8" };
-  return { tier: "Bronze", color: "#b45309" };
-}
-
-export function computeLandingRateCategory(rate: number): {
-  label: string;
+/**
+ * landingRateBand names a touchdown the way the platform's flight page does
+ * (LandingRateBand in FerrLab/airspace: up to 100 fpm butter, 200 good, 400
+ * firm, harder than that hard), so the same landing gets the same word in
+ * ACARS and on the web.
+ */
+export function landingRateBand(rate: number): {
+  labelKey: string | null;
   colorClass: string;
 } {
   const abs = Math.abs(rate);
-  if (abs === 0) return { label: "—", colorClass: "text-muted-foreground" };
-  if (abs <= 120) return { label: "Butter", colorClass: "text-emerald-400" };
-  if (abs <= 250) return { label: "Good", colorClass: "text-sky-400" };
-  if (abs <= 400) return { label: "Normal", colorClass: "text-amber-400" };
-  return { label: "Firm", colorClass: "text-rose-400" };
+  if (abs === 0) return { labelKey: null, colorClass: "text-muted-foreground" };
+  if (abs <= 100) return { labelKey: "myFlights.landingBand.butter", colorClass: "text-emerald-400" };
+  if (abs <= 200) return { labelKey: "myFlights.landingBand.good", colorClass: "text-sky-400" };
+  if (abs <= 400) return { labelKey: "myFlights.landingBand.firm", colorClass: "text-amber-400" };
+  return { labelKey: "myFlights.landingBand.hard", colorClass: "text-rose-400" };
 }
 
-export function getFlightKPIs(flight: FlightLog): FlightKPI[] {
-  const rateCat = computeLandingRateCategory(flight.landing_rate_fpm);
-  const scoreVal =
-    flight.score > 0
-      ? (flight.score > 10 ? flight.score / 10 : flight.score).toFixed(1)
-      : "—";
-  const tier = formatScoreTier(flight.score);
+/**
+ * formatScore shows the server's score, which is the composite score × 10 and
+ * so runs from 0 to 100, on the platform's 0–10 scale. A score of 0 is a
+ * flight not scored yet.
+ */
+export function formatScore(score: number): string {
+  return score > 0 ? (score / 10).toFixed(1) : "—";
+}
+
+/**
+ * getFlightKPIs lists the headline numbers of a logged flight. locale is the
+ * pilot's language, which numbers are grouped in.
+ */
+export function getFlightKPIs(flight: FlightLog, locale: string): FlightKPI[] {
+  const band = landingRateBand(flight.landing_rate_fpm);
 
   return [
     {
@@ -62,17 +68,17 @@ export function getFlightKPIs(flight: FlightLog): FlightKPI[] {
         ? `${Math.round(flight.landing_rate_fpm)}`
         : "—",
       unit: "ft/min",
-      sub: rateCat.label !== "—" ? rateCat.label : undefined,
-      colorClass: rateCat.colorClass,
+      subKey: band.labelKey ?? undefined,
+      colorClass: band.colorClass,
     },
     {
       labelKey: "myFlights.kpiTotalDistance",
       defaultLabel: "Total Distance",
-      value: flight.distance_nm > 0 ? `${Math.round(flight.distance_nm)}` : "—",
+      value: flight.distance_nm > 0 ? Math.round(flight.distance_nm).toLocaleString(locale) : "—",
       unit: "NM",
       sub:
         flight.distance_nm > 0
-          ? `~${Math.round(flight.distance_nm * 1.852)} km`
+          ? `~${Math.round(flight.distance_nm * 1.852).toLocaleString(locale)} km`
           : undefined,
       colorClass: "text-foreground",
     },
@@ -81,7 +87,7 @@ export function getFlightKPIs(flight: FlightLog): FlightKPI[] {
       defaultLabel: "Fuel Burned",
       value:
         flight.fuel_used_kg > 0
-          ? `${Math.round(flight.fuel_used_kg).toLocaleString("en-US")}`
+          ? Math.round(flight.fuel_used_kg).toLocaleString(locale)
           : "—",
       unit: "kg",
       colorClass: "text-amber-400",
@@ -91,18 +97,13 @@ export function getFlightKPIs(flight: FlightLog): FlightKPI[] {
       defaultLabel: "Flight Duration",
       value: formatDurationHoursMinutes(flight.flight_time_minutes),
       unit: "",
-      sub:
-        flight.flight_time_minutes > 0
-          ? `${flight.flight_time_minutes} min`
-          : undefined,
       colorClass: "text-sky-400",
     },
     {
       labelKey: "myFlights.operationalScore",
       defaultLabel: "Operational Score",
-      value: scoreVal,
+      value: formatScore(flight.score),
       unit: "/ 10",
-      sub: tier.tier ? `${tier.tier} Tier` : undefined,
       colorClass: "text-[#e0a526]",
     },
   ];
@@ -129,6 +130,8 @@ export function getFlightFacts(flight: FlightLog): FlightFactItem[] {
     .filter(Boolean)
     .join(" - ");
 
+  // The status is not a fact here: the header shows it as the translated,
+  // coloured badge the logbook list uses.
   const facts: FlightFactItem[] = [
     {
       labelKey: "myFlights.factFlightNumber",
@@ -165,18 +168,13 @@ export function getFlightFacts(flight: FlightLog): FlightFactItem[] {
       defaultLabel: "Flight Time",
       value: formatDurationHoursMinutes(flight.flight_time_minutes),
     },
-    {
-      labelKey: "myFlights.factStatus",
-      defaultLabel: "Status",
-      value: flight.status || "—",
-    },
   ];
 
   if (flight.departure_time) {
     facts.push({
       labelKey: "myFlights.factDepartureTime",
       defaultLabel: "Departure Time",
-      value: flight.departure_time,
+      value: formatUtcDate(flight.departure_time),
     });
   }
 
@@ -184,15 +182,7 @@ export function getFlightFacts(flight: FlightLog): FlightFactItem[] {
     facts.push({
       labelKey: "myFlights.factArrivalTime",
       defaultLabel: "Arrival Time",
-      value: flight.arrival_time,
-    });
-  }
-
-  if (flight.route && typeof flight.route === "string" && flight.route.trim()) {
-    facts.push({
-      labelKey: "myFlights.routeLabel",
-      defaultLabel: "Route",
-      value: flight.route.trim(),
+      value: formatUtcDate(flight.arrival_time),
     });
   }
 

@@ -13,7 +13,6 @@ interface FlightsMapProps {
   onSelectFlight: (flightId: string) => void;
   className?: string;
   overlayContent?: React.ReactNode;
-  trackCoordinates?: [number, number][];
 }
 
 function escapeHtml(value: unknown): string {
@@ -96,7 +95,6 @@ export function FlightsMap({
   onSelectFlight,
   className = "",
   overlayContent,
-  trackCoordinates,
 }: FlightsMapProps) {
   const { t } = useTranslation();
   const { theme } = useTheme();
@@ -214,6 +212,17 @@ export function FlightsMap({
       validFlightsWithCoords.push(flight);
       const isSelected = flight.id === selectedFlightId;
 
+      // The great circle between the two airports. Its longitudes run on from
+      // the departure's, so a transpacific route ends beyond ±180; the arrival
+      // marker goes where the line ends, on the same copy of the world.
+      const pathPoints = generateFlightTrackCoordinates({
+        depLat: dep.latitude,
+        depLon: dep.longitude,
+        arrLat: arr.latitude,
+        arrLon: arr.longitude,
+      });
+      const arrLon = pathPoints.length > 0 ? pathPoints[pathPoints.length - 1][1] : arr.longitude;
+
       if (!airportMap.has(dep.icao)) {
         airportMap.set(dep.icao, {
           icao: dep.icao,
@@ -230,22 +239,10 @@ export function FlightsMap({
           name: arr.name || arr.city || arr.icao,
           city: arr.city || "",
           lat: arr.latitude,
-          lon: arr.longitude,
+          lon: arrLon,
           isOrigin: false,
         });
       }
-
-      // Generate flight path: real telemetry coordinates if available, or great-circle
-      const pathPoints =
-        isSelected && trackCoordinates && trackCoordinates.length >= 2
-          ? trackCoordinates
-          : generateFlightTrackCoordinates({
-              depLat: dep.latitude,
-              depLon: dep.longitude,
-              arrLat: arr.latitude,
-              arrLon: arr.longitude,
-              trackCoordinates: flight.track_coordinates,
-            });
 
       if (pathPoints.length < 2) {
         return;
@@ -403,7 +400,7 @@ export function FlightsMap({
         }, 100);
       }
     }
-  }, [flights, selectedFlightId, onSelectFlight, isDark, isSingleFlight, t, trackCoordinates]);
+  }, [flights, selectedFlightId, onSelectFlight, isDark, isSingleFlight, t]);
 
   const handleResetBounds = () => {
     if (!mapRef.current || !layersGroupRef.current) return;

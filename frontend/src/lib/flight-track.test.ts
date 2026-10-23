@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   interpolateGreatCircle,
   generateFlightTrackCoordinates,
+  nearestLongitude,
 } from "./flight-track";
 
 describe("flight-track", () => {
@@ -34,26 +35,37 @@ describe("flight-track", () => {
       const result = interpolateGreatCircle(0, 0, 0.0000001, 0.0000001);
       expect(result.length).toBeGreaterThanOrEqual(2);
     });
+
+    // atan2 keeps longitudes in ±180, which made a transpacific route jump
+    // from +180 to -180: Leaflet drew a line across the whole map and zoomed
+    // out to the world.
+    it.each([
+      ["RJTT to KLAX", 35.552258, 139.779694, 33.942536, -118.408075],
+      ["NZAA to PHNL", -37.008056, 174.791667, 21.318681, -157.922428],
+      ["KLAX to RJTT", 33.942536, -118.408075, 35.552258, 139.779694],
+    ])("keeps %s continuous across the antimeridian", (_name, lat1, lon1, lat2, lon2) => {
+      const path = interpolateGreatCircle(lat1, lon1, lat2, lon2);
+      for (let i = 1; i < path.length; i++) {
+        expect(Math.abs(path[i][1] - path[i - 1][1]), `step ${i}`).toBeLessThan(20);
+      }
+      const lons = path.map((p) => p[1]);
+      expect(Math.max(...lons) - Math.min(...lons)).toBeLessThan(180);
+      // It ends at the arrival, on the neighbouring copy of the world.
+      expect(nearestLongitude(lon2, path[path.length - 1][1])).toBeCloseTo(path[path.length - 1][1], 3);
+      expect(path[path.length - 1][0]).toBeCloseTo(lat2, 3);
+    });
+  });
+
+  describe("nearestLongitude", () => {
+    it("moves a longitude by whole turns to within 180° of the reference", () => {
+      expect(nearestLongitude(-118, 140)).toBe(242);
+      expect(nearestLongitude(140, -118)).toBe(-220);
+      expect(nearestLongitude(-46, -50)).toBe(-46);
+    });
   });
 
   describe("generateFlightTrackCoordinates", () => {
-    it("uses real trackCoordinates when provided with at least 2 points", () => {
-      const realTrack: [number, number][] = [
-        [-23.43, -46.47],
-        [-24.1, -49.5],
-        [-25.59, -54.48],
-      ];
-      const result = generateFlightTrackCoordinates({
-        depLat: -23.43,
-        depLon: -46.47,
-        arrLat: -25.59,
-        arrLon: -54.48,
-        trackCoordinates: realTrack,
-      });
-      expect(result).toBe(realTrack);
-    });
-
-    it("falls back to great-circle when trackCoordinates is empty or undefined", () => {
+    it("draws the great circle between departure and arrival", () => {
       const result = generateFlightTrackCoordinates({
         depLat: -23.43,
         depLon: -46.47,

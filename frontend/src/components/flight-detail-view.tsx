@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { FlightsMap } from "@/components/flights-map";
+import { getFlightStatusBadge } from "@/components/flight-status-badge";
 import { getFlightKPIs, getFlightFacts } from "@/lib/flight-detail";
+import { formatUtcDate } from "@/lib/flight-format";
 
 interface FlightDetailViewProps {
   flight: FlightLog;
@@ -20,9 +22,9 @@ export function FlightDetailView({
   company,
   onBack,
 }: FlightDetailViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
-  const kpis = getFlightKPIs(flight);
+  const kpis = getFlightKPIs(flight, i18n.language);
   const facts = getFlightFacts(flight);
 
   const depCity = flight.departure_airport?.city || flight.departure_airport?.name || "";
@@ -40,7 +42,7 @@ export function FlightDetailView({
             className="h-8 gap-1.5 text-xs border-border/80 shadow-xs"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span>{t("myFlights.backToFlights", "Voltar aos voos")}</span>
+            <span>{t("myFlights.backToFlights")}</span>
           </Button>
 
           <Badge
@@ -65,22 +67,17 @@ export function FlightDetailView({
             <p className="text-xs text-muted-foreground">
               {company || "Airspace"} •{" "}
               {flight.flight_number
-                ? `${t("myFlights.flightWord", "Voo")} ${flight.flight_number}`
-                : flight.callsign}
+                ? `${t("myFlights.flightWord")} ${flight.flight_number}`
+                : flight.callsign}{" "}
+              • {formatUtcDate(flight.departure_time || flight.created_at)}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <Badge
-            variant="outline"
-            className="text-xs px-2.5 py-0.5 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-medium"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1.5" />
-            {flight.status || "Accepted"}
-          </Badge>
+          {getFlightStatusBadge(flight.status, t)}
           <span className="text-xs font-mono text-muted-foreground">
-            {Math.round(flight.distance_nm)} NM
+            {Math.round(flight.distance_nm).toLocaleString(i18n.language)} NM
           </span>
         </div>
       </div>
@@ -132,9 +129,9 @@ export function FlightDetailView({
                 {k.value}
                 {k.unit ? ` ${k.unit}` : ""}
               </p>
-              {k.sub && (
+              {(k.subKey || k.sub) && (
                 <span className="text-[10px] text-muted-foreground block truncate">
-                  {k.sub}
+                  {k.subKey ? t(k.subKey) : k.sub}
                 </span>
               )}
             </div>
@@ -151,14 +148,13 @@ export function FlightDetailView({
             selectedFlightId={flight.id}
             onSelectFlight={noopSelectFlight}
             className="h-full w-full"
-            trackCoordinates={flight.track_coordinates}
           />
         </div>
 
         {/* Flight Facts Card */}
         <Card className="border-border/70 bg-card p-4 shadow-xs space-y-3">
           <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground block">
-            {t("myFlights.flightSummary", "Resumo do Voo")}
+            {t("myFlights.flightSummary")}
           </span>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
             {facts.map((fact, idx) => (
