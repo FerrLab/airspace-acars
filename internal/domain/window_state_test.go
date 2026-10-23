@@ -208,3 +208,28 @@ func TestFitToKeepsTheWindowReachable(t *testing.T) {
 		}
 	})
 }
+
+// A window whose display is gone is centred on the primary display, the one
+// FitTo sized it for, and not on whichever display happens to be nearest.
+func TestCentredPlacesTheWindowOnThePrimaryDisplay(t *testing.T) {
+	laptop := domain.ScreenBounds{X: 0, Y: 0, Width: 1366, Height: 728}
+	primary := domain.ScreenBounds{X: 1366, Y: 0, Width: 2560, Height: 1400, Primary: true}
+
+	t.Run("in the middle of the primary display", func(t *testing.T) {
+		in := domain.WindowState{Width: 1600, Height: 900, Maximized: true}
+		got := in.Centred([]domain.ScreenBounds{laptop, primary})
+		if !got.HasPosition || got.X != 1366+480 || got.Y != 250 {
+			t.Fatalf("got (%d, %d) hasPos=%v, want (%d, 250) on the primary display", got.X, got.Y, got.HasPosition, 1366+480)
+		}
+		if got.Width != 1600 || got.Height != 900 || !got.Maximized {
+			t.Fatalf("centring changed more than the position: %+v", got)
+		}
+	})
+
+	t.Run("no displays leaves it without a position", func(t *testing.T) {
+		in := domain.WindowState{Width: 1600, Height: 900}
+		if got := in.Centred(nil); got != in {
+			t.Fatalf("got %+v, want %+v", got, in)
+		}
+	})
+}

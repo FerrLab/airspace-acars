@@ -192,9 +192,53 @@ func TestAPlacementOnAnUnpluggedDisplayIsCentredBeforeShow(t *testing.T) {
 
 	m.Reveal(win, []domain.ScreenBounds{testScreen})
 
-	if len(win.calls) != 2 || win.calls[0] != "center" || win.calls[1] != "show" {
-		t.Fatalf("calls = %v, want [center show]", win.calls)
+	if len(win.calls) != 2 || win.calls[0] != "setBounds" || win.calls[1] != "show" {
+		t.Fatalf("calls = %v, want [setBounds show]", win.calls)
 	}
+	if win.x != 360 || win.y != 120 {
+		t.Fatalf("placed at (%d, %d), want the middle of the primary display (360, 120)", win.x, win.y)
+	}
+}
+
+// Only the platform's centring is left when no display is known at all.
+func TestARevealWithNoDisplaysLeavesCentringToThePlatform(t *testing.T) {
+	m, _ := newTestManager(t, &domain.WindowState{Width: 1200, Height: 800, Maximized: true})
+	win := &fakeWindow{width: 1200, height: 800}
+
+	m.Reveal(win, nil)
+
+	if len(win.calls) != 3 || win.calls[0] != "center" || win.calls[1] != "maximise" || win.calls[2] != "show" {
+		t.Fatalf("calls = %v, want [center maximise show]", win.calls)
+	}
+}
+
+// The tray's Show, a second launch and the close prompt all reveal the
+// window. One that is already recording is where the pilot put it: setting
+// the saved bounds on a maximised window would shrink it and grow it back.
+func TestRevealLeavesAWindowThatIsAlreadyRecordedAlone(t *testing.T) {
+	t.Run("a window that started visible", func(t *testing.T) {
+		m, _ := newTestManager(t, nil)
+		win := &fakeWindow{width: 1936, height: 1056, x: -8, y: -8, maximised: true}
+
+		m.Reveal(win, []domain.ScreenBounds{testScreen})
+
+		if len(win.calls) != 0 {
+			t.Fatalf("revealing a visible window called %v", win.calls)
+		}
+	})
+
+	t.Run("a window revealed already", func(t *testing.T) {
+		m, _ := newTestManager(t, &domain.WindowState{Width: 1200, Height: 800, X: 200, Y: 150, HasPosition: true, Maximized: true})
+		win := &fakeWindow{width: 1200, height: 800, x: 200, y: 150}
+		m.Reveal(win, []domain.ScreenBounds{testScreen})
+		win.calls = nil
+
+		m.Reveal(win, []domain.ScreenBounds{testScreen})
+
+		if len(win.calls) != 0 {
+			t.Fatalf("a second reveal called %v", win.calls)
+		}
+	})
 }
 
 // Regression: Wails applies StartState before the position, so asking it to
@@ -414,8 +458,8 @@ func TestARevealPutsTheWindowInItsSavedMode(t *testing.T) {
 		saved domain.WindowState
 		want  []string
 	}{
-		{"maximised", domain.WindowState{Width: 1200, Height: 800, Maximized: true}, []string{"center", "maximise", "show"}},
-		{"fullscreen", domain.WindowState{Width: 1200, Height: 800, Fullscreen: true}, []string{"center", "fullscreen", "show"}},
+		{"maximised", domain.WindowState{Width: 1200, Height: 800, Maximized: true}, []string{"setBounds", "maximise", "show"}},
+		{"fullscreen", domain.WindowState{Width: 1200, Height: 800, Fullscreen: true}, []string{"setBounds", "fullscreen", "show"}},
 		{"maximised with position", domain.WindowState{Width: 1200, Height: 800, X: 100, Y: 100, HasPosition: true, Maximized: true}, []string{"setBounds", "maximise", "show"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

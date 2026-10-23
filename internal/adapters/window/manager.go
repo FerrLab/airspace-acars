@@ -24,8 +24,9 @@ const (
 	// through a maximise or restore.
 	DebounceDuration = 250 * time.Millisecond
 
-	// RevealTimeout bounds how long a window that is waiting to be shown in
-	// its saved mode stays hidden if the webview never reports ready. It is
+	// RevealTimeout bounds how long a window that starts hidden, waiting to be
+	// fitted to the displays and put in its saved mode, stays hidden if the
+	// webview never reports ready. It is
 	// longer than a cold WebView2 start on a slow disk and short enough that a
 	// broken frontend does not leave the pilot with no window.
 	RevealTimeout = 5 * time.Second
@@ -52,8 +53,9 @@ type Window interface {
 	Show()
 }
 
-// InitialBounds holds the starting geometry and visibility calculated from
-// the saved state fitted to the current displays.
+// InitialBounds holds the geometry and visibility the window is created with:
+// the saved placement as it was saved. It is fitted to the displays later, in
+// Reveal, once the platform has listed them.
 type InitialBounds struct {
 	Width, Height int
 	X, Y          int
@@ -169,12 +171,30 @@ func (m *Manager) InitialBounds() InitialBounds {
 // Reveal fits the window to the current screens, applies the placement (or
 // centres the window if its display is gone), restores the saved display mode
 // (maximised or fullscreen), shows the window, and starts recording placement.
+//
+// It does nothing once placement is being recorded. The tray, a second launch
+// and the close prompt all reveal the window, and one that started visible is
+// where the pilot has since put it: setting the saved bounds on it again would
+// shrink a maximised window and grow it back. Calls must not overlap; main
+// runs it under a sync.Once.
 func (m *Manager) Reveal(w Window, screens []domain.ScreenBounds) {
-	state := m.State().FitTo(screens)
+	m.mu.Lock()
+	armed, saved := m.armed, m.state
+	m.mu.Unlock()
+	if armed {
+		return
+	}
+
+	state := saved.FitTo(screens)
+	if !state.HasPosition {
+		state = state.Centred(screens)
+	}
 
 	if state.HasPosition {
 		w.SetBounds(state.X, state.Y, state.Width, state.Height)
 	} else {
+		// No displays are known, so there is nothing to centre against;
+		// leave it to the platform.
 		w.Center()
 	}
 

@@ -152,6 +152,23 @@ func (s WindowState) FitTo(screens []ScreenBounds) WindowState {
 	return s
 }
 
+// Centred returns the state placed in the middle of the primary display, the
+// display FitTo sizes a window without a position for. Centring it there
+// rather than with the platform's own centring matters after an unplug: Wails
+// centres on the display nearest the window's current position, which is the
+// dead one's neighbour, and may be smaller than the size FitTo chose. With no
+// displays the state is returned unchanged, still without a position.
+func (s WindowState) Centred(screens []ScreenBounds) WindowState {
+	if len(screens) == 0 {
+		return s
+	}
+	sc := primaryScreen(screens)
+	s.X = sc.X + (sc.Width-s.Width)/2
+	s.Y = sc.Y + (sc.Height-s.Height)/2
+	s.HasPosition = true
+	return s
+}
+
 // screenWithMostOverlap picks the display the saved rectangle sits on. It
 // reports false when none overlaps by minVisibleDimension on both axes.
 func (s WindowState) screenWithMostOverlap(screens []ScreenBounds) (ScreenBounds, bool) {

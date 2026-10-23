@@ -25,6 +25,10 @@ fullscreen) when Airspace ACARS restarts, while ensuring:
   - `FitTo([]ScreenBounds)`: shrinks the window to the display it belongs on
     and pulls it back inside, or drops the position (so it is centred on the
     primary display).
+  - `Centred([]ScreenBounds)`: places a window without a position in the
+    middle of the primary display, the one `FitTo` sized it for. Wails' own
+    `Center` uses the display nearest the window, which after an unplug is
+    the dead display's neighbour and may be smaller than that size.
 - **Manager (`internal/adapters/window`)** stores the state in
   `<config dir>/airspace-acars/window_state.json` and drives the window.
 
@@ -41,6 +45,12 @@ at its saved bounds**, fitted to the connected screens on `WindowRuntimeReady`
 (with bounds set, or centered if its display is disconnected), put into its mode
 (if maximized or fullscreen), and then shown. Creating it at the normal bounds
 also makes Windows remember them as the restore placement.
+
+The tray's Show, a second launch and the close prompt also go through the
+reveal, so that a click before `WindowRuntimeReady` still fits the window. Once
+the window is being recorded, the reveal does nothing: a window that started
+visible is where the pilot has since put it, and setting the saved bounds on it
+again would shrink a maximized window and grow it back.
 
 ### Why events only schedule a read
 
