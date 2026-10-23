@@ -50,6 +50,8 @@ func TestTransientMatchesReportedFailures(t *testing.T) {
 		{"connection refused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}},
 		{"dns failure", &net.DNSError{Err: "no such host", Name: "roraima.airspace.ferrlab.com"}},
 		{"truncated response", fmt.Errorf("read response: %w", io.ErrUnexpectedEOF)},
+		{"http2 connection force closed", fmt.Errorf("read response: %w", errors.New("http2: client connection force closed via ClientConn.Close"))},
+		{"http2 connection lost", errors.New("http2: client connection lost")},
 		{"client timeout", fmt.Errorf("do request: %w", context.DeadlineExceeded)},
 	}
 
