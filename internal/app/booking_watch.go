@@ -32,7 +32,8 @@ var errNoArrival = errors.New("booking names no arrival airport")
 // bookingWatcher keeps an active flight's arrival airport current. It
 // re-reads the booking on its own goroutine for as long as the flight lasts
 // and reports a change of arrival, so position reports, the finish request
-// and the auto-finish check all follow a diversion.
+// and the auto-finish check all follow a diversion. It also keeps the
+// booking's departure, whose coordinates the flight was started without.
 type bookingWatcher struct {
 	bookingID string
 	fetch     func() (activeBooking, error)
@@ -44,25 +45,38 @@ type bookingWatcher struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 
-	// mu guards arrival and failures.
-	mu       sync.Mutex
-	arrival  domain.AirportInfo
-	failures int
+	// mu guards departure, arrival and failures.
+	mu        sync.Mutex
+	departure domain.AirportInfo
+	arrival   domain.AirportInfo
+	failures  int
 }
 
 // startBookingWatcher watches the active flight's booking, starting from the
-// arrival the flight was started with.
-func (a *App) startBookingWatcher(bookingID, arrival string) *bookingWatcher {
+// airports the flight was started with.
+func (a *App) startBookingWatcher(bookingID, departure, arrival string) *bookingWatcher {
 	w := &bookingWatcher{
 		bookingID: bookingID,
 		fetch:     a.fetchBooking,
 		onArrival: a.applyArrival,
 		every:     bookingRefreshEvery,
 		stopCh:    make(chan struct{}),
+		departure: airportFromICAO(departure),
 		arrival:   airportFromICAO(arrival),
 	}
 	go w.run()
 	return w
+}
+
+// Departure returns the airport the booking last named as the flight's
+// departure, with its coordinates when the booking gave them.
+func (w *bookingWatcher) Departure() domain.AirportInfo {
+	if w == nil {
+		return domain.AirportInfo{}
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.departure
 }
 
 // Arrival returns the airport the booking last named as the flight's
@@ -135,6 +149,9 @@ func (w *bookingWatcher) refresh() {
 	w.mu.Lock()
 	previous := w.arrival
 	w.arrival = b.Arrival
+	if b.Departure.ICAO != "" {
+		w.departure = b.Departure
+	}
 	w.failures = 0
 	w.mu.Unlock()
 
@@ -185,6 +202,17 @@ func (a *App) applyArrival(bookingID string, arrival domain.AirportInfo) {
 // the booking gave it when the watcher holds them for that same airport.
 func flightArrival(icao string, w *bookingWatcher) domain.AirportInfo {
 	if watched := w.Arrival(); watched.ICAO != "" && strings.EqualFold(watched.ICAO, icao) {
+		return watched
+	}
+	return airportFromICAO(icao)
+}
+
+// flightDeparture is the active flight's departure airport, with the
+// coordinates the booking gave it when the watcher holds them for that same
+// airport. The flight is started with only the departure's code, and the
+// built-in table places a small set of airports.
+func flightDeparture(icao string, w *bookingWatcher) domain.AirportInfo {
+	if watched := w.Departure(); watched.ICAO != "" && strings.EqualFold(watched.ICAO, icao) {
 		return watched
 	}
 	return airportFromICAO(icao)

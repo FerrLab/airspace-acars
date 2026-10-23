@@ -70,7 +70,8 @@ describe("FlightProgressBar", () => {
     const progressBar = screen.getByRole("progressbar");
     expect(progressBar).toBeInTheDocument();
     expect(progressBar).not.toHaveAttribute("aria-valuenow");
-    expect(screen.getByText("—:—")).toBeInTheDocument();
+    // Neither the time remaining nor the whole flight's duration is known.
+    expect(screen.getAllByText("—:—")).toHaveLength(2);
   });
 
   it("renders elapsed time from flightStartTime in active flight state", () => {

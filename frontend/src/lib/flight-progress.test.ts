@@ -3,6 +3,7 @@ import {
   calculateDistanceNm,
   computeFlightProgress,
   formatFlightDuration,
+  progressPhaseKey,
 } from "./flight-progress";
 
 describe("flight-progress", () => {
@@ -103,11 +104,29 @@ describe("flight-progress", () => {
         currentLon: -68.1,
         onGround: false,
         groundSpeed: 160,
+        flightStartTime: 1700000000000,
+        currentTime: 1700000000000 + 290 * 60 * 1000,
       });
       expect(res.statusPhase).toBe("approach");
       expect(res.progressPercent).toBeGreaterThan(95);
-      expect(res.elapsedMinutes).toBeGreaterThan(0);
+      expect(res.elapsedMinutes).toBe(290);
       expect(res.remainingMinutes).toBeGreaterThanOrEqual(0);
+    });
+
+    // Elapsed time is the backend's start time or nothing: it is never
+    // guessed from the distance flown.
+    it("counts no elapsed time without a start time", () => {
+      const res = computeFlightProgress({
+        flightState: "active",
+        departureCoords: sbgr,
+        arrivalCoords: sawh,
+        currentLat: -39.1,
+        currentLon: -57.4,
+        onGround: false,
+        groundSpeed: 440,
+      });
+      expect(res.elapsedMinutes).toBe(0);
+      expect(res.durationMinutes).toBeNull();
     });
 
     it("tracks real elapsed time from flightStartTime regardless of position", () => {
@@ -124,6 +143,7 @@ describe("flight-progress", () => {
         groundSpeed: 15,
         flightStartTime: startMs,
         currentTime: fifteenMinLater,
+        cruiseSpeed: 450,
       });
       expect(res.elapsedMinutes).toBe(15);
       expect(res.durationMinutes).toBeGreaterThan(15);
@@ -194,6 +214,68 @@ describe("flight-progress", () => {
       expect(res.remainingMinutes).toBeNull();
       expect(res.elapsedMinutes).toBe(12);
       expect(res.statusPhase).toBe("airborne");
+    });
+
+    // Without coordinates there is nothing to measure progress by, on the
+    // ground as much as in the air: after landing at an unknown airport the
+    // bar must not fall back to 0%.
+    it("keeps the bar indeterminate on the ground when the route is unknown", () => {
+      const res = computeFlightProgress({
+        flightState: "active",
+        departureCoords: null,
+        arrivalCoords: null,
+        currentLat: -30.0,
+        currentLon: -50.0,
+        onGround: true,
+        groundSpeed: 12,
+      });
+
+      expect(res.progressPercent).toBeNull();
+      expect(res.durationMinutes).toBeNull();
+    });
+
+    // The booking carries no cruise speed. A jet's would time a C172's
+    // 100 NM hop at 14 minutes instead of about 55, so before the aircraft
+    // is flying no time is estimated unless a cruise speed is given.
+    it("estimates no flight time before takeoff without a cruise speed", () => {
+      const sbsp = { lat: -23.626111, lon: -46.656389 };
+      const sbjd = { lat: -23.181667, lon: -46.943611 };
+      for (const flightState of ["idle", "active"] as const) {
+        const res = computeFlightProgress({
+          flightState,
+          departureCoords: sbgr,
+          arrivalCoords: sbsp,
+          currentLat: sbgr.lat,
+          currentLon: sbgr.lon,
+          onGround: true,
+          groundSpeed: 0,
+        });
+        expect(res.remainingMinutes, `${flightState}: remaining`).toBeNull();
+        expect(res.durationMinutes, `${flightState}: duration`).toBeNull();
+      }
+
+      const timed = computeFlightProgress({
+        flightState: "idle",
+        departureCoords: sbsp,
+        arrivalCoords: sbjd,
+        cruiseSpeed: 110,
+      });
+      expect(timed.remainingMinutes).toBe(Math.round((timed.totalDistanceNm! / 110) * 60));
+    });
+  });
+
+  // The phase above the bar must agree with the bar: a flight taxiing in
+  // after landing shows 100% and has arrived.
+  describe("progressPhaseKey", () => {
+    it.each([
+      ["idle", "idle", "acars.dashboard.preflightPhase"],
+      ["active", "taxi", "acars.dashboard.preflightPhase"],
+      ["active", "airborne", "acars.dashboard.enRoute"],
+      ["active", "approach", "acars.dashboard.approachPhase"],
+      ["active", "finished", "acars.dashboard.completedPhase"],
+      ["finishing", "finished", "acars.dashboard.completedPhase"],
+    ] as const)("%s flight in phase %s shows %s", (flightState, phase, key) => {
+      expect(progressPhaseKey(flightState, phase)).toBe(key);
     });
   });
 

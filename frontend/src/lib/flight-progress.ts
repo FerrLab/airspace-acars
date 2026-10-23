@@ -67,7 +67,6 @@ export interface FlightProgressParams {
   currentLon?: number | null;
   onGround?: boolean;
   groundSpeed?: number;
-  initialRecordedPosition?: Coordinates | null;
   flightStartTime?: number | Date | string | null;
   currentTime?: number | Date | null;
   cruiseSpeed?: number;
@@ -95,7 +94,6 @@ export function computeFlightProgress({
   currentLon,
   onGround = false,
   groundSpeed = 0,
-  initialRecordedPosition = null,
   flightStartTime = null,
   currentTime = null,
   cruiseSpeed,
@@ -123,7 +121,12 @@ export function computeFlightProgress({
     }
   }
 
-  const plannedCruiseSpeed = cruiseSpeed && cruiseSpeed > 0 ? cruiseSpeed : 440;
+  // Before the aircraft is flying there is no speed to time the route by. The
+  // booking carries no cruise speed, and assuming a jet's would show a C172 a
+  // quarter of its real flight time, so without one no estimate is shown.
+  const plannedCruiseSpeed = cruiseSpeed && cruiseSpeed > 0 ? cruiseSpeed : null;
+  const plannedMinutes = (distNm: number | null) =>
+    distNm && plannedCruiseSpeed ? Math.round((distNm / plannedCruiseSpeed) * 60) : null;
 
   // If flight is idle (not started), plane stays parked at start (0%)
   if (flightState === "idle") {
@@ -131,8 +134,7 @@ export function computeFlightProgress({
       departureCoords && arrivalCoords
         ? calculateDistanceNm(departureCoords.lat, departureCoords.lon, arrivalCoords.lat, arrivalCoords.lon)
         : null;
-
-    const totalMin = totalDist ? Math.round((totalDist / plannedCruiseSpeed) * 60) : 0;
+    const totalMin = plannedMinutes(totalDist);
 
     return {
       progressPercent: 0,
@@ -148,15 +150,10 @@ export function computeFlightProgress({
 
   // If flight is finishing, plane has completed journey (100%)
   if (flightState === "finishing") {
-    const depCoords = departureCoords ?? initialRecordedPosition;
-    const arrCoords = arrivalCoords;
     const totalDist =
-      depCoords && arrCoords
-        ? calculateDistanceNm(depCoords.lat, depCoords.lon, arrCoords.lat, arrCoords.lon)
+      departureCoords && arrivalCoords
+        ? calculateDistanceNm(departureCoords.lat, departureCoords.lon, arrivalCoords.lat, arrivalCoords.lon)
         : null;
-
-    const totalMin = totalDist ? Math.round((totalDist / plannedCruiseSpeed) * 60) : 0;
-    const elapsed = resolvedElapsedMin ?? totalMin;
 
     return {
       progressPercent: 100,
@@ -164,14 +161,14 @@ export function computeFlightProgress({
       remainingDistanceNm: 0,
       flownDistanceNm: totalDist,
       statusPhase: "finished",
-      elapsedMinutes: elapsed,
+      elapsedMinutes: resolvedElapsedMin ?? 0,
       remainingMinutes: 0,
-      durationMinutes: elapsed,
+      durationMinutes: resolvedElapsedMin,
     };
   }
 
   // Flight is active: compute progress from coordinates
-  const depCoords = departureCoords ?? initialRecordedPosition;
+  const depCoords = departureCoords;
   const arrCoords = arrivalCoords;
 
   const hasCurrentPos =
@@ -189,13 +186,15 @@ export function computeFlightProgress({
       arrCoords.lon
     );
 
-    // Speed calculation:
-    // Once airborne, use actual ground speed (with a reasonable floor during initial climb).
-    // For non-jets (e.g. C172 at 110 kt or King Air at 250 kt), this accurately reflects real ground speed.
+    // Once airborne, the time left is timed by the actual ground speed, with a
+    // floor so a slow initial climb does not blow the estimate up; that holds
+    // for a C172 at 110 kt as much as for a jet. On the ground only a known
+    // cruise speed is used.
     const minClimbFloor = cruiseSpeed ? Math.min(cruiseSpeed, 70) : 80;
-    const effectiveAirborneSpeed = Math.max(groundSpeed, minClimbFloor);
-    const activeCruiseSpeed = !onGround ? effectiveAirborneSpeed : plannedCruiseSpeed;
-    const totalMin = Math.round((totalDist / activeCruiseSpeed) * 60);
+    const airborneSpeed = Math.max(groundSpeed, minClimbFloor);
+    // The whole flight's time is known only when both parts of it are.
+    const totalTime = (remainingMin: number | null) =>
+      resolvedElapsedMin !== null && remainingMin !== null ? resolvedElapsedMin + remainingMin : null;
 
     if (totalDist > 0 && hasCurrentPos) {
       const remainingDist = calculateDistanceNm(
@@ -207,31 +206,30 @@ export function computeFlightProgress({
 
       // On departure ground: 0%
       if (onGround && groundSpeed < 40 && remainingDist >= totalDist - 5) {
-        const elapsed = resolvedElapsedMin ?? 0;
+        const remainingMin = plannedMinutes(totalDist);
         return {
           progressPercent: 0,
           totalDistanceNm: totalDist,
           remainingDistanceNm: totalDist,
           flownDistanceNm: 0,
           statusPhase: "taxi",
-          elapsedMinutes: elapsed,
-          remainingMinutes: totalMin,
-          durationMinutes: elapsed + totalMin,
+          elapsedMinutes: resolvedElapsedMin ?? 0,
+          remainingMinutes: remainingMin,
+          durationMinutes: totalTime(remainingMin),
         };
       }
 
       // Touchdown at destination
       if (onGround && remainingDist < 5) {
-        const elapsed = resolvedElapsedMin ?? totalMin;
         return {
           progressPercent: 100,
           totalDistanceNm: totalDist,
           remainingDistanceNm: 0,
           flownDistanceNm: totalDist,
           statusPhase: "finished",
-          elapsedMinutes: elapsed,
+          elapsedMinutes: resolvedElapsedMin ?? 0,
           remainingMinutes: 0,
-          durationMinutes: elapsed,
+          durationMinutes: resolvedElapsedMin,
         };
       }
 
@@ -242,10 +240,8 @@ export function computeFlightProgress({
 
       const isApproach = remainingDist <= 25 && !onGround;
       const approachSpeed = groundSpeed > 60 ? groundSpeed : (cruiseSpeed ? Math.min(cruiseSpeed, 140) : 160);
-      const activeSpeed = isApproach ? approachSpeed : activeCruiseSpeed;
-
-      const elapsedMin = resolvedElapsedMin ?? Math.max(0, Math.round((flownDist / activeSpeed) * 60));
-      const remainingMin = Math.max(0, Math.round((remainingDist / activeSpeed) * 60));
+      const activeSpeed = onGround ? plannedCruiseSpeed : isApproach ? approachSpeed : airborneSpeed;
+      const remainingMin = activeSpeed ? Math.max(0, Math.round((remainingDist / activeSpeed) * 60)) : null;
 
       return {
         progressPercent,
@@ -253,38 +249,38 @@ export function computeFlightProgress({
         remainingDistanceNm: remainingDist,
         flownDistanceNm: flownDist,
         statusPhase: isApproach ? "approach" : onGround ? "taxi" : "airborne",
-        elapsedMinutes: elapsedMin,
+        elapsedMinutes: resolvedElapsedMin ?? 0,
         remainingMinutes: remainingMin,
-        durationMinutes: elapsedMin + remainingMin,
+        durationMinutes: totalTime(remainingMin),
       };
     }
   }
 
   // Fallback when destination or departure coordinates are not known.
   // Return an indeterminate state (no fake progress percentage, elapsed time only).
-  const fallbackElapsed = resolvedElapsedMin ?? 0;
-  if (onGround) {
-    return {
-      progressPercent: 0,
-      totalDistanceNm: null,
-      remainingDistanceNm: null,
-      flownDistanceNm: null,
-      statusPhase: "taxi",
-      elapsedMinutes: fallbackElapsed,
-      remainingMinutes: null,
-      durationMinutes: fallbackElapsed,
-    };
-  }
-
-  // If airborne without known destination coordinates, display indeterminate state
   return {
     progressPercent: null,
     totalDistanceNm: null,
     remainingDistanceNm: null,
     flownDistanceNm: null,
-    statusPhase: "airborne",
-    elapsedMinutes: fallbackElapsed,
+    statusPhase: onGround ? "taxi" : "airborne",
+    elapsedMinutes: resolvedElapsedMin ?? 0,
     remainingMinutes: null,
-    durationMinutes: fallbackElapsed,
+    durationMinutes: null,
   };
+}
+
+/**
+ * progressPhaseKey names the translation key for the phase shown above the
+ * progress bar. A flight that has landed and is taxiing in is still active,
+ * but it has arrived.
+ */
+export function progressPhaseKey(
+  flightState: FlightProgressParams["flightState"],
+  statusPhase: FlightProgressResult["statusPhase"],
+): string {
+  if (flightState === "finishing" || statusPhase === "finished") return "acars.dashboard.completedPhase";
+  if (flightState === "idle" || statusPhase === "taxi") return "acars.dashboard.preflightPhase";
+  if (statusPhase === "approach") return "acars.dashboard.approachPhase";
+  return "acars.dashboard.enRoute";
 }

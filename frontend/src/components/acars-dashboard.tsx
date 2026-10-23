@@ -24,7 +24,7 @@ import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import type { FlightData } from "@/hooks/use-flight-data";
 import { FlightProgressBar } from "@/components/flight-progress-bar";
-import type { Coordinates } from "@/lib/flight-progress";
+import type { FlightRouteCoords } from "@/hooks/use-flight-route";
 
 interface Props {
   localMode: boolean;
@@ -32,18 +32,9 @@ interface Props {
   connecting: boolean;
   flightState: "idle" | "active" | "finishing";
   booking: any;
-  activeFlightInfo: {
-    callsign?: string;
-    departure?: string;
-    arrival?: string;
-    startTimeMs?: string;
-    departureLat?: string;
-    departureLon?: string;
-    arrivalLat?: string;
-    arrivalLon?: string;
-  } | null;
-  departureCoords?: Coordinates | null;
-  arrivalCoords?: Coordinates | null;
+  activeFlightInfo: { callsign?: string; departure?: string; arrival?: string; startTimeMs?: string } | null;
+  // Where the departure and arrival are, from the backend; null when unknown.
+  routeCoords: FlightRouteCoords;
   flightData: FlightData | null;
   onGround: boolean;
   groundSpeed: number;
@@ -80,17 +71,6 @@ export function AcarsDashboard(p: Props) {
     arrival: booking?.alternate_airport?.icao ?? booking?.arrival_airport?.icao,
   };
   const hasRoute = active || !!booking;
-
-  const depCoords: Coordinates | null =
-    p.activeFlightInfo?.departureLat && p.activeFlightInfo?.departureLon
-      ? { lat: Number(p.activeFlightInfo.departureLat), lon: Number(p.activeFlightInfo.departureLon) }
-      : p.departureCoords ?? null;
-
-  const arrCoords: Coordinates | null =
-    p.activeFlightInfo?.arrivalLat && p.activeFlightInfo?.arrivalLon
-      ? { lat: Number(p.activeFlightInfo.arrivalLat), lon: Number(p.activeFlightInfo.arrivalLon) }
-      : p.arrivalCoords ?? null;
-
   const data = connected ? p.flightData : null;
   const status = p.localMode
     ? "acars.localMode"
@@ -121,77 +101,63 @@ export function AcarsDashboard(p: Props) {
           <Badge
             variant="outline"
             className={cn(
-              "px-3 py-1 font-medium transition-colors",
-              connected
-                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/30"
-                : "bg-muted text-muted-foreground border-border/80"
+              "gap-2 px-3 py-1 text-xs font-medium border-border/80 bg-card/60 shadow-xs",
+              connected ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/5" : "text-muted-foreground"
             )}
           >
             <span
               className={cn(
-                "mr-2 h-2 w-2 rounded-full",
-                connected ? "bg-emerald-500" : "bg-muted-foreground/60"
+                "h-2 w-2 rounded-full",
+                connected ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-muted-foreground/40"
               )}
             />
-            {connected
-              ? t("acars.dashboard.connected", { adapter: p.connectedAdapter })
-              : t("acars.dashboard.disconnected")}
+            {connected ? t("acars.connectedTo", { adapter: p.connectedAdapter }) : t("acars.disconnected")}
           </Badge>
           <Button
+            variant="outline"
             size="sm"
-            variant={connected ? "outline" : "default"}
-            onClick={connected ? p.onDisconnect : p.onConnect}
             disabled={p.connecting}
+            onClick={connected ? p.onDisconnect : p.onConnect}
             className="shadow-xs"
           >
-            {p.connecting ? (
-              <Loader2 className="animate-spin motion-reduce:animate-none" />
-            ) : connected ? (
-              <Unplug className="h-4 w-4" />
-            ) : (
-              <Plug className="h-4 w-4" />
-            )}
+            {p.connecting ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : connected ? <Unplug /> : <Plug />}
             {p.connecting ? t("acars.connecting") : connected ? t("acars.disconnect") : t("acars.connect")}
           </Button>
         </div>
       </div>
 
+      {/* Action error banner */}
       {p.error && (
         <div
           role="alert"
-          aria-live="assertive"
-          className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-destructive shadow-xs"
+          className="flex items-start justify-between gap-3 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-xs"
         >
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
-            <p className="text-xs font-medium leading-relaxed">{p.error}</p>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+            <p className="font-medium text-destructive">{p.error}</p>
           </div>
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label={t("common.dismissAlert")}
+            aria-label={t("acars.dashboard.dismiss")}
             onClick={p.onDismissError}
-            className="text-destructive/80 hover:bg-destructive/15 hover:text-destructive"
+            className="text-destructive hover:bg-destructive/20"
           >
-            <X className="h-3.5 w-3.5" />
+            <X />
           </Button>
         </div>
       )}
 
-      {/* Main Grid: Active Flight & Route + Preflight Checklist */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* Active Flight Card */}
-        <Card className="gap-0 overflow-hidden border-border/80 bg-card shadow-xs lg:col-span-2">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-muted/30 px-5 py-3.5">
+      {/* Main route and checklist section */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        {/* Route Card */}
+        <Card className="gap-0 p-0 overflow-hidden border-border/80 bg-card shadow-xs" aria-label={t("acars.dashboard.route")}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-5 py-3 bg-muted/20">
             <Badge
               variant="outline"
               className={cn(
-                "gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors",
-                active
-                  ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/30"
-                  : booking
-                    ? "bg-sky-500/10 text-sky-500 border-sky-500/30"
-                    : "bg-muted text-muted-foreground border-border/80"
+                "gap-2 px-2.5 py-0.5 text-xs font-medium border-border/60",
+                active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-sky-500/30 bg-sky-500/10 text-sky-400"
               )}
             >
               {finishing ? (
@@ -220,11 +186,11 @@ export function AcarsDashboard(p: Props) {
                   <p className="mt-1 truncate text-xs font-medium text-muted-foreground">{booking.departure_airport.city}</p>
                 )}
               </div>
-              <div className="flex-1 px-1 sm:px-3">
+              <div className="min-w-0 px-1 sm:px-3">
                 <FlightProgressBar
                   flightState={p.flightState}
-                  departureCoords={depCoords}
-                  arrivalCoords={arrCoords}
+                  departureCoords={p.routeCoords.departure}
+                  arrivalCoords={p.routeCoords.arrival}
                   currentLat={data?.position?.latitude}
                   currentLon={data?.position?.longitude}
                   onGround={p.onGround}
@@ -351,44 +317,44 @@ export function AcarsDashboard(p: Props) {
         </Card>
       </div>
 
+
       {/* Cabin Audio Card */}
       <Card
         className="gap-0 flex-row flex-wrap items-center justify-between gap-4 py-3.5 px-5 border-border/80 bg-card shadow-xs"
         aria-label={t("acars.cabinAudio")}
       >
         <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-muted/60 p-2 text-muted-foreground border border-border/60">
-            <Headphones className="h-4 w-4" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/60 border border-border/60 text-muted-foreground">
+            <Headphones className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold tracking-tight text-foreground">{t("acars.cabinAudio")}</h4>
-            <p className="text-xs text-muted-foreground">{t("acars.dashboard.volume")}</p>
+            <h3 className="text-xs font-semibold text-foreground">{t("acars.cabinAudio")}</h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{t("acars.dashboard.volumeHint")}</p>
           </div>
         </div>
-
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-48 flex-1 items-center gap-3 sm:max-w-xs">
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             aria-label={t(p.volume === 0 ? "acars.dashboard.unmute" : "acars.dashboard.mute")}
+            aria-pressed={p.volume === 0}
             onClick={() => p.onVolumeChange(p.volume === 0 ? lastVolume.current : 0)}
             className="text-muted-foreground hover:text-foreground"
           >
             {p.volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </Button>
-
           <Slider
-            aria-label={t("acars.cabinAudio")}
-            value={[p.volume]}
+            min={0}
             max={100}
             step={1}
-            onValueChange={([val]) => p.onVolumeChange(val)}
-            className="w-24 sm:w-28"
+            value={[p.volume]}
+            onValueChange={([value]) => p.onVolumeChange(value)}
+            aria-label={t("acars.cabinAudio")}
+            className="flex-1"
           />
-
-          <span className="font-mono text-xs font-semibold text-foreground w-8 text-right tabular-nums">
+          <Badge variant="outline" className="w-12 justify-center font-mono text-xs font-semibold tabular-nums border-border/60">
             {p.volume}%
-          </span>
+          </Badge>
         </div>
       </Card>
     </div>
