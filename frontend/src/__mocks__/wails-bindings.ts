@@ -111,6 +111,14 @@ export function mockFlightService() {
     GetFlightState: () => Promise.resolve("idle"),
     GetActiveFlightInfo: () =>
       Promise.resolve(null as { departure?: string; arrival?: string; callsign?: string } | null),
+    GetFlightRoute: () =>
+      Promise.resolve({
+        departure: { icao: "SBGR", latitude: -23.435556, longitude: -46.473056 },
+        arrival: { icao: "SBRJ", latitude: -22.910278, longitude: -43.163056 },
+      } as {
+        departure: { icao: string; latitude: number; longitude: number };
+        arrival: { icao: string; latitude: number; longitude: number };
+      } | null),
     GetBooking: () =>
       Promise.resolve({
         id: "bk_test_1",

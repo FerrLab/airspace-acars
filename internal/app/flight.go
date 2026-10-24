@@ -47,7 +47,9 @@ func (a *App) GetFlightState() string {
 
 // GetActiveFlightInfo returns callsign, departure and arrival for the current
 // flight, plus finishCooldownSec — how long until minFlightDuration allows the
-// flight to be finished (0 once finishable).
+// flight to be finished (0 once finishable) — and startTimeMs, the flight start
+// timestamp in Unix milliseconds, which lets the dashboard's elapsed time
+// survive a reload of the webview.
 func (a *App) GetActiveFlightInfo() map[string]string {
 	a.flightMu.Lock()
 	defer a.flightMu.Unlock()
@@ -58,12 +60,16 @@ func (a *App) GetActiveFlightInfo() map[string]string {
 	if cooldown < 0 {
 		cooldown = 0
 	}
-	return map[string]string{
+	res := map[string]string{
 		"callsign":          a.callsign,
 		"departure":         a.departure,
 		"arrival":           a.arrival,
 		"finishCooldownSec": strconv.Itoa(int((cooldown + time.Second - 1) / time.Second)),
 	}
+	if !a.startTime.IsZero() {
+		res["startTimeMs"] = strconv.FormatInt(a.startTime.UnixMilli(), 10)
+	}
+	return res
 }
 
 // GetBooking fetches the current booking from the API.
@@ -185,7 +191,7 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 
 	go a.positionLoop(a.stopCh)
 	if bookingID != "" {
-		a.bookingWatch = a.startBookingWatcher(bookingID, arrival)
+		a.bookingWatch = a.startBookingWatcher(bookingID, departure, arrival)
 	}
 
 	slog.Info("flight started", "callsign", callsign, "dep", departure, "arr", arrival)
