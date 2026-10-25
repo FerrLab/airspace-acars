@@ -307,15 +307,24 @@ func (x *Adapter) subscribeRREF(index, freq int, dataref string) error {
 	return err
 }
 
+// reportListenFailure logs a failed listener bind once per run of failures.
+// It is a Warn, not an Error: the usual cause is the pilot's machine, with
+// another process or a second ACARS already holding the UDP port, which
+// nothing in this code can fix (Sentry AIRSPACE-ACARS-G, "address already in
+// use"). The pilot still gets the line; the error tracker does not.
+func reportListenFailure(err error) {
+	if !listenFailing.Swap(true) {
+		slog.Warn("failed to listen for X-Plane responses", "error", err)
+	}
+}
+
 func (x *Adapter) listenLoop() {
 	buf := make([]byte, 4096)
 
 	localAddr := x.conn.LocalAddr().(*net.UDPAddr)
 	listener, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
-		if !listenFailing.Swap(true) {
-			slog.Error("failed to listen for X-Plane responses", "error", err)
-		}
+		reportListenFailure(err)
 		return
 	}
 	listenFailing.Store(false)
