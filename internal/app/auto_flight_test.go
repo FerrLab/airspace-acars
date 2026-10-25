@@ -17,6 +17,15 @@ type routeAPI struct {
 	mu      sync.Mutex
 	replies map[string]string
 	asked   []string
+	// noTenant makes BaseURL empty, as before the pilot has picked a tenant.
+	noTenant bool
+}
+
+func (r *routeAPI) BaseURL() string {
+	if r.noTenant {
+		return ""
+	}
+	return r.stubAPI.BaseURL()
 }
 
 func (r *routeAPI) DoRequest(method, path string, body interface{}) ([]byte, int, error) {
@@ -289,6 +298,20 @@ func newAutoApp(t *testing.T, api *routeAPI) (*App, *eventLog, *parkedSim) {
 		}
 	})
 	return a, ui, sim
+}
+
+// Without a tenant the booking request would fail inside the adapter and be
+// reported as a fault (AIRSPACE-ACARS-K); auto-start must not make it.
+func TestAutoStartDoesNotAskForABookingWithoutATenant(t *testing.T) {
+	api := &routeAPI{noTenant: true}
+	a, _, sim := newAutoApp(t, api)
+	sim.set(readyAt(sbsp))
+
+	a.tryAutoStartFlight(sbsp.Latitude, sbsp.Longitude)
+
+	if n := len(api.asked); n != 0 {
+		t.Fatalf("%d requests were sent with no tenant selected: %v", n, api.asked)
+	}
 }
 
 // The reported problem: a flight started on its own wherever the beacon and
