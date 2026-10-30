@@ -5,7 +5,7 @@ import (
 	"embed"
 	_ "embed"
 	"log"
-	"log/slog"
+	"net/http"
 	"time"
 
 	"airspace-acars/internal/adapters/airspace"
@@ -47,18 +47,41 @@ func init() {
 }
 
 func main() {
-	si, err := NewSingleInstance()
-	if err != nil {
-		slog.Info("another instance is running, bringing to foreground")
-		return
-	}
-	defer si.Close()
-
 	shutdown, err := observability.Init("airspace-acars", domain.Version)
 	if err != nil {
 		log.Fatal("failed to init observability:", err)
 	}
 	defer shutdown(context.Background())
+
+	// --- Create Wails application ---
+	// It comes before anything else touches the disk because a second launch
+	// ends inside New: it hands over to the copy already open and exits, and
+	// must not open the database or settings that copy owns. Services are
+	// registered below, once the app they wrap exists.
+	var appInstance *app.App
+	wailsApp := application.New(application.Options{
+		Name:           "Airspace ACARS",
+		Description:    "Flight Simulator ACARS Desktop Application",
+		SingleInstance: singleInstance(showMainWindow),
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+			// /documents/{id}/pdf streams a library PDF fetched with the
+			// pilot token, so the Documents tab can render it in place.
+			// appInstance is read per request because it does not exist
+			// yet; no request arrives before Run.
+			Middleware: func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					appInstance.DocumentPDFMiddleware(next).ServeHTTP(w, r)
+				})
+			},
+		},
+		Windows: application.WindowsOptions{
+			DisableQuitOnLastWindowClosed: true,
+		},
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
+		},
+	})
 
 	// --- Inject embedded DLL into SimConnect adapter ---
 	simconnectadapter.EmbeddedDLL = embeddedSimConnectDLL
@@ -77,7 +100,6 @@ func main() {
 	// X-Plane's airports are read from its installation, which is found from
 	// the running simulator unless the pilot has named a folder. The source
 	// outlives any one connection so its index is built once per session.
-	var appInstance *app.App
 	xplaneLayouts := aptdat.NewSource(func() string { return appInstance.GetSettings().XPlanePath })
 
 	// --- Create app instance (inject adapters) ---
@@ -112,38 +134,23 @@ func main() {
 	flightLogSvc := &FlightLogService{app: appInstance}
 	debugSvc := &DebugService{app: appInstance}
 
-	// --- Create Wails application ---
-	wailsApp := application.New(application.Options{
-		Name:        "Airspace ACARS",
-		Description: "Flight Simulator ACARS Desktop Application",
-		Services: []application.Service{
-			application.NewService(flightDataSvc),
-			application.NewService(flightSvc),
-			application.NewService(authSvc),
-			application.NewService(chatSvc),
-			application.NewService(notamSvc),
-			application.NewService(documentSvc),
-			application.NewService(audioSvc),
-			application.NewService(settingsSvc),
-			application.NewService(updateSvc),
-			application.NewService(discordSvc),
-			application.NewService(profileSvc),
-			application.NewService(flightLogSvc),
-			application.NewService(debugSvc),
-		},
-		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
-			// /documents/{id}/pdf streams a library PDF fetched with the
-			// pilot token, so the Documents tab can render it in place.
-			Middleware: appInstance.DocumentPDFMiddleware,
-		},
-		Windows: application.WindowsOptions{
-			DisableQuitOnLastWindowClosed: true,
-		},
-		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: false,
-		},
-	})
+	for _, svc := range []application.Service{
+		application.NewService(flightDataSvc),
+		application.NewService(flightSvc),
+		application.NewService(authSvc),
+		application.NewService(chatSvc),
+		application.NewService(notamSvc),
+		application.NewService(documentSvc),
+		application.NewService(audioSvc),
+		application.NewService(settingsSvc),
+		application.NewService(updateSvc),
+		application.NewService(discordSvc),
+		application.NewService(profileSvc),
+		application.NewService(flightLogSvc),
+		application.NewService(debugSvc),
+	} {
+		wailsApp.RegisterService(svc)
+	}
 
 	// Wire the Wails app back to the emitter and set quit function
 	wailsEmitter.SetApp(wailsApp)
@@ -151,6 +158,7 @@ func main() {
 
 	// --- Create window ---
 	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:   mainWindowName,
 		Title:  "Airspace ACARS",
 		Width:  1100,
 		Height: 700,
@@ -161,11 +169,6 @@ func main() {
 		},
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
-	})
-
-	si.SetOnShow(func() {
-		window.Show()
-		window.Focus()
 	})
 
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
