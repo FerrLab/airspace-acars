@@ -1,65 +1,56 @@
 package main
 
 import (
-	"fmt"
-	"net"
-	"sync"
+	"log/slog"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-const singleInstanceAddr = "127.0.0.1:49876"
+// singleInstanceID names the lock that tells a second launch the ACARS is
+// already open. Wails turns it into a named mutex on Windows, a lock file on
+// macOS and a D-Bus name on Linux. Builds with different IDs do not see each
+// other, so changing it lets two copies run at once.
+const singleInstanceID = "com.ferrlab.airspace-acars"
 
-type SingleInstance struct {
-	listener net.Listener
-	mu       sync.Mutex
-	onShow   func()
-}
+// mainWindowName is the name the ACARS window is registered under, so a
+// second launch can find it.
+const mainWindowName = "main"
 
-func NewSingleInstance() (*SingleInstance, error) {
-	si := &SingleInstance{}
+// singleInstanceLockAvailable reports whether this machine can hold the
+// single-instance lock. It is a variable so tests can stand in for the
+// platform; see withSingleInstanceLock.
+var singleInstanceLockAvailable = platformSingleInstanceLockAvailable
 
-	listener, err := net.Listen("tcp", singleInstanceAddr)
-	if err != nil {
-		// Another instance is running — signal it to show its window
-		conn, dialErr := net.Dial("tcp", singleInstanceAddr)
-		if dialErr == nil {
-			conn.Write([]byte("show"))
-			conn.Close()
-		}
-		return nil, fmt.Errorf("another instance is already running")
+// singleInstance returns the options that make a second launch hand over to
+// the copy already running and exit, or nil when the lock cannot be held
+// here and the ACARS should start unguarded rather than not at all.
+//
+// It replaces a listener on 127.0.0.1:49876, which took any failure to
+// listen for a running copy. That port is in Windows' dynamic range, where
+// Hyper-V, WSL2 and Docker reserve blocks at boot; when a block covered it,
+// every launch exited before opening its log and the ACARS would not start
+// until a reboot moved the reservation.
+func singleInstance(show func()) *application.SingleInstanceOptions {
+	if !singleInstanceLockAvailable() {
+		return nil
 	}
-
-	si.listener = listener
-	go si.listenLoop()
-	return si, nil
-}
-
-func (si *SingleInstance) SetOnShow(fn func()) {
-	si.mu.Lock()
-	si.onShow = fn
-	si.mu.Unlock()
-}
-
-func (si *SingleInstance) Close() {
-	si.listener.Close()
-}
-
-func (si *SingleInstance) listenLoop() {
-	for {
-		conn, err := si.listener.Accept()
-		if err != nil {
-			return
-		}
-		buf := make([]byte, 4)
-		conn.Read(buf)
-		conn.Close()
-
-		if string(buf) == "show" {
-			si.mu.Lock()
-			fn := si.onShow
-			si.mu.Unlock()
-			if fn != nil {
-				fn()
-			}
-		}
+	return &application.SingleInstanceOptions{
+		UniqueID: singleInstanceID,
+		OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+			slog.Info("acars launched again; showing the open window")
+			show()
+		},
 	}
+}
+
+// showMainWindow brings the ACARS window forward. It looks the window up
+// rather than capturing it because the second-launch callback is handed to
+// Wails before the window exists.
+func showMainWindow() {
+	w, ok := application.Get().Window.GetByName(mainWindowName)
+	if !ok {
+		return
+	}
+	w.Show()
+	w.Focus()
 }

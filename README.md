@@ -17,6 +17,7 @@ Built with [Wails v3](https://wails.io) (Go + React).
 - **In-app chat** — Pilot messaging and communication
 - **Audio alerts** — Cabin audio and instruction playback, routed to the output device chosen in Settings. Refreshing the device list there may ask Windows once for microphone access, because WebView2 only reveals device names to an origin holding it; the stream is stopped at once and the microphone is never read or recorded, and nothing else in the app touches it
 - **Auto-update** — OTA updates via GitHub Releases with beta channel support
+- **One copy at a time** — launching the ACARS while it is open brings the open window forward instead of starting a second copy. The lock is a named mutex on Windows, a lock file on macOS and a D-Bus name on Linux, so no TCP port is involved and a port range reserved by Hyper-V, WSL2 or Docker cannot stop it starting; on Linux without a D-Bus session it starts without the lock
 - **Offline recording** — Local SQLite database for flight data persistence
 - **Error reporting** — Crashes and failures report to Sentry, scrubbed of tokens and anything identifying the pilot's machine; off unless a DSN is built in — see [docs/observability.md](docs/observability.md)
 
