@@ -1041,3 +1041,70 @@ func TestAutopilotValueBindingsAreStable(t *testing.T) {
 		}
 	}
 }
+
+// The seatbelt sign drives the flight attendant's seatbelt announcements, so
+// each hand-maintained airliner profile must read it from the variable that
+// aircraft actually moves, and a three-position switch must honour AUTO.
+func TestSeatbeltSignFollowsTheAircraftSwitch(t *testing.T) {
+	reg := NewRegistry()
+	find := func(plan *Plan, point string) ResolvedBinding {
+		for _, b := range plan.Bindings {
+			if b.Point == point {
+				return b
+			}
+		}
+		t.Fatalf("%v: no binding for %s", plan.ProfileIDs(), point)
+		return ResolvedBinding{}
+	}
+	lvars := []SourceKind{SourceSimVar, SourceLVar}
+
+	t.Run("Fenix reads the overhead switch", func(t *testing.T) {
+		plan := reg.Resolve(Context{AircraftName: "Fenix A320 IAE Lufthansa", Simulator: SimSimConnect, EngineCount: 2}, lvars)
+		b := find(plan, "cabin.seatbelts")
+		require.Len(t, b.Sources, 1)
+		assert.Equal(t, "S_OH_SIGNS", b.Sources[0].Name)
+		fd := &domain.FlightData{}
+		plan.Apply(fd, map[string]float64{b.Sources[0].Key: 1})
+		assert.True(t, fd.Cabin.SeatbeltSign, "S_OH_SIGNS 1 is the sign on")
+		assert.True(t, fd.Cabin.SeatbeltKnown)
+	})
+
+	t.Run("FBW keeps the stock variable", func(t *testing.T) {
+		plan := reg.Resolve(Context{AircraftName: "FlyByWire A32NX", AircraftType: "A20N", Simulator: SimSimConnect, EngineCount: 2}, lvars)
+		b := find(plan, "cabin.seatbelts")
+		require.Len(t, b.Sources, 1)
+		assert.Equal(t, "CABIN SEATBELTS ALERT SWITCH", b.Sources[0].Name)
+	})
+
+	t.Run("PMDG 737 maps the three positions and falls back to the stock variable", func(t *testing.T) {
+		ctx := Context{AircraftName: "PMDG 737-800 KLM", AircraftType: "B738", Simulator: SimSimConnect, EngineCount: 2}
+		plan := reg.Resolve(ctx, lvars)
+		b := find(plan, "cabin.seatbeltSwitch")
+		require.Len(t, b.Sources, 1)
+		key := b.Sources[0].Key
+		for _, tc := range []struct {
+			raw, alt float64
+			want     bool
+		}{{0, 2000, false}, {50, 2000, true}, {50, 35000, false}, {100, 35000, true}} {
+			fd := &domain.FlightData{Position: domain.PositionData{Altitude: tc.alt}}
+			plan.Apply(fd, map[string]float64{key: tc.raw})
+			assert.Equal(t, tc.want, fd.Cabin.SeatbeltSign, "switch %v at %v ft", tc.raw, tc.alt)
+		}
+
+		simOnly := reg.Resolve(ctx, []SourceKind{SourceSimVar})
+		b = find(simOnly, "cabin.seatbeltSwitch")
+		fd := &domain.FlightData{Position: domain.PositionData{Altitude: 35000}}
+		simOnly.Apply(fd, map[string]float64{b.Sources[0].Key: 1})
+		assert.True(t, fd.Cabin.SeatbeltSign, "the stock on/off variable must read as ON, never as AUTO")
+	})
+
+	t.Run("Zibo reads its own switch with AUTO", func(t *testing.T) {
+		plan := reg.Resolve(Context{AircraftName: "Boeing 737-800X", AircraftType: "B738", Simulator: SimXPlane, EngineCount: 2}, []SourceKind{SourceDataRef})
+		b := find(plan, "cabin.seatbeltSwitch")
+		require.Len(t, b.Sources, 1)
+		assert.Equal(t, "laminar/B738/toggle_switch/seatbelt_sign_pos", b.Sources[0].Name)
+		fd := &domain.FlightData{Position: domain.PositionData{Altitude: 20000}}
+		plan.Apply(fd, map[string]float64{b.Sources[0].Key: 1})
+		assert.False(t, fd.Cabin.SeatbeltSign, "AUTO above 10,000 ft is off")
+	})
+}

@@ -20,6 +20,7 @@ import {
   mockFlightLogService,
   mockUpdateService,
   mockDebugService,
+  mockAttendantService,
 } from "./wails-bindings";
 
 export const AuthService = mockAuthService();
@@ -34,3 +35,4 @@ export const AudioService = mockAudioService();
 export const DiscordService = mockDiscordService();
 export const UpdateService = mockUpdateService();
 export const DebugService = mockDebugService();
+export const AttendantService = mockAttendantService();

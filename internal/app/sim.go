@@ -392,6 +392,8 @@ func (a *App) dataStreamLoop(stop <-chan struct{}) {
 				a.simMu.Unlock()
 			}
 
+			a.attendant.Observe(data)
+
 			// Auto-flight detection
 			a.checkAutoFlight(data)
 

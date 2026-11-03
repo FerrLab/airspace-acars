@@ -2,7 +2,7 @@
   "id": "fenix-a32x",
   "name": "Fenix A318/A319/A320/A321",
   "description": "Fenix Simulations A32X family on MSFS. The Fenix systems run on their own local variables, so the FCU selections, the autopilot engagement and the overhead switches are read from those rather than from the stock simulation variables the aircraft does not always drive.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com) and confirmed in the simulator. SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The FCU selections come from N_FCU_* \u2014 the numbers in the windows. The S_FCU_* variables are the switch positions (which mode the knob is in) and were read as values in an earlier version of this profile, which reported a heading of 1 and an altitude of 0. Two caveats remain, neither expressible as a binding: N_FCU_VS carries the FPA times 1000 when the FCU is in FPA rather than V/S mode, and N_FCU_SPEED is a Mach number rather than knots when the speed window is in Mach. The beacon and strobe switches are left on the stock simulation variables: the Fenix overhead values are multi-position and the beacon drives the ACARS' automatic flight start, so it is not worth re-binding on an unverified mapping.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com) and confirmed in the simulator. SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The FCU selections come from N_FCU_* \u2014 the numbers in the windows. The S_FCU_* variables are the switch positions (which mode the knob is in) and were read as values in an earlier version of this profile, which reported a heading of 1 and an altitude of 0. Two caveats remain, neither expressible as a binding: N_FCU_VS carries the FPA times 1000 when the FCU is in FPA rather than V/S mode, and N_FCU_SPEED is a Mach number rather than knots when the speed window is in Mach. The beacon and strobe switches are left on the stock simulation variables: the Fenix overhead values are multi-position and the beacon drives the ACARS' automatic flight start, so it is not worth re-binding on an unverified mapping. The seatbelt sign comes from S_OH_SIGNS, the overhead SEAT BELTS switch (0 off, 1 on), with the stock CABIN SEATBELTS ALERT SWITCH behind it for as long as the local variable has not reported.",
   "priority": 100,
   "match": {
     "all": [
@@ -264,6 +264,33 @@
         "source": {
           "kind": "simvar",
           "name": "APU SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      }
+    ],
+    "cabin.seatbelts": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "S_OH_SIGNS"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "CABIN SEATBELTS ALERT SWITCH",
           "unit": "Bool"
         },
         "transform": [

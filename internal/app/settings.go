@@ -15,6 +15,8 @@ func (a *App) InitSettings() {
 	a.settingsPath = filepath.Join(configDir, "airspace-acars", "settings.json")
 	a.settings = domain.DefaultSettings()
 
+	defer func() { a.attendant.SetEnabled(a.settings.FlightAttendant) }()
+
 	data, err := os.ReadFile(a.settingsPath)
 	if err != nil {
 		return
@@ -32,9 +34,12 @@ func (a *App) GetSettings() domain.Settings {
 // UpdateSettings persists new settings.
 func (a *App) UpdateSettings(settings domain.Settings) error {
 	a.settingsMu.Lock()
-	defer a.settingsMu.Unlock()
 	a.settings = settings
-	return a.saveSettings()
+	err := a.saveSettings()
+	a.settingsMu.Unlock()
+
+	a.attendant.SetEnabled(settings.FlightAttendant)
+	return err
 }
 
 func (a *App) saveSettings() error {

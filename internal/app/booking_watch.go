@@ -196,6 +196,7 @@ func (a *App) applyArrival(bookingID string, arrival domain.AirportInfo) {
 	observability.Count("flight.arrival_changed")
 	slog.Info("flight arrival changed", "flight.arrival_from", from, "flight.arrival", arrival.ICAO)
 	a.UI.EmitEvent("flight-arrival-changed", arrival.ICAO)
+	a.attendant.ArrivalChanged(arrival.ICAO)
 }
 
 // flightArrival is the active flight's arrival airport, with the coordinates

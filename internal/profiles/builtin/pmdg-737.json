@@ -2,7 +2,7 @@
   "id": "pmdg-737",
   "name": "PMDG 737",
   "description": "PMDG 737-600/700/800/900 on MSFS. Takes the autopilot state and the MCP selections from the PMDG variables, the gear from the three green indications, and the flap position from the surface angle rather than the handle.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. PMDG publishes the MCP through the ngx_ variables and the annunciators through switch_*_73X; both sets are listed so the profile survives either naming, and a name the aircraft does not define is withheld rather than read as zero. The V/S window reads -20000 when it is blank, which is mapped to zero.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. PMDG publishes the MCP through the ngx_ variables and the annunciators through switch_*_73X; both sets are listed so the profile survives either naming, and a name the aircraft does not define is withheld rather than read as zero. The V/S window reads -20000 when it is blank, which is mapped to zero. The seatbelt sign is read from switch_104_73X, the overhead FASTEN BELTS switch, taken as 0 OFF, 50 AUTO, 100 ON with AUTO lit below 10,000 ft. That variable and its values are unverified: the PMDG SDK exposes its switches through the SDK data area rather than local variables. Until it reports, the stock CABIN SEATBELTS ALERT SWITCH stands in, read as off or on.",
   "priority": 100,
   "match": {
     "all": [
@@ -362,6 +362,43 @@
           "value": 3
         }
       ]
-    }
+    },
+    "cabin.seatbeltSwitch": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "switch_104_73X"
+        },
+        "transform": [
+          {
+            "op": "map",
+            "map": {
+              "0": 0,
+              "50": 1,
+              "100": 2
+            },
+            "default": 0
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "CABIN SEATBELTS ALERT SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          },
+          {
+            "op": "scale",
+            "value": 2
+          }
+        ]
+      }
+    ]
   }
 }

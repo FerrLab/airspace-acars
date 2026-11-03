@@ -2,7 +2,7 @@
   "id": "zibo-b738",
   "name": "Zibo 737-800",
   "description": "Zibo modified 737-800 on X-Plane. The Zibo autopilot and gear indications run on their own datarefs, so CMD A/B, LNAV, the approach mode and the three green lights are read from laminar/B738 rather than from the generic X-Plane datarefs. The strobes are read from the POSITION switch itself (1 STROBE & STEADY, 0 OFF, -1 STEADY).",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). X-Plane datarefs are read directly, so this profile is active today. Matching uses the aircraft description X-Plane reports, which the ACARS reads character by character from acf_descrip. The position light values come from the Zibo's B738.lighting.lua: only its up/down command handlers push sim/lights/strobe_lights_on, so a tool that writes position_light_pos directly leaves sim/cockpit/electrical/strobe_lights_on stale. Until the switch has read non-zero once, the adapter keeps the stock strobe reading.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). X-Plane datarefs are read directly, so this profile is active today. Matching uses the aircraft description X-Plane reports, which the ACARS reads character by character from acf_descrip. The position light values come from the Zibo's B738.lighting.lua: only its up/down command handlers push sim/lights/strobe_lights_on, so a tool that writes position_light_pos directly leaves sim/cockpit/electrical/strobe_lights_on stale. Until the switch has read non-zero once, the adapter keeps the stock strobe reading. The seatbelt sign comes from laminar/B738/toggle_switch/seatbelt_sign_pos, the FASTEN BELTS switch (0 OFF, 1 AUTO, 2 ON; AUTO is taken as lit below 10,000 ft, as the SLCSeatbelts plugin does), with the adapter's own reading of the stock sim/cockpit2/switches/fasten_seat_belts standing until the Zibo dataref has reported non-zero once.",
   "priority": 100,
   "match": {
     "all": [
@@ -140,6 +140,13 @@
       "source": {
         "kind": "const",
         "value": "B738"
+      }
+    },
+    "cabin.seatbeltSwitch": {
+      "sim": "xplane",
+      "source": {
+        "kind": "dataref",
+        "name": "laminar/B738/toggle_switch/seatbelt_sign_pos"
       }
     }
   }

@@ -1,3 +1,5 @@
+import { EMPTY_ATTENDANT, type AttendantClip, type AttendantSnapshot } from "@/lib/attendant";
+
 // Factory functions for mocking Wails binding services in tests.
 
 export function mockFlightLogService() {
@@ -222,5 +224,19 @@ export function mockDebugService() {
         report: { json: "", at: "0001-01-01T00:00:00Z", outcome: "", batchSize: 0 },
         profiles: [],
       }),
+  };
+}
+
+export function mockAttendantService() {
+  return {
+    GetSnapshot: (): Promise<AttendantSnapshot> => Promise.resolve(EMPTY_ATTENDANT),
+    TakeClip: (): Promise<AttendantClip | null> => Promise.resolve(null),
+    ClipFinished: (_id: string) => Promise.resolve(),
+    ClipFailed: (_id: string) => Promise.resolve(),
+    Skip: () => Promise.resolve(),
+    Replay: () => Promise.resolve(),
+    StopAll: () => Promise.resolve(),
+    PlayPhase: (_phase: string, _service: number) => Promise.resolve(),
+    SetEnabled: (_enabled: boolean) => Promise.resolve(),
   };
 }

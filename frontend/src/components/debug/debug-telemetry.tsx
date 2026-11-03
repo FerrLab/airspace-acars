@@ -127,6 +127,10 @@ export function DebugTelemetry({ flightData: d }: { flightData: FlightData }) {
           { label: t("debug.row.beacon"), value: <BoolBadge value={d.lights.beacon} /> },
           { label: t("debug.row.strobe"), value: <BoolBadge value={d.lights.strobe} /> },
           { label: t("debug.row.landing"), value: <BoolBadge value={d.lights.landing} /> },
+          {
+            label: t("debug.row.seatbelt"),
+            value: d.cabin?.seatbeltKnown ? <BoolBadge value={d.cabin.seatbeltSign} /> : t("debug.unknown"),
+          },
         ]} />
         <SectionTitle>{t("debug.controls")}</SectionTitle>
         <DataTable rows={[

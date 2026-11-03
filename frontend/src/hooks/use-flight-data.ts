@@ -97,6 +97,12 @@ export interface WeightData {
   fuelWeight: number;
 }
 
+export interface CabinData {
+  seatbeltSign: boolean;
+  /** False until anything has read the sign; seatbeltSign then means nothing. */
+  seatbeltKnown: boolean;
+}
+
 export interface FlightData {
   position: PositionData;
   attitude: AttitudeData;
@@ -112,6 +118,7 @@ export interface FlightData {
   doors: DoorData[];
   aircraftName: string;
   weight: WeightData;
+  cabin?: CabinData;
 }
 
 export function useFlightData() {

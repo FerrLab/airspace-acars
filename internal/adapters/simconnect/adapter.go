@@ -196,6 +196,10 @@ type simReport struct {
 	Slew    float64 `name:"IS SLEW ACTIVE" unit:"Bool"`
 	Crashed float64 `name:"CRASH FLAG" unit:"Bool"`
 
+	// Cabin. The stock fasten seatbelt sign; aircraft that keep their own
+	// switch in a local variable override it through a profile.
+	SeatbeltsAlert float64 `name:"CABIN SEATBELTS ALERT SWITCH" unit:"Bool"`
+
 	// Byte-array fields must be last (misalign subsequent float64s)
 	AircraftTitle [256]byte `name:"TITLE" unit:""`
 	AircraftType  [256]byte `name:"ATC MODEL" unit:""`
@@ -670,6 +674,10 @@ func (s *Adapter) run(errCh chan<- error) {
 					WindDirection: r.WindDirection,
 					WindSpeed:     r.WindSpeed,
 					QNH:           r.QNH,
+					Cabin: domain.CabinData{
+						SeatbeltSign:  r.SeatbeltsAlert != 0,
+						SeatbeltKnown: true,
+					},
 				}
 				engines := 0
 				for _, e := range fd.Engines {

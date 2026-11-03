@@ -12,6 +12,7 @@ import (
 
 	"airspace-acars/internal/adapters/airspace"
 	discordadapter "airspace-acars/internal/adapters/discord"
+	"airspace-acars/internal/adapters/gsx"
 	simconnectadapter "airspace-acars/internal/adapters/simconnect"
 	"airspace-acars/internal/adapters/storage"
 	wailsadapter "airspace-acars/internal/adapters/wails"
@@ -47,6 +48,12 @@ func init() {
 	application.RegisterEvent[bool]("request-window-close")
 	application.RegisterEvent[*profiles.Plan]("aircraft-profile")
 	application.RegisterEvent[bool]("session-expired")
+	// The flight attendant: a clip is waiting (consumed by
+	// use-attendant-player.ts), a clip must be cut short (the same), and a
+	// fresh snapshot for the Flight Attendant tab (use-attendant.ts).
+	application.RegisterEvent[bool]("attendant-clip-ready")
+	application.RegisterEvent[string]("attendant-interrupt")
+	application.RegisterEvent[*domain.AttendantSnapshot]("attendant-state")
 }
 
 func main() {
@@ -126,6 +133,13 @@ func main() {
 		},
 	)
 
+	// GSX's ground services feed the flight attendant. The client retries
+	// quietly for as long as GSX is not running.
+	gsxClient := gsx.NewClient(gsx.DefaultURL)
+	appInstance.GSX = gsxClient
+	gsxClient.Start()
+	defer gsxClient.Stop()
+
 	// Initialize settings and audio cache
 	appInstance.InitSettings()
 	appInstance.InitAudioCache()
@@ -145,6 +159,7 @@ func main() {
 	profileSvc := &ProfileService{app: appInstance}
 	flightLogSvc := &FlightLogService{app: appInstance}
 	debugSvc := &DebugService{app: appInstance}
+	attendantSvc := &AttendantService{app: appInstance}
 
 	for _, svc := range []application.Service{
 		application.NewService(flightDataSvc),
@@ -160,6 +175,7 @@ func main() {
 		application.NewService(profileSvc),
 		application.NewService(flightLogSvc),
 		application.NewService(debugSvc),
+		application.NewService(attendantSvc),
 	} {
 		wailsApp.RegisterService(svc)
 	}

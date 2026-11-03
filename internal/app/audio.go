@@ -18,6 +18,11 @@ import (
 	"airspace-acars/observability"
 )
 
+// maxAudioBytes caps one downloaded audio file. A cabin announcement is a
+// few hundred kilobytes and boarding music a few megabytes; the cap only
+// stops an upstream that never ends from filling the disk.
+const maxAudioBytes = 50 << 20
+
 // InitAudioCache sets up the audio cache directory.
 func (a *App) InitAudioCache() {
 	a.audioCacheDir = filepath.Join(os.TempDir(), "airspace-audio")
@@ -25,7 +30,14 @@ func (a *App) InitAudioCache() {
 }
 
 // FetchSoundInstructions retrieves audio instructions from the API and pre-downloads files.
+//
+// While the flight attendant plays the airline's pack itself, the server
+// queues nothing here, and asking would only cost a request every ten
+// seconds, so nothing is asked.
 func (a *App) FetchSoundInstructions() ([]domain.SoundInstruction, error) {
+	if a.attendant.Mode() == domain.AttendantClient {
+		return []domain.SoundInstruction{}, nil
+	}
 	_, span := observability.Start(context.Background(), "audio.fetch_instructions")
 	defer span.Finish()
 
@@ -125,6 +137,11 @@ func (a *App) downloadAndCacheAudio(audioURL string) (string, error) {
 		return "", fmt.Errorf("download: %w", err)
 	}
 	defer resp.Body.Close()
+	// An error page is not audio. Cached under the URL's hash, it would be
+	// played (and fail) for as long as the cache lives.
+	if err := domain.NewStatusError("GET", "audio", resp.StatusCode, nil); err != nil {
+		return "", fmt.Errorf("download: %w", err)
+	}
 
 	contentType := resp.Header.Get("Content-Type")
 	ext := ".mp3"
@@ -143,7 +160,12 @@ func (a *App) downloadAndCacheAudio(audioURL string) (string, error) {
 	}
 	defer file.Close()
 
-	if _, err := io.Copy(file, resp.Body); err != nil {
+	n, err := io.Copy(file, io.LimitReader(resp.Body, maxAudioBytes+1))
+	if err == nil && n > maxAudioBytes {
+		err = fmt.Errorf("audio exceeds %d bytes", maxAudioBytes)
+	}
+	if err != nil {
+		file.Close()
 		os.Remove(path)
 		return "", fmt.Errorf("write file: %w", err)
 	}

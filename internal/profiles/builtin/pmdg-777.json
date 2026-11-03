@@ -2,7 +2,7 @@
   "id": "pmdg-777",
   "name": "PMDG 777",
   "description": "PMDG 777-300ER/200 on MSFS. Reads the autopilot engagement and the MCP selections from the PMDG variables.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The V/S window reads -20000 when it is blank, which is mapped to zero.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. The V/S window reads -20000 when it is blank, which is mapped to zero. The seatbelt sign is the stock CABIN SEATBELTS ALERT SWITCH. The PMDG 777 keeps its FASTEN BELTS switch in the SDK data area, not in a local variable, and whether it drives the stock variable is unverified; an aircraft that leaves it unset makes no seatbelt announcements rather than wrong ones.",
   "priority": 100,
   "match": {
     "all": [
@@ -237,6 +237,21 @@
           "name": "AUTOPILOT VERTICAL HOLD VAR",
           "unit": "feet/minute"
         }
+      }
+    ],
+    "cabin.seatbelts": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "CABIN SEATBELTS ALERT SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          }
+        ]
       }
     ]
   }

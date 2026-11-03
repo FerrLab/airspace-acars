@@ -42,6 +42,12 @@ type DiscordPresence interface {
 	SetActivity(activity map[string]interface{}) error
 }
 
+// GroundServices reports what the ground handling add-on (GSX) is doing,
+// for the flight attendant's boarding and pushback announcements.
+type GroundServices interface {
+	State() domain.GSXState
+}
+
 // Storage handles persistent data storage.
 type Storage interface {
 	SaveFlightData(data *domain.FlightData) error
@@ -144,6 +150,13 @@ type App struct {
 	// itself.
 	auto autoFlight
 
+	// GSX reports the ground services; nil when no client is wired, which
+	// the flight attendant treats as GSX not running.
+	GSX GroundServices
+
+	// attendant plays the cabin announcements. It locks itself.
+	attendant *attendant
+
 	// Discord loop control
 	discordNudge chan struct{}
 
@@ -173,6 +186,18 @@ func NewApp(
 		audioClient:          &http.Client{Timeout: 15 * time.Second},
 		discordNudge:         make(chan struct{}, 1),
 	}
+
+	a.attendant = newAttendant(attendantDeps{
+		api:      airspace,
+		download: a.downloadAndCacheAudio,
+		emit:     ui.EmitEvent,
+		gsx: func() domain.GSXState {
+			if a.GSX == nil {
+				return domain.GSXState{}
+			}
+			return a.GSX.State()
+		},
+	})
 
 	// A token the server has revoked or let expire fails the same way on
 	// every subsequent poll, and the frontend has no way to tell that apart
