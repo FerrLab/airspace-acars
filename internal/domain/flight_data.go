@@ -22,6 +22,7 @@ type FlightData struct {
 	WindDirection float64           `json:"windDirection"`
 	WindSpeed     float64           `json:"windSpeed"`
 	QNH           float64           `json:"qnh"`
+	Cabin         CabinData         `json:"cabin"`
 }
 
 type PositionData struct {
@@ -116,6 +117,38 @@ type APUData struct {
 
 type DoorData struct {
 	OpenRatio float64 `json:"openRatio"`
+}
+
+// SeatbeltAutoBelowFt is the altitude under which a seatbelt switch in AUTO
+// lights the sign. Boeing's AUTO logic keys on flaps, gear and cabin
+// altitude, none of which every aircraft exposes; 10,000 ft MSL is the rule
+// the SLCSeatbelts plugin uses for X-Plane and lands on the same sign in an
+// ordinary climb and descent.
+const SeatbeltAutoBelowFt = 10_000.0
+
+// CabinData is what the cabin shows the passengers.
+type CabinData struct {
+	// SeatbeltSign is the fasten seatbelt sign as the aircraft drives it.
+	SeatbeltSign bool `json:"seatbeltSign"`
+	// SeatbeltKnown is set once anything has read the sign: an aircraft
+	// whose sign nobody reads leaves SeatbeltSign false without meaning
+	// "off", and the flight attendant must not announce that.
+	SeatbeltKnown bool `json:"seatbeltKnown"`
+}
+
+// SeatbeltFromSwitch resolves a three-position seatbelt switch (0 off,
+// 1 auto, 2 on) to whether the sign is lit at altitudeFt MSL. AUTO is lit
+// below SeatbeltAutoBelowFt. A value between positions rounds to the
+// nearest one.
+func SeatbeltFromSwitch(position, altitudeFt float64) bool {
+	switch {
+	case position >= 1.5:
+		return true
+	case position >= 0.5:
+		return altitudeFt < SeatbeltAutoBelowFt
+	default:
+		return false
+	}
 }
 
 type WeightData struct {

@@ -546,5 +546,7 @@
   "myFlights.points.total": "Total for this flight",
   "myFlights.points.none": "No points were awarded for this flight.",
   "myFlights.points.fdm": "FDM",
-  "myFlights.points.staff": "Staff"
+  "myFlights.points.staff": "Staff",
+  "debug.row.seatbelt": "Seatbelt sign",
+  "debug.unknown": "not read"
 }

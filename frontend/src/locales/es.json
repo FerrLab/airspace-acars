@@ -546,5 +546,7 @@
   "myFlights.points.total": "Total de este vuelo",
   "myFlights.points.none": "No se otorgaron puntos en este vuelo.",
   "myFlights.points.fdm": "FDM",
-  "myFlights.points.staff": "Personal"
+  "myFlights.points.staff": "Personal",
+  "debug.row.seatbelt": "Señal de cinturones",
+  "debug.unknown": "sin lectura"
 }

@@ -546,5 +546,7 @@
   "myFlights.points.total": "Total pour ce vol",
   "myFlights.points.none": "Aucun point n'a été attribué pour ce vol.",
   "myFlights.points.fdm": "FDM",
-  "myFlights.points.staff": "Équipe"
+  "myFlights.points.staff": "Équipe",
+  "debug.row.seatbelt": "Consigne ceintures",
+  "debug.unknown": "non lu"
 }
