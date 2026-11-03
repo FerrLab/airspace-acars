@@ -130,7 +130,7 @@ labelled *Boarding* in the editor; the id is kept for compatibility.
 | Phase | Fires |
 |---|---|
 | `gate_departure` (Boarding) | GSX boarding becomes active; without GSX, when the flight starts on the ground. Lines with `repeat` replay every N minutes until boarding completes; uploaded audio with `repeat` loops between them (boarding music). |
-| `boarding_complete` | GSX boarding completed; without GSX, the first of: all doors closed with the beacon on, or pushback. |
+| `boarding_complete` | GSX boarding completed; without GSX, right before pushback (or taxi), as the server plays it for older clients. |
 | `pushback` | GSX pushback active, or the aircraft moving backwards on the ground. |
 | `taxi` | Forward ground movement with an engine running, after pushback. |
 | `climb_out` | 60 s after lift-off, climbing. |
@@ -153,13 +153,17 @@ play back to back; phases queue and never cut each other off.
 The ACARS side refines the table above; [../flight-attendant.md](../flight-attendant.md)
 has the full detail.
 
-- **Boarding** waits for GSX boarding *active* (state 5), not requested (4).
-  A flight auto-started with the beacon already on skips boarding and fires
-  `boarding_complete` at once. Without GSX, `boarding_complete` is the beacon
-  switching on (doors are not read); pushback or taxi closes it first.
-- **Pushback** without GSX is ground speed over 1 kt with every engine off (the
-  simulators give no direction of travel); **taxi** is over 5 kt with an engine
-  running.
+- **With GSX**, boarding waits for GSX boarding *active* (state 5), not
+  requested (4); boarding complete is GSX boarding completed or the beacon
+  coming on; pushback is GSX departure active or moving over 1 kt with the
+  engines off; taxi is over 5 kt with an engine running.
+- **Without GSX the old triggers are kept**, the ones the server used before
+  the ACARS timed the announcements: boarding plays when the flight starts on
+  the ground (whatever the beacon or engines are doing); pushback is the
+  aircraft leaving "Parked" (stopped, engines off) by moving at 1–5 kt or by
+  an engine starting while stopped; taxi is the first 5 kt; boarding complete
+  plays right before whichever of pushback or taxi comes first, as the server
+  plays it for older clients. A flight never parked has no pushback.
 - **climb_out**: 60 s after lift-off *and* above 1,000 ft AGL, climbing.
 - **cruise**: within 300 fpm of level above 10,000 ft, held **two minutes**.
   `cruise_at` lines wait while below 10,000 ft or sinking over 500 fpm and are

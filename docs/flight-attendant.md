@@ -35,10 +35,10 @@ Universal Announcer (manual v0.9.9.7), with the deviations noted.
 
 | Phase | Fires when |
 |---|---|
-| Boarding (`gate_departure`) | GSX boarding is *active* (state 5; requested is not enough). Without GSX: at flight start on the ground with the beacon off. A flight started with the beacon on (auto-start) skips it and fires boarding complete. |
-| `boarding_complete` | GSX boarding completed (state 6, or dropped from in progress back to callable), or the beacon switching on, whichever is first; pushback or taxi with boarding still open closes it first. Ends the boarding repeats and music. |
-| `pushback` | GSX departure active, or moving over 1 kt on the ground with the engines off. |
-| `taxi` | On the ground, an engine running, over 5 kt. Without a pushback, pushback is skipped. |
+| Boarding (`gate_departure`) | GSX boarding is *active* (state 5; requested is not enough). Without GSX: when the flight starts on the ground, whatever the beacon or engines are doing (the old trigger). |
+| `boarding_complete` | With GSX: GSX boarding completed (state 6, or dropped from in progress back to callable), or the beacon switching on, whichever is first. Without GSX: right before pushback or taxi, whichever comes first (the old trigger). Ends the boarding repeats and music. |
+| `pushback` | With GSX: GSX departure active, or moving over 1 kt with the engines off. Without GSX: leaving "Parked" (stopped, engines off) by moving at 1–5 kt or by starting an engine while stopped (the old trigger); a flight never parked has none. |
+| `taxi` | With GSX: on the ground, an engine running, over 5 kt. Without GSX: the first 5 kt (the old trigger). Without a pushback, pushback is skipped. |
 | `climb_out` | 60 s after lift-off, above 1,000 ft AGL and climbing. Universal Announcer waits for 3,000 ft and two minutes, late for a short sector. |
 | `passing_10000` | Climbing through 10,000 ft MSL. |
 | `cruise` | Within 300 fpm of level above 10,000 ft for **two minutes**. The server used ten minutes; one minute is an ordinary level-off on the climb. |
@@ -84,6 +84,12 @@ PMDG 737 `switch_104_73X`; FBW and the PMDG 777 keep the stock variable. Each
 profile's `notes` say where its variable comes from.
 
 ## GSX
+
+Without GSX the boarding, boarding complete, pushback and taxi triggers are
+the ones the server used before the ACARS timed the announcements (see the
+phase table), so a pilot who does not run GSX hears them when they always
+did. GSX is "running" when its remote control server answers; the choice is
+made reading by reading, so starting GSX mid-turnaround switches to it.
 
 `internal/adapters/gsx` connects to GSX Pro's remote control server at
 `ws://127.0.0.1:8744` (GSX 4.0.6 or later, "Remote control server" enabled,

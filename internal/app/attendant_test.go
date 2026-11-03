@@ -209,7 +209,8 @@ func TestAFailedPackIsRetried(t *testing.T) {
 
 // Boarding plays its lines, then loops the boarding music; a repeat line
 // comes back repeat_every_minutes after it last finished, cutting the music
-// short; boarding complete ends the loop and plays a line rendered now.
+// short; boarding complete (here, without GSX, the aircraft leaving the
+// stand) ends the loop and plays a line rendered now.
 func TestBoardingRepeatsWithMusicBetween(t *testing.T) {
 	h := newHarness(t, packRoutes())
 	h.e.Start("123", flightStart)
@@ -251,9 +252,15 @@ func TestBoardingRepeatsWithMusicBetween(t *testing.T) {
 	ready := atTheGate()
 	ready.Lights.Beacon = true
 	h.e.Observe(ready)
+	still := h.take()
+	assert.True(t, still.Music, "without GSX the beacon does not end boarding: the music plays on")
+	h.e.ClipEnded(still.ID, true)
+
+	ready.Attitude.GS = 2
+	h.e.Observe(ready)
 	done := h.take()
 	assert.Equal(t, "Boarding completed at 18:07", done.Text, "a dynamic line is rendered when it plays")
-	assert.Equal(t, domain.ReasonBeaconOn, done.Reason.Code)
+	assert.Equal(t, domain.ReasonLeavingGate, done.Reason.Code)
 	assert.True(t, h.api.wasAsked("GET "+speechLinePath+"5"))
 	h.e.ClipEnded(done.ID, true)
 

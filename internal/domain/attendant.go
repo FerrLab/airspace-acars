@@ -64,7 +64,6 @@ const (
 // numbers of AttendantReason.
 const (
 	ReasonFlightStarted     = "flight_started"
-	ReasonStartedReady      = "started_ready"
 	ReasonGSXBoarding       = "gsx_boarding_started"
 	ReasonGSXBoardingDone   = "gsx_boarding_complete"
 	ReasonBeaconOn          = "beacon_on"
@@ -72,6 +71,9 @@ const (
 	ReasonBoardingMusic     = "boarding_music"
 	ReasonGSXPushback       = "gsx_pushback"
 	ReasonMovingEnginesOff  = "moving_engines_off"
+	ReasonLeftStand         = "left_stand"
+	ReasonEngineStart       = "engine_start"
+	ReasonLeavingGate       = "leaving_gate"
 	ReasonTaxi              = "taxi"
 	ReasonClimbOut          = "climb_out"
 	ReasonPassing10000      = "passing_10000"

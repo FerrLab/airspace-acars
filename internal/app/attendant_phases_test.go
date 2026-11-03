@@ -128,8 +128,8 @@ func TestPhasesOfAFlightWithoutGSX(t *testing.T) {
 		domain.PhaseAfterLanding, domain.PhaseGateArrival,
 	}, f.keys(), "the cabin hears the flight out of order")
 	assert.Equal(t, domain.ReasonFlightStarted, f.fires[0].reason.Code)
-	assert.Equal(t, domain.ReasonBeaconOn, f.last(domain.PhaseBoardingComplete).reason.Code)
-	assert.Equal(t, domain.ReasonMovingEnginesOff, f.last(domain.PhasePushback).reason.Code)
+	assert.Equal(t, domain.ReasonLeavingGate, f.last(domain.PhaseBoardingComplete).reason.Code)
+	assert.Equal(t, domain.ReasonLeftStand, f.last(domain.PhasePushback).reason.Code)
 	assert.Equal(t, domain.LandingSmooth, f.last(domain.PhaseAfterLanding).landing)
 }
 
@@ -168,15 +168,52 @@ func TestPhasesFollowGSX(t *testing.T) {
 	assert.Equal(t, domain.ReasonGSXDeboarding, f.last(domain.PhaseGateArrival).reason.Code)
 }
 
-// Auto-start starts a flight once the beacon is on and an engine runs: the
-// doors are closed, so boarding is over before it is announced.
-func TestAFlightStartedReadyToGoSkipsBoarding(t *testing.T) {
+// Without GSX the triggers are the server's old ones. Boarding plays when
+// the flight starts, even one auto-started with the beacon on and an
+// engine running, and the beacon does not end it.
+func TestWithoutGSXBoardingPlaysAtStartWhateverTheAircraftIsDoing(t *testing.T) {
 	f := newFlight(t, phaseConfig{})
 	f.fd.Lights.Beacon = true
+	f.engines(true).hold(time.Minute)
+	assert.Equal(t, []string{domain.PhaseBoarding}, f.keys(), "boarding is announced at the start, and nothing else yet")
+}
+
+// Without GSX the beacon coming on does not close boarding: boarding
+// complete waits until the aircraft leaves the gate, right before pushback.
+func TestWithoutGSXBoardingCompletePlaysRightBeforePushback(t *testing.T) {
+	f := newFlight(t, phaseConfig{})
+	f.hold(time.Minute)
+	f.fd.Lights.Beacon = true
+	f.hold(time.Minute)
+	assert.Equal(t, []string{domain.PhaseBoarding}, f.keys(), "the beacon alone closed boarding")
+
+	f.at(30, 0, 0, 2).hold(time.Second)
+	assert.Equal(t, []string{domain.PhaseBoarding, domain.PhaseBoardingComplete, domain.PhasePushback}, f.keys())
+	assert.Equal(t, domain.ReasonLeavingGate, f.last(domain.PhaseBoardingComplete).reason.Code)
+	assert.Equal(t, domain.ReasonLeftStand, f.last(domain.PhasePushback).reason.Code)
+	assert.Equal(t, 2, f.last(domain.PhasePushback).reason.GS)
+}
+
+// Starting an engine while parked is the old detector's pushback too.
+func TestWithoutGSXAnEngineStartAtTheGateIsThePushback(t *testing.T) {
+	f := newFlight(t, phaseConfig{})
+	f.hold(time.Minute)
 	f.engines(true).hold(time.Second)
-	assert.Equal(t, []string{domain.PhaseBoardingComplete}, f.keys())
-	assert.Equal(t, domain.ReasonStartedReady, f.fires[0].reason.Code)
-	assert.True(t, f.d.skipped[domain.PhaseBoarding])
+	assert.Equal(t, []string{domain.PhaseBoarding, domain.PhaseBoardingComplete, domain.PhasePushback}, f.keys())
+	assert.Equal(t, domain.ReasonEngineStart, f.last(domain.PhasePushback).reason.Code)
+}
+
+// A flight started with the engines already running was never parked, so
+// there is no pushback to announce; taxi closes boarding instead.
+func TestWithoutGSXAFlightNeverParkedHasNoPushback(t *testing.T) {
+	f := newFlight(t, phaseConfig{})
+	f.engines(true).hold(time.Minute)
+	f.at(30, 0, 0, 3).hold(time.Minute)
+	assert.Equal(t, []string{domain.PhaseBoarding}, f.keys(), "creeping with the engines running was taken for a pushback")
+
+	f.at(30, 0, 0, 12).hold(time.Second)
+	assert.Equal(t, []string{domain.PhaseBoarding, domain.PhaseBoardingComplete, domain.PhaseTaxi}, f.keys())
+	assert.True(t, f.d.skipped[domain.PhasePushback])
 }
 
 // Taxiing out without a pushback still closes boarding first.

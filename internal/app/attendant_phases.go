@@ -130,8 +130,12 @@ type phaseDetector struct {
 	fired   map[string]time.Time // step key → when
 	skipped map[string]bool
 
-	seen         bool // the first reading has been handled
-	lastBeacon   bool
+	seen       bool // the first reading has been handled
+	lastBeacon bool
+	// lastParked is whether the previous reading was stopped on the ground
+	// with every engine off: the server's old "Parked", which pushback is
+	// the end of when GSX is not there to say so.
+	lastParked   bool
 	lastAlt      float64
 	airborne     time.Time // when the current flight leg left the ground; zero on the ground
 	everAirborne bool
@@ -197,6 +201,7 @@ func (d *phaseDetector) step(s phaseSample) []phaseFire {
 		d.seen = true
 		d.lastAlt = fd.Position.Altitude
 		d.lastBeacon = fd.Lights.Beacon
+		d.lastParked = parked(fd)
 		d.seatbeltKnown, d.seatbelt = fd.Cabin.SeatbeltKnown, fd.Cabin.SeatbeltSign
 		out = d.atStart(s, out)
 	}
@@ -211,11 +216,20 @@ func (d *phaseDetector) step(s phaseSample) []phaseFire {
 
 	d.lastAlt = fd.Position.Altitude
 	d.lastBeacon = fd.Lights.Beacon
+	d.lastParked = parked(fd)
 	return out
 }
 
+// parked is the server's old "Parked": on the ground, stopped, every engine
+// off.
+func parked(fd *domain.FlightData) bool {
+	return fd.Sensors.OnGround && fd.Attitude.GS < parkedMaxKt && !enginesRunning(fd)
+}
+
 // atStart fires boarding for a flight started at the gate. With GSX
-// answering, boarding waits for GSX instead.
+// answering, boarding waits for GSX instead. Without it the old trigger
+// holds: boarding plays when the flight starts, as it always has, whatever
+// the beacon or the engines are doing.
 func (d *phaseDetector) atStart(s phaseSample, out []phaseFire) []phaseFire {
 	fd := s.fd
 	if !fd.Sensors.OnGround {
@@ -224,13 +238,6 @@ func (d *phaseDetector) atStart(s phaseSample, out []phaseFire) []phaseFire {
 	}
 	if s.gsx.Connected {
 		return out
-	}
-	if fd.Lights.Beacon {
-		// Auto-start starts the flight once the beacon is on and an engine
-		// is running: the doors are already closed.
-		d.skip(domain.PhaseBoarding)
-		return d.fire(out, phaseFire{phase: domain.PhaseBoardingComplete,
-			reason: domain.AttendantReason{Code: domain.ReasonStartedReady}}, s.at)
 	}
 	return d.fire(out, phaseFire{phase: domain.PhaseBoarding,
 		reason: domain.AttendantReason{Code: domain.ReasonFlightStarted}}, s.at)
@@ -270,6 +277,9 @@ func (d *phaseDetector) onGround(s phaseSample, out []phaseFire) []phaseFire {
 }
 
 func (d *phaseDetector) atDeparture(s phaseSample, out []phaseFire, fd *domain.FlightData) []phaseFire {
+	if !s.gsx.Connected {
+		return d.atDepartureWithoutGSX(s, out, fd)
+	}
 	gs := fd.Attitude.GS
 	running := enginesRunning(fd)
 
@@ -307,6 +317,41 @@ func (d *phaseDetector) atDeparture(s phaseSample, out []phaseFire, fd *domain.F
 	if done != nil && !d.passed(domain.PhaseBoardingComplete) {
 		d.skip(domain.PhaseBoarding)
 		out = d.fire(out, phaseFire{phase: domain.PhaseBoardingComplete, reason: *done}, s.at)
+	}
+	if push != nil && !d.passed(domain.PhaseTaxi) {
+		out = d.fire(out, phaseFire{phase: domain.PhasePushback, reason: *push}, s.at)
+	}
+	if taxiing {
+		d.skip(domain.PhasePushback)
+		out = d.fire(out, phaseFire{phase: domain.PhaseTaxi,
+			reason: domain.AttendantReason{Code: domain.ReasonTaxi, GS: round(gs)}}, s.at)
+	}
+	return out
+}
+
+// atDepartureWithoutGSX keeps the triggers the server used before the ACARS
+// timed the announcements, for pilots who do not run GSX: pushback is the
+// aircraft leaving "Parked", by creeping off the stand or by starting an
+// engine while stopped; taxi is the first 5 kt; and boarding complete plays
+// right before whichever of the two comes first, as the server plays it for
+// older clients.
+func (d *phaseDetector) atDepartureWithoutGSX(s phaseSample, out []phaseFire, fd *domain.FlightData) []phaseFire {
+	gs := fd.Attitude.GS
+
+	var push *domain.AttendantReason
+	switch {
+	case !d.lastParked || gs >= taxiMinKt:
+	case gs >= pushbackMinKt:
+		push = &domain.AttendantReason{Code: domain.ReasonLeftStand, GS: round(gs)}
+	case enginesRunning(fd):
+		push = &domain.AttendantReason{Code: domain.ReasonEngineStart}
+	}
+	taxiing := gs >= taxiMinKt
+
+	if (push != nil || taxiing) && !d.passed(domain.PhaseBoardingComplete) {
+		d.skip(domain.PhaseBoarding)
+		out = d.fire(out, phaseFire{phase: domain.PhaseBoardingComplete,
+			reason: domain.AttendantReason{Code: domain.ReasonLeavingGate}}, s.at)
 	}
 	if push != nil && !d.passed(domain.PhaseTaxi) {
 		out = d.fire(out, phaseFire{phase: domain.PhasePushback, reason: *push}, s.at)
