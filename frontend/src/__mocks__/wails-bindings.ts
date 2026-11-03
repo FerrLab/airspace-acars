@@ -23,6 +23,23 @@ export function mockFlightLogService() {
         last_page: 1,
         total: 0,
       }),
+    // A flight with nothing recorded: every tab past Overview stays hidden
+    // unless a test overrides this with vi.spyOn.
+    GetFlightDetail: (_id: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: {
+          id: _id,
+          landing_g_force: null,
+          landing: null,
+          takeoff: null,
+          score_breakdown: { score: null, contributing: [] as string[], categories: [] as Array<any> },
+          events: [] as Array<any>,
+          points: { total: 0, entries: [] as Array<any> },
+        } as Record<string, unknown> | null,
+      }),
+    GetFlightTrack: (_id: string) =>
+      Promise.resolve({ status: "ok", points: [] as Array<any> }),
   };
 }
 
