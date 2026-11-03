@@ -108,6 +108,17 @@ type FlightLogService struct{ app *app.App }
 func (s *FlightLogService) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, error) {
 	return s.app.GetMyFlights(page, limit)
 }
+
+// GetFlightDetail returns one of the pilot's flights with its landing,
+// takeoff, score and points analysis.
+func (s *FlightLogService) GetFlightDetail(id string) (*domain.FlightDetailResponse, error) {
+	return s.app.GetFlightDetail(id)
+}
+
+// GetFlightTrack returns the flight's recorded positions in time order.
+func (s *FlightLogService) GetFlightTrack(id string) (*domain.FlightTrackResponse, error) {
+	return s.app.GetFlightTrack(id)
+}
 func (s *ChatService) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return s.app.GetMessages(page)
 }

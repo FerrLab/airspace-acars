@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { FlightsMap } from "@/components/flights-map";
+import { FlightDetailTabs } from "@/components/flight-detail-tabs";
 import { getFlightStatusBadge } from "@/components/flight-status-badge";
 import { getFlightKPIs, getFlightFacts } from "@/lib/flight-detail";
 import { formatUtcDate } from "@/lib/flight-format";
@@ -139,37 +140,40 @@ export function FlightDetailView({
         </div>
       </Card>
 
-      {/* Main Content: Map and Flight Facts */}
-      <div className="flex-1 overflow-y-auto pr-0.5 pb-4 space-y-4">
-        {/* Interactive Route Map */}
-        <div className="relative w-full h-[360px] rounded-xl overflow-hidden border border-border/70 bg-card shadow-xs">
-          <FlightsMap
-            flights={[flight]}
-            selectedFlightId={flight.id}
-            onSelectFlight={noopSelectFlight}
-            className="h-full w-full"
-          />
-        </div>
+      {/* Overview (map and facts) plus the recorded-analysis tabs */}
+      <FlightDetailTabs
+        flight={flight}
+        overview={
+          <>
+            <div className="relative w-full h-[360px] rounded-xl overflow-hidden border border-border/70 bg-card shadow-xs">
+              <FlightsMap
+                flights={[flight]}
+                selectedFlightId={flight.id}
+                onSelectFlight={noopSelectFlight}
+                className="h-full w-full"
+              />
+            </div>
 
-        {/* Flight Facts Card */}
-        <Card className="border-border/70 bg-card p-4 shadow-xs space-y-3">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground block">
-            {t("myFlights.flightSummary")}
-          </span>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
-            {facts.map((fact, idx) => (
-              <div key={idx} className="space-y-0.5">
-                <span className="text-muted-foreground text-[11px] block">
-                  {t(fact.labelKey, fact.defaultLabel)}
-                </span>
-                <span className="font-mono font-medium text-foreground block truncate">
-                  {fact.value}
-                </span>
+            <Card className="border-border/70 bg-card p-4 shadow-xs space-y-3">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground block">
+                {t("myFlights.flightSummary")}
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+                {facts.map((fact, idx) => (
+                  <div key={idx} className="space-y-0.5">
+                    <span className="text-muted-foreground text-[11px] block">
+                      {t(fact.labelKey, fact.defaultLabel)}
+                    </span>
+                    <span className="font-mono font-medium text-foreground block truncate">
+                      {fact.value}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+            </Card>
+          </>
+        }
+      />
     </div>
   );
 }
