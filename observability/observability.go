@@ -219,6 +219,10 @@ func (s *Span) Fail(err error) {
 		s.span.Status = sentry.SpanStatusInternalError
 		s.span.SetData("error", redactString(err.Error()))
 	}
+	if seenCertificateFault(err) {
+		s.Expected(err)
+		return
+	}
 	Capture(err)
 }
 
