@@ -219,6 +219,8 @@ Comparison steps return `1` or `0`, so they can feed boolean data points.
 | `autopilot.navLock` | bool | Lateral navigation engaged |
 | `autopilot.speed` | float | Selected airspeed in knots |
 | `autopilot.vs` | float | Selected vertical speed in feet per minute |
+| `cabin.seatbeltSwitch` | float | Seatbelt sign switch: 0 off, 1 auto (lit below 10,000 ft), 2 on |
+| `cabin.seatbelts` | bool | Fasten seatbelt sign lit |
 | `controls.aileron` | float | Aileron position |
 | `controls.elevator` | float | Elevator position |
 | `controls.flaps` | float | Flap handle percent |
@@ -294,7 +296,10 @@ Comparison steps return `1` or `0`, so they can feed boolean data points.
 
 `bool` points store true when the transformed value is non-zero. `string` points
 can only be fed by a `const` source. `engines.count` is a shorthand that sets
-every engine's `exists` flag at once.
+every engine's `exists` flag at once. Both `cabin.*` points also mark the sign
+as read (`seatbeltKnown`), which is what lets the flight attendant announce it;
+`cabin.seatbeltSwitch` is for a three-position switch whose AUTO lights the
+sign below 10,000 ft MSL, as the SLCSeatbelts plugin does on X-Plane.
 
 ## How a profile reaches the data
 
@@ -318,13 +323,13 @@ and hand-written:
 | ID | Aircraft | Simulator | Priority | Points |
 |---|---|---|---|---|
 | `aerosoft-crj` | Aerosoft CRJ 550/700/900/1000 | MSFS | 100 | 3 |
-| `fbw-a32nx` | FlyByWire A32NX | MSFS | 100 | 9 |
+| `fbw-a32nx` | FlyByWire A32NX | MSFS | 100 | 12 |
 | `fenix-a318` | Fenix A318 | MSFS | 110 | 1 |
 | `fenix-a319` | Fenix A319 | MSFS | 110 | 1 |
 | `fenix-a320` | Fenix A320 | MSFS | 110 | 1 |
 | `fenix-a321` | Fenix A321 | MSFS | 110 | 1 |
 | `fenix-a321neo` | Fenix A321neo | MSFS | 120 | 1 |
-| `fenix-a32x` | Fenix A318/A319/A320/A321 | MSFS | 100 | 10 |
+| `fenix-a32x` | Fenix A318/A319/A320/A321 | MSFS | 100 | 11 |
 | `fslabs-a321` | FSLabs A321 | MSFS | 110 | 1 |
 | `fslabs-a321neo` | FSLabs A321neo | MSFS | 120 | 1 |
 | `fslabs-a32x` | FSLabs A319/A320/A321 | MSFS | 100 | 9 |
@@ -335,13 +340,13 @@ and hand-written:
 | `justflight-bae146` | Just Flight BAe 146 / Avro RJ | MSFS | 100 | 2 |
 | `leonardo-md82` | Leonardo MaddogX MD-82 | MSFS | 100 | 5 |
 | `msfs-atr72` | ATR 42-600 / 72-600 | MSFS | 100 | 2 |
-| `pmdg-737` | PMDG 737 | MSFS | 100 | 11 |
-| `pmdg-777` | PMDG 777 | MSFS | 100 | 7 |
+| `pmdg-737` | PMDG 737 | MSFS | 100 | 12 |
+| `pmdg-777` | PMDG 777 | MSFS | 100 | 8 |
 | `rotate-md11` | Rotate MD-11 | X-Plane | 100 | 1 |
 | `salty-747` | Salty 747-8i | MSFS | 100 | 3 |
 | `tfdi-md11` | TFDi MD-11 | MSFS | 100 | 4 |
 | `xplane-com-833` | X-Plane 8.33 kHz radios | X-Plane | 10 | 2 |
-| `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 6 |
+| `zibo-b738` | Zibo 737-800 | X-Plane | 100 | 7 |
 
 `rotate-md11` is the exception to the first line. HubHop has nothing readable
 for the aircraft, so its flap handle variable comes from a shared-cockpit
