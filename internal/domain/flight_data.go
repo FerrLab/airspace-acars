@@ -4,24 +4,24 @@ import "time"
 
 // FlightData holds real-time telemetry from the flight simulator.
 type FlightData struct {
-	Position  PositionData      `json:"position"`
-	Attitude  AttitudeData      `json:"attitude"`
-	Engines   [4]EngineData     `json:"engines"`
-	Sensors   SensorData        `json:"sensors"`
-	Radios    RadioData         `json:"radios"`
-	Autopilot AutopilotData     `json:"autopilot"`
-	Altimeter float64           `json:"altimeterInHg"`
-	Lights    LightData         `json:"lights"`
-	Controls  FlightControlData `json:"controls"`
-	SimTime      SimTimeData       `json:"simTime"`
-	APU          APUData           `json:"apu"`
-	Doors        [5]DoorData       `json:"doors"`
-	AircraftName string            `json:"aircraftName"`
-	AircraftType string            `json:"aircraftType"`
-	Weight       WeightData        `json:"weight"`
-	WindDirection float64          `json:"windDirection"`
-	WindSpeed     float64          `json:"windSpeed"`
-	QNH           float64          `json:"qnh"`
+	Position      PositionData      `json:"position"`
+	Attitude      AttitudeData      `json:"attitude"`
+	Engines       [4]EngineData     `json:"engines"`
+	Sensors       SensorData        `json:"sensors"`
+	Radios        RadioData         `json:"radios"`
+	Autopilot     AutopilotData     `json:"autopilot"`
+	Altimeter     float64           `json:"altimeterInHg"`
+	Lights        LightData         `json:"lights"`
+	Controls      FlightControlData `json:"controls"`
+	SimTime       SimTimeData       `json:"simTime"`
+	APU           APUData           `json:"apu"`
+	Doors         [5]DoorData       `json:"doors"`
+	AircraftName  string            `json:"aircraftName"`
+	AircraftType  string            `json:"aircraftType"`
+	Weight        WeightData        `json:"weight"`
+	WindDirection float64           `json:"windDirection"`
+	WindSpeed     float64           `json:"windSpeed"`
+	QNH           float64           `json:"qnh"`
 }
 
 type PositionData struct {
