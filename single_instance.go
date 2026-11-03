@@ -12,10 +12,6 @@ import (
 // other, so changing it lets two copies run at once.
 const singleInstanceID = "com.ferrlab.airspace-acars"
 
-// mainWindowName is the name the ACARS window is registered under, so a
-// second launch can find it.
-const mainWindowName = "main"
-
 // singleInstanceLockAvailable reports whether this machine can hold the
 // single-instance lock. It is a variable so tests can stand in for the
 // platform; see withSingleInstanceLock.
@@ -41,16 +37,4 @@ func singleInstance(show func()) *application.SingleInstanceOptions {
 			show()
 		},
 	}
-}
-
-// showMainWindow brings the ACARS window forward. It looks the window up
-// rather than capturing it because the second-launch callback is handed to
-// Wails before the window exists.
-func showMainWindow() {
-	w, ok := application.Get().Window.GetByName(mainWindowName)
-	if !ok {
-		return
-	}
-	w.Show()
-	w.Focus()
 }
