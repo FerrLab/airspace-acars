@@ -24,6 +24,9 @@ type Settings struct {
 	// runway and stand. Empty finds it from the running simulator; set it
 	// when X-Plane runs on another machine and its folder is shared.
 	XPlanePath string `json:"xplanePath"`
+	// FlightAttendant plays the airline's cabin announcements. On by
+	// default; a settings file written before it existed keeps the default.
+	FlightAttendant bool `json:"flightAttendant"`
 }
 
 func DefaultSettings() Settings {
@@ -43,5 +46,6 @@ func DefaultSettings() Settings {
 		ConfirmFinishFlight: false,
 		AircraftProfile:     "auto",
 		AudioOutputDevice:   "default",
+		FlightAttendant:     true,
 	}
 }

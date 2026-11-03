@@ -139,6 +139,45 @@ func (s *AudioService) GetAudioData(filename string) (*domain.AudioData, error) 
 }
 func (s *AudioService) ClearCache() { s.app.ClearCache() }
 
+// --- AttendantService: the flight attendant ---
+
+// AttendantService plays the airline's cabin announcements: the webview's
+// player pulls clips from it, and the Flight Attendant tab shows and steers it.
+type AttendantService struct{ app *app.App }
+
+// GetSnapshot returns everything the Flight Attendant tab shows.
+func (s *AttendantService) GetSnapshot() domain.AttendantSnapshot {
+	return s.app.GetAttendantSnapshot()
+}
+
+// TakeClip hands the player the next clip, or nil when none is waiting.
+func (s *AttendantService) TakeClip() *domain.AttendantClip { return s.app.TakeAttendantClip() }
+
+// ClipFinished reports that a clip played to the end.
+func (s *AttendantService) ClipFinished(id string) { s.app.AttendantClipFinished(id) }
+
+// ClipFailed reports that a clip could not be played.
+func (s *AttendantService) ClipFailed(id string) { s.app.AttendantClipFailed(id) }
+
+// Skip cuts the current announcement short.
+func (s *AttendantService) Skip() { s.app.SkipAttendantClip() }
+
+// Replay plays the last announcement again.
+func (s *AttendantService) Replay() { s.app.ReplayAttendantClip() }
+
+// StopAll silences the cabin until the next phase.
+func (s *AttendantService) StopAll() { s.app.StopAttendant() }
+
+// PlayPhase plays a phase's lines now; service picks a meal service.
+func (s *AttendantService) PlayPhase(phase string, service int) error {
+	return s.app.PlayAttendantPhase(phase, service)
+}
+
+// SetEnabled turns the flight attendant on or off and remembers it.
+func (s *AttendantService) SetEnabled(enabled bool) error {
+	return s.app.SetAttendantEnabled(enabled)
+}
+
 // --- SettingsService: user preferences ---
 
 type SettingsService struct{ app *app.App }
