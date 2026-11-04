@@ -410,8 +410,16 @@ export function FlightsMap({
     }
   };
 
+  // `isolate` makes this wrapper its own stacking context. Leaflet gives its
+  // panes and controls z-index 400–1000, and without a context of their own
+  // those numbers compete with the whole page: the close-confirmation modal
+  // (z-50) was drawn underneath the map, which stayed bright and clickable on
+  // top of the dimmed backdrop.
   return (
-    <div className={cn("relative h-full w-full overflow-hidden bg-card", className)}>
+    <div
+      data-testid="flights-map-root"
+      className={cn("relative isolate h-full w-full overflow-hidden bg-card", className)}
+    >
       <div
         ref={containerRef}
         className={cn(
