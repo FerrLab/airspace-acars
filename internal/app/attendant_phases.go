@@ -68,6 +68,13 @@ const (
 	// todBeforeBlockEnd estimates top of descent from the planned block time
 	// for the before-descent meal service: half an hour before it ends.
 	todBeforeBlockEnd = 30 * time.Minute
+	// seatbeltSettle is how long the seatbelt sign has to hold a new state
+	// before it is announced. A switch flicked and back, or a knob turned
+	// through its middle position, reads as two changes within a second, and
+	// each used to be announced. Two seconds lets it settle and is still
+	// within a reading or two of the change at the data stream's once a
+	// second.
+	seatbeltSettle = 2 * time.Second
 )
 
 // phaseConfig is what the pack says about this flight.
@@ -146,8 +153,13 @@ type phaseDetector struct {
 	cruiseAlt    float64
 	descendSince time.Time
 
+	// seatbelt is the sign's settled state, which a change is measured
+	// from; seatbeltRaw is its latest reading and seatbeltSince when that
+	// reading began. seatbeltKnown says the aircraft has reported it.
 	seatbeltKnown bool
 	seatbelt      bool
+	seatbeltRaw   bool
+	seatbeltSince time.Time
 
 	recent    []recentSample
 	touchdown *touchdown
@@ -202,7 +214,6 @@ func (d *phaseDetector) step(s phaseSample) []phaseFire {
 		d.lastAlt = fd.Position.Altitude
 		d.lastBeacon = fd.Lights.Beacon
 		d.lastParked = parked(fd)
-		d.seatbeltKnown, d.seatbelt = fd.Cabin.SeatbeltKnown, fd.Cabin.SeatbeltSign
 		out = d.atStart(s, out)
 	}
 
@@ -417,18 +428,27 @@ func (d *phaseDetector) inFlight(s phaseSample, out []phaseFire) []phaseFire {
 }
 
 // seatbeltChange fires the seatbelt announcements: in flight, after the
-// climb-out, on a change of a sign the aircraft actually reports, and not
-// again within the pack's cooldown for that announcement.
+// climb-out, on a change of a sign the aircraft actually reports once it has
+// held for seatbeltSettle, and not again within the pack's cooldown for that
+// announcement. A sign switched and switched back before it settles has not
+// changed.
 func (d *phaseDetector) seatbeltChange(s phaseSample, out []phaseFire) []phaseFire {
 	cabin := s.fd.Cabin
 	if !cabin.SeatbeltKnown {
 		return out
 	}
-	was, wasKnown := d.seatbelt, d.seatbeltKnown
-	d.seatbelt, d.seatbeltKnown = cabin.SeatbeltSign, true
-	if !wasKnown || was == cabin.SeatbeltSign {
+	if !d.seatbeltKnown {
+		d.seatbeltKnown, d.seatbelt = true, cabin.SeatbeltSign
+		d.seatbeltRaw, d.seatbeltSince = cabin.SeatbeltSign, s.at
 		return out
 	}
+	if cabin.SeatbeltSign != d.seatbeltRaw {
+		d.seatbeltRaw, d.seatbeltSince = cabin.SeatbeltSign, s.at
+	}
+	if d.seatbeltRaw == d.seatbelt || s.at.Sub(d.seatbeltSince) < seatbeltSettle {
+		return out
+	}
+	d.seatbelt = d.seatbeltRaw
 	if s.fd.Sensors.OnGround || d.airborne.IsZero() || !d.passed(domain.PhaseClimbOut) {
 		return out
 	}

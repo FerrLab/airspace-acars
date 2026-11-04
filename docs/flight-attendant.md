@@ -44,7 +44,7 @@ Universal Announcer (manual v0.9.9.7), with the deviations noted.
 | `cruise` | Within 300 fpm of level above 10,000 ft for **two minutes**. The server used ten minutes; one minute is an ordinary level-off on the climb. |
 | `cruise` at 25/50/75 % | At that share of the planned block time from flight start, once cruising; held while below 10,000 ft or sinking over 500 fpm, dropped once the descent begins. |
 | `meal_service` | `after_cruise`: N minutes after reaching cruise. `before_descent`: N minutes before the estimated top of descent, taken as flight start + planned block − 30 min. Dropped once the descent begins. |
-| `seatbelt_on` / `seatbelt_off` | In flight, after the climb-out, when the aircraft's seatbelt sign changes, and not within the pack's cooldown for that announcement. Only aircraft that report the sign (see below). |
+| `seatbelt_on` / `seatbelt_off` | In flight, after the climb-out, when the aircraft's seatbelt sign changes and holds the new state for 2 s, and not within the pack's cooldown for that announcement. A sign switched and back within the 2 s is no change; one toggled a few times is announced once, for where it ends up. Only aircraft that report the sign (see below). |
 | `descend` | After cruise, sinking over 500 fpm for 10 s and 500 ft below the cruise level (1,000 ft below the highest point when no cruise was held). |
 | `descending_10000` | Descending through 10,000 ft MSL after cruise or descent. |
 | `final_approach` | Gear down below 2,000 ft AGL, sinking over 300 fpm. Universal Announcer uses 3,000 ft. |

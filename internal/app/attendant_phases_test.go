@@ -278,31 +278,32 @@ func TestAfterLandingWaitsForTheRolloutAndIgnoresABounce(t *testing.T) {
 }
 
 // The seatbelt sign is announced in flight only, after the climb-out, on a
-// change of a sign the aircraft reports, and not twice within the cooldown.
+// change of a sign the aircraft reports once it has settled, and not twice
+// within the cooldown.
 func TestSeatbeltAnnouncements(t *testing.T) {
 	f := newFlight(t, phaseConfig{})
 	f.fd.Cabin = domain.CabinData{SeatbeltSign: true, SeatbeltKnown: true}
 	f.hold(time.Second)
 	f.fd.Cabin.SeatbeltSign = false
-	f.hold(time.Second)
+	f.hold(seatbeltSettle)
 	f.fd.Cabin.SeatbeltSign = true
 	f.at(400, 300, 2000, 150).hold(10 * time.Second)
 	f.fd.Cabin.SeatbeltSign = false
-	f.hold(time.Second)
+	f.hold(seatbeltSettle)
 	assert.NotContains(t, f.keys(), domain.PhaseSeatbeltOff, "not before the climb-out")
 
 	f.fd.Cabin.SeatbeltSign = true
 	f.at(5_000, 4_000, 2000, 250).hold(time.Minute)
 	require.Contains(t, f.keys(), domain.PhaseClimbOut)
 	f.fd.Cabin.SeatbeltSign = false
-	f.hold(time.Second)
+	f.hold(seatbeltSettle)
 	off := f.last(domain.PhaseSeatbeltOff)
 	assert.Equal(t, 5_000, off.reason.Altitude)
 
 	f.fd.Cabin.SeatbeltSign = true
-	f.hold(time.Second)
+	f.hold(seatbeltSettle)
 	f.fd.Cabin.SeatbeltSign = false
-	f.hold(time.Second)
+	f.hold(seatbeltSettle)
 	assert.Equal(t, 1, strings.Count(strings.Join(f.keys(), ","), domain.PhaseSeatbeltOff),
 		"off again within the two-minute cooldown")
 	assert.Equal(t, 1, strings.Count(strings.Join(f.keys(), ","), domain.PhaseSeatbeltOn))
@@ -310,8 +311,34 @@ func TestSeatbeltAnnouncements(t *testing.T) {
 	f.fd.Cabin.SeatbeltSign = true
 	f.hold(3 * time.Minute)
 	f.fd.Cabin.SeatbeltSign = false
-	f.hold(time.Second)
+	f.hold(seatbeltSettle)
 	assert.Equal(t, 2, strings.Count(strings.Join(f.keys(), ","), domain.PhaseSeatbeltOff))
+}
+
+// A seatbelt change is announced only once the sign has held it for
+// seatbeltSettle: a switch flicked off and back on is no change, and a sign
+// toggled a few times is announced once, for where it ends up.
+func TestSeatbeltSignIsAnnouncedOnceItSettles(t *testing.T) {
+	f := newFlight(t, phaseConfig{})
+	f.fd.Cabin = domain.CabinData{SeatbeltSign: true, SeatbeltKnown: true}
+	f.at(5_000, 4_000, 2000, 250).hold(2 * time.Minute)
+	require.Contains(t, f.keys(), domain.PhaseClimbOut)
+
+	f.fd.Cabin.SeatbeltSign = false
+	f.hold(seatbeltSettle - time.Second)
+	assert.NotContains(t, f.keys(), domain.PhaseSeatbeltOff, "announced before the sign settled")
+	f.fd.Cabin.SeatbeltSign = true
+	f.hold(time.Minute)
+	assert.NotContains(t, f.keys(), domain.PhaseSeatbeltOff, "a flick off and back on was announced as off")
+	assert.NotContains(t, f.keys(), domain.PhaseSeatbeltOn, "the sign never left on, yet on was announced")
+
+	for _, on := range []bool{false, true, false} { // a reading a second
+		f.fd.Cabin.SeatbeltSign = on
+		f.hold(0)
+	}
+	f.hold(seatbeltSettle)
+	assert.Equal(t, []string{domain.PhaseClimbOut, domain.PhaseSeatbeltOff}, f.keys(),
+		"three quick toggles ending off should be one off announcement")
 }
 
 func TestAnUnreadSeatbeltSignIsNeverAnnounced(t *testing.T) {
