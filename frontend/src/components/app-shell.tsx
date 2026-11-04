@@ -11,10 +11,13 @@ import { DebugTab } from "@/components/debug-tab";
 import { SettingsTab } from "@/components/settings-tab";
 import { useUnreadChat } from "@/hooks/use-unread-chat";
 import { useSoundPlayer } from "@/hooks/use-sound-player";
+import { useAttendantPlayer } from "@/hooks/use-attendant-player";
+import { AttendantTab } from "@/components/attendant-tab";
+import { legacyPollActive, type AttendantMode } from "@/lib/attendant";
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, LogOut } from "lucide-react";
-import { SettingsService, FlightService } from "../../bindings/airspace-acars";
+import { SettingsService, FlightService, AttendantService } from "../../bindings/airspace-acars";
 import { Events } from "@wailsio/runtime";
 import { getStoredVolumePercent } from "@/lib/notification-sounds";
 import { hydrateAudioOutputDevice } from "@/lib/audio-manager";
@@ -29,8 +32,29 @@ export function AppShell() {
   const [flightState, setFlightState] = useState<"idle" | "active">("idle");
   const [volume, setVolume] = useState(() => getStoredVolumePercent());
 
-  // Sound player lives here so it persists across tab switches
-  useSoundPlayer(volume, flightState === "active" && !localMode);
+  const [attendant, setAttendant] = useState<{ mode: AttendantMode; enabled: boolean }>({ mode: "idle", enabled: true });
+
+  // The players live here so they keep playing across tab switches. The
+  // flight attendant plays the airline's pack itself; the old GET /sound
+  // poll only runs against a server that predates that.
+  const flying = flightState === "active" && !localMode;
+  useAttendantPlayer(volume, flying && attendant.mode === "client" && attendant.enabled);
+  useSoundPlayer(volume, flying && legacyPollActive(attendant));
+
+  useEffect(() => {
+    if (localMode) return;
+    let cancelled = false;
+    AttendantService.GetSnapshot()
+      .then((s) => { if (!cancelled && s) setAttendant({ mode: s.mode as AttendantMode, enabled: s.enabled }); })
+      .catch(() => {});
+    const off = Events.On("attendant-state", (event: { data: { mode: AttendantMode; enabled: boolean } }) => {
+      if (!cancelled && event?.data) setAttendant({ mode: event.data.mode, enabled: event.data.enabled });
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [localMode]);
 
   useEffect(() => {
     SettingsService.GetSettings()
@@ -94,6 +118,7 @@ export function AppShell() {
         <FlightClocks />
         <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "acars" && <AcarsTab localMode={localMode} volume={volume} onVolumeChange={handleVolumeChange} />}
+          {activeTab === "attendant" && <AttendantTab volume={volume} onVolumeChange={handleVolumeChange} />}
           {activeTab === "documents" && <DocumentsTab localMode={localMode} />}
           {activeTab === "chat" && <ChatTab localMode={localMode} />}
           {activeTab === "notams" && <NotamsTab localMode={localMode} />}

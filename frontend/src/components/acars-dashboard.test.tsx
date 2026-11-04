@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { AcarsDashboard } from "./acars-dashboard";
+import type { FlightData } from "@/hooks/use-flight-data";
 import en from "@/locales/en.json";
 import pt from "@/locales/pt.json";
 import es from "@/locales/es.json";
@@ -15,6 +16,7 @@ const props: ComponentProps<typeof AcarsDashboard> = {
   localMode: false, connectedAdapter: "SimConnect", connecting: false, flightState: "idle",
   booking: { callsign: "AZU123", departure_airport: { icao: "SBGR" }, arrival_airport: { icao: "SBRJ" } },
   activeFlightInfo: { callsign: "AZU123", departure: "SBGR", arrival: "SBRJ" },
+  routeCoords: { departure: { lat: -23.435556, lon: -46.473056 }, arrival: { lat: -22.910278, lon: -43.163056 } },
   flightData: null, onGround: true, groundSpeed: 0, starting: false, ending: false,
   finishCooldown: 0, finishPending: null, volume: 40, refreshing: false, bookingError: false, error: null,
   onDismissError: vi.fn(), onConnect: vi.fn(), onDisconnect: vi.fn(), onRefresh: vi.fn(), onStart: vi.fn(),
@@ -24,6 +26,31 @@ function view(overrides: Partial<typeof props> = {}) {
   return <I18nextProvider i18n={i18n}><AcarsDashboard {...props} {...overrides} /></I18nextProvider>;
 }
 afterEach(cleanup);
+
+// A key missing from the locale files renders as the key itself. A rebase
+// once swapped these for keys that exist nowhere, and the badge read
+// "acars.dashboard.connected".
+it("labels the connection and the error banner in the pilot's language", () => {
+  const { rerender } = render(view({ error: "boom" }));
+  expect(screen.getByText(en["acars.connectedTo"].replace("{{adapter}}", "SimConnect"))).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: en["acars.dashboard.dismiss"] })).toBeInTheDocument();
+  expect(screen.getByText(en["acars.dashboard.volumeHint"])).toBeInTheDocument();
+  rerender(view({ connectedAdapter: "" }));
+  expect(screen.getByText(en["acars.disconnected"])).toBeInTheDocument();
+});
+
+it("shows a landed flight taxiing in as arrived", () => {
+  render(view({
+    flightState: "active",
+    activeFlightInfo: { callsign: "AZU123", departure: "SBGR", arrival: "SBRJ", startTimeMs: String(Date.now() - 50 * 60_000) },
+    flightData: { position: { latitude: -22.9105, longitude: -43.1635 } } as unknown as FlightData,
+    onGround: true,
+    groundSpeed: 18,
+  }));
+  const bar = screen.getByRole("progressbar", { name: en["acars.dashboard.flightProgress"] });
+  expect(bar).toHaveAttribute("aria-valuenow", "100");
+  expect(bar).toHaveTextContent(en["acars.dashboard.completedPhase"]);
+});
 
 it("only enables start when the preflight requirements are met", () => {
   const { rerender } = render(view({ groundSpeed: 4 }));

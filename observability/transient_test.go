@@ -50,6 +50,8 @@ func TestTransientMatchesReportedFailures(t *testing.T) {
 		{"connection refused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}},
 		{"dns failure", &net.DNSError{Err: "no such host", Name: "roraima.airspace.ferrlab.com"}},
 		{"truncated response", fmt.Errorf("read response: %w", io.ErrUnexpectedEOF)},
+		{"http2 connection force closed", fmt.Errorf("read response: %w", errors.New("http2: client connection force closed via ClientConn.Close"))},
+		{"http2 connection lost", errors.New("http2: client connection lost")},
 		{"client timeout", fmt.Errorf("do request: %w", context.DeadlineExceeded)},
 	}
 
@@ -176,5 +178,36 @@ func TestTransientHonoursServerFailures(t *testing.T) {
 	permanent := domain.NewStatusError("GET", "/api/v2/acars/pilot", 401, nil)
 	if Transient(permanent) {
 		t.Error("a 401 should still be reported")
+	}
+}
+
+// A machine whose TLS is intercepted fails the same way on every poll. The
+// first report carries the diagnosis; repeating it 311 times (AIRSPACE-ACARS-H
+// and -J) buries everything else.
+func TestFailReportsAnUntrustedCertificateOnlyOncePerRun(t *testing.T) {
+	transport := withSentry(t)
+	certificateFaultReported.Store(false)
+
+	untrusted := func() error {
+		return fmt.Errorf("do request: %w", &url.Error{
+			Op:  "Get",
+			URL: "https://roraima.airspace.ferrlab.com/api/v2/acars/messages?page=1",
+			Err: x509.UnknownAuthorityError{},
+		})
+	}
+
+	span := &Span{}
+	for range 5 {
+		span.Fail(untrusted())
+	}
+
+	if got := transport.captured(); len(got) != 1 {
+		t.Fatalf("captured %d untrusted-certificate events, want exactly 1", len(got))
+	}
+
+	// Silencing certificates must not swallow unrelated faults.
+	span.Fail(errors.New("parse messages: invalid character 'x'"))
+	if got := transport.captured(); len(got) != 2 {
+		t.Fatalf("captured %d events after a real fault, want 2", len(got))
 	}
 }

@@ -136,6 +136,11 @@ var xplaneDatarefs = []string{
 	"sim/cockpit2/switches/landing_lights_switch[13]",
 	"sim/cockpit2/switches/landing_lights_switch[14]",
 	"sim/cockpit2/switches/landing_lights_switch[15]",
+
+	// The fasten seatbelt switch: 0 off, 1 auto, 2 on. Resolved against the
+	// altitude in GetFlightData, since AUTO lights the sign only below
+	// domain.SeatbeltAutoBelowFt.
+	"sim/cockpit2/switches/fasten_seat_belts",
 }
 
 // The per-light landing light switches occupy a contiguous run of the table,
@@ -144,6 +149,9 @@ const (
 	landingSwitchIndexBase = 81
 	landingLightCount      = 16
 )
+
+// seatbeltSwitchIndex is fasten_seat_belts' position in xplaneDatarefs.
+const seatbeltSwitchIndex = landingSwitchIndexBase + landingLightCount
 
 // Adapter is the X-Plane UDP adapter using the RREF protocol.
 type Adapter struct {
@@ -174,6 +182,11 @@ type Adapter struct {
 	// light. Lights.Landing is on when any of them is (see landingLightsOn).
 	landingMaster   bool
 	landingSwitches [landingLightCount]bool
+
+	// seatbeltSwitch is the stock seatbelt switch as last read, and
+	// seatbeltSeen is set once it has been read at all.
+	seatbeltSwitch float64
+	seatbeltSeen   bool
 
 	// layouts reads airport layouts from the X-Plane installation; UDP has
 	// no way to ask for them. Nil means none are available.
@@ -277,6 +290,12 @@ func (x *Adapter) GetFlightData() (*domain.FlightData, error) {
 	}
 
 	data := x.data
+	if x.seatbeltSeen {
+		data.Cabin = domain.CabinData{
+			SeatbeltSign:  domain.SeatbeltFromSwitch(x.seatbeltSwitch, data.Position.Altitude),
+			SeatbeltKnown: true,
+		}
+	}
 	x.plan.Apply(&data, x.extraValues)
 	return &data, nil
 }
@@ -307,15 +326,24 @@ func (x *Adapter) subscribeRREF(index, freq int, dataref string) error {
 	return err
 }
 
+// reportListenFailure logs a failed listener bind once per run of failures.
+// It is a Warn, not an Error: the usual cause is the pilot's machine, with
+// another process or a second ACARS already holding the UDP port, which
+// nothing in this code can fix (Sentry AIRSPACE-ACARS-G, "address already in
+// use"). The pilot still gets the line; the error tracker does not.
+func reportListenFailure(err error) {
+	if !listenFailing.Swap(true) {
+		slog.Warn("failed to listen for X-Plane responses", "error", err)
+	}
+}
+
 func (x *Adapter) listenLoop() {
 	buf := make([]byte, 4096)
 
 	localAddr := x.conn.LocalAddr().(*net.UDPAddr)
 	listener, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
-		if !listenFailing.Swap(true) {
-			slog.Error("failed to listen for X-Plane responses", "error", err)
-		}
+		reportListenFailure(err)
 		return
 	}
 	listenFailing.Store(false)
@@ -363,6 +391,12 @@ func (x *Adapter) applyDefaultRef(idx int, val float64) {
 	if idx >= landingSwitchIndexBase && idx < landingSwitchIndexBase+landingLightCount {
 		x.landingSwitches[idx-landingSwitchIndexBase] = val > 0
 		x.data.Lights.Landing = x.landingLightsOn()
+		return
+	}
+
+	if idx == seatbeltSwitchIndex {
+		x.seatbeltSwitch = val
+		x.seatbeltSeen = true
 		return
 	}
 

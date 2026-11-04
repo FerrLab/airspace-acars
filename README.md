@@ -7,16 +7,21 @@ Built with [Wails v3](https://wails.io) (Go + React).
 ## Features
 
 - **Flight tracking** — Adaptive position reporting with automatic frequency adjustment based on flight phase
+- **Flight progress bar** — Dynamic in-flight progress bar on the dashboard tracking great-circle progress, elapsed and remaining time, flight phase, and remaining distance
 - **Auto-start and auto-finish** — the flight starts on its own when the aircraft is ready to depart at the booking's departure airport, and finishes once it has flown and is shut down at the arrival airport. The booking is re-read every 30 s during the flight, so a diversion to an alternate moves the arrival. See [docs/auto-flight.md](docs/auto-flight.md)
+- **My Flights** — the pilot's logbook from the airline. A flight's detail shows its great-circle route, and Landing, Takeoff, Telemetry and Score tabs with what the airline's platform recorded: touchdown and liftoff on the runway, wind against it, the stabilized-approach gate, the altitude and speed profile, the per-category score, FDM events and points. A tab with nothing recorded is hidden; see [docs/plans/2026-11-03-flight-detail-tabs-design.md](docs/plans/2026-11-03-flight-detail-tabs-design.md)
 - **Simulator support** — MSFS 2020 (SimConnect) and X-Plane 11/12 (UDP) with auto-detection
 - **Runway and stand** — every position report names the runway (both ends, with position and elevation) or the stand the aircraft is on, read from the simulator's own scenery: the SimConnect Facilities API on MSFS, `apt.dat` and CIFP navdata on X-Plane. See [docs/runway-stand.md](docs/runway-stand.md)
 - **Aircraft profiles** — Per-add-on JSON profiles that re-bind individual data points; 37 aircraft covered (Fenix, FSLabs, PMDG, FlyByWire, iniBuilds, TFDi, Aerosoft, iFly, Zibo, IXEG, FlightFactor and more), refreshed weekly from the community variable database — see [docs/aircraft-profiles.md](docs/aircraft-profiles.md)
 - **Debug tab** — Live ground position (airport, runway, stand), the last position report exactly as sent with its outcome, telemetry and logs
 - **Multi-tenant auth** — Connect to multiple virtual airline networks via device code authentication
 - **In-app chat** — Pilot messaging and communication
+- **Flight attendant** — plays the airline's cabin announcements from its speech pack at the right moment: boarding and its repeats with boarding music, pushback, taxi, climb, cruise, meal services, the seatbelt sign switched on and off (read from the aircraft, per profile), descent, final, a landing announcement picked by the touchdown, the gate and a diversion. Boarding and pushback follow GSX when it is running. A Flight Attendant tab shows the phase map, what is playing and why, and the history; older Airspace servers keep the previous server-driven playback. See [docs/flight-attendant.md](docs/flight-attendant.md)
 - **Audio alerts** — Cabin audio and instruction playback, routed to the output device chosen in Settings. Refreshing the device list there may ask Windows once for microphone access, because WebView2 only reveals device names to an origin holding it; the stream is stopped at once and the microphone is never read or recorded, and nothing else in the app touches it
 - **Auto-update** — OTA updates via GitHub Releases with beta channel support
+- **One copy at a time** — launching the ACARS while it is open brings the open window forward instead of starting a second copy. The lock is a named mutex on Windows, a lock file on macOS and a D-Bus name on Linux, so no TCP port is involved and a port range reserved by Hyper-V, WSL2 or Docker cannot stop it starting; on Linux without a D-Bus session it starts without the lock
 - **Offline recording** — Local SQLite database for flight data persistence
+- **Window placement** — Remembers window size, position, and display mode (normal, maximized, fullscreen) across launches, adapting smoothly if displays are disconnected
 - **Error reporting** — Crashes and failures report to Sentry, scrubbed of tokens and anything identifying the pilot's machine; off unless a DSN is built in — see [docs/observability.md](docs/observability.md)
 
 Company notices are available in the **NOTAMs** tab. See

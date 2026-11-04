@@ -1,3 +1,5 @@
+import { EMPTY_ATTENDANT, type AttendantClip, type AttendantSnapshot } from "@/lib/attendant";
+
 // Factory functions for mocking Wails binding services in tests.
 
 export function mockFlightLogService() {
@@ -23,6 +25,23 @@ export function mockFlightLogService() {
         last_page: 1,
         total: 0,
       }),
+    // A flight with nothing recorded: every tab past Overview stays hidden
+    // unless a test overrides this with vi.spyOn.
+    GetFlightDetail: (_id: string) =>
+      Promise.resolve({
+        status: "ok",
+        data: {
+          id: _id,
+          landing_g_force: null,
+          landing: null,
+          takeoff: null,
+          score_breakdown: { score: null, contributing: [] as string[], categories: [] as Array<any> },
+          events: [] as Array<any>,
+          points: { total: 0, entries: [] as Array<any> },
+        } as Record<string, unknown> | null,
+      }),
+    GetFlightTrack: (_id: string) =>
+      Promise.resolve({ status: "ok", points: [] as Array<any> }),
   };
 }
 
@@ -111,6 +130,14 @@ export function mockFlightService() {
     GetFlightState: () => Promise.resolve("idle"),
     GetActiveFlightInfo: () =>
       Promise.resolve(null as { departure?: string; arrival?: string; callsign?: string } | null),
+    GetFlightRoute: () =>
+      Promise.resolve({
+        departure: { icao: "SBGR", latitude: -23.435556, longitude: -46.473056 },
+        arrival: { icao: "SBRJ", latitude: -22.910278, longitude: -43.163056 },
+      } as {
+        departure: { icao: string; latitude: number; longitude: number };
+        arrival: { icao: string; latitude: number; longitude: number };
+      } | null),
     GetBooking: () =>
       Promise.resolve({
         id: "bk_test_1",
@@ -197,5 +224,19 @@ export function mockDebugService() {
         report: { json: "", at: "0001-01-01T00:00:00Z", outcome: "", batchSize: 0 },
         profiles: [],
       }),
+  };
+}
+
+export function mockAttendantService() {
+  return {
+    GetSnapshot: (): Promise<AttendantSnapshot> => Promise.resolve(EMPTY_ATTENDANT),
+    TakeClip: (): Promise<AttendantClip | null> => Promise.resolve(null),
+    ClipFinished: (_id: string) => Promise.resolve(),
+    ClipFailed: (_id: string) => Promise.resolve(),
+    Skip: () => Promise.resolve(),
+    Replay: () => Promise.resolve(),
+    StopAll: () => Promise.resolve(),
+    PlayPhase: (_phase: string, _service: number) => Promise.resolve(),
+    SetEnabled: (_enabled: boolean) => Promise.resolve(),
   };
 }

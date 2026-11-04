@@ -186,6 +186,21 @@ func init() {
 			func(fd *domain.FlightData, n float64) { fd.Doors[idx].OpenRatio = n })
 	}
 
+	registerBool("cabin.seatbelts", "Fasten seatbelt sign lit",
+		func(fd *domain.FlightData, b bool) {
+			fd.Cabin.SeatbeltSign = b
+			fd.Cabin.SeatbeltKnown = true
+		})
+	// A three-position switch whose AUTO depends on altitude cannot be
+	// expressed as a transform, so it is resolved here against the altitude
+	// the adapter already read. Points apply in ID order, so a profile that
+	// also mashes position.altitude is applied after this; none does today.
+	registerFloat("cabin.seatbeltSwitch", "Seatbelt sign switch: 0 off, 1 auto (lit below 10,000 ft), 2 on",
+		func(fd *domain.FlightData, n float64) {
+			fd.Cabin.SeatbeltSign = domain.SeatbeltFromSwitch(n, fd.Position.Altitude)
+			fd.Cabin.SeatbeltKnown = true
+		})
+
 	registerFloat("weight.total", "Total weight in pounds", func(fd *domain.FlightData, n float64) { fd.Weight.TotalWeight = n })
 	registerFloat("weight.fuel", "Fuel weight in pounds", func(fd *domain.FlightData, n float64) { fd.Weight.FuelWeight = n })
 

@@ -5,15 +5,19 @@ import (
 	"embed"
 	_ "embed"
 	"log"
-	"log/slog"
+	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"airspace-acars/internal/adapters/airspace"
 	discordadapter "airspace-acars/internal/adapters/discord"
+	"airspace-acars/internal/adapters/gsx"
 	simconnectadapter "airspace-acars/internal/adapters/simconnect"
 	"airspace-acars/internal/adapters/storage"
 	wailsadapter "airspace-acars/internal/adapters/wails"
 	"airspace-acars/internal/adapters/winaudio"
+	windowadapter "airspace-acars/internal/adapters/window"
 	"airspace-acars/internal/adapters/xplane"
 	"airspace-acars/internal/adapters/xplane/aptdat"
 	"airspace-acars/internal/app"
@@ -44,21 +48,59 @@ func init() {
 	application.RegisterEvent[bool]("request-window-close")
 	application.RegisterEvent[*profiles.Plan]("aircraft-profile")
 	application.RegisterEvent[bool]("session-expired")
+	// The flight attendant: a clip is waiting (consumed by
+	// use-attendant-player.ts), a clip must be cut short (the same), and a
+	// fresh snapshot for the Flight Attendant tab (use-attendant.ts).
+	application.RegisterEvent[bool]("attendant-clip-ready")
+	application.RegisterEvent[string]("attendant-interrupt")
+	application.RegisterEvent[*domain.AttendantSnapshot]("attendant-state")
 }
 
 func main() {
-	si, err := NewSingleInstance()
-	if err != nil {
-		slog.Info("another instance is running, bringing to foreground")
-		return
-	}
-	defer si.Close()
-
 	shutdown, err := observability.Init("airspace-acars", domain.Version)
 	if err != nil {
 		log.Fatal("failed to init observability:", err)
 	}
 	defer shutdown(context.Background())
+
+	// --- Create Wails application ---
+	// It comes before anything else touches the disk because a second launch
+	// ends inside New: it hands over to the copy already open and exits, and
+	// must not open the database or settings that copy owns. Services are
+	// registered below, once the app they wrap exists.
+	var appInstance *app.App
+	// showOnRelaunch holds showWindow once the window exists. Wails calls the
+	// second-launch handler on its own goroutine at any point after New, so
+	// the handoff is atomic and a launch that arrives earlier finds nothing
+	// to show yet.
+	var showOnRelaunch atomic.Pointer[func()]
+	wailsApp := application.New(application.Options{
+		Name:        "Airspace ACARS",
+		Description: "Flight Simulator ACARS Desktop Application",
+		SingleInstance: singleInstance(func() {
+			if show := showOnRelaunch.Load(); show != nil {
+				(*show)()
+			}
+		}),
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+			// /documents/{id}/pdf streams a library PDF fetched with the
+			// pilot token, so the Documents tab can render it in place.
+			// appInstance is read per request because it does not exist
+			// yet; no request arrives before Run.
+			Middleware: func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					appInstance.DocumentPDFMiddleware(next).ServeHTTP(w, r)
+				})
+			},
+		},
+		Windows: application.WindowsOptions{
+			DisableQuitOnLastWindowClosed: true,
+		},
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
+		},
+	})
 
 	// --- Inject embedded DLL into SimConnect adapter ---
 	simconnectadapter.EmbeddedDLL = embeddedSimConnectDLL
@@ -77,7 +119,6 @@ func main() {
 	// X-Plane's airports are read from its installation, which is found from
 	// the running simulator unless the pilot has named a folder. The source
 	// outlives any one connection so its index is built once per session.
-	var appInstance *app.App
 	xplaneLayouts := aptdat.NewSource(func() string { return appInstance.GetSettings().XPlanePath })
 
 	// --- Create app instance (inject adapters) ---
@@ -91,6 +132,13 @@ func main() {
 			return xplane.NewAdapter(host, port, xplaneLayouts)
 		},
 	)
+
+	// GSX's ground services feed the flight attendant. The client retries
+	// quietly for as long as GSX is not running.
+	gsxClient := gsx.NewClient(gsx.DefaultURL)
+	appInstance.GSX = gsxClient
+	gsxClient.Start()
+	defer gsxClient.Stop()
 
 	// Initialize settings and audio cache
 	appInstance.InitSettings()
@@ -111,49 +159,35 @@ func main() {
 	profileSvc := &ProfileService{app: appInstance}
 	flightLogSvc := &FlightLogService{app: appInstance}
 	debugSvc := &DebugService{app: appInstance}
+	attendantSvc := &AttendantService{app: appInstance}
 
-	// --- Create Wails application ---
-	wailsApp := application.New(application.Options{
-		Name:        "Airspace ACARS",
-		Description: "Flight Simulator ACARS Desktop Application",
-		Services: []application.Service{
-			application.NewService(flightDataSvc),
-			application.NewService(flightSvc),
-			application.NewService(authSvc),
-			application.NewService(chatSvc),
-			application.NewService(notamSvc),
-			application.NewService(documentSvc),
-			application.NewService(audioSvc),
-			application.NewService(settingsSvc),
-			application.NewService(updateSvc),
-			application.NewService(discordSvc),
-			application.NewService(profileSvc),
-			application.NewService(flightLogSvc),
-			application.NewService(debugSvc),
-		},
-		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
-			// /documents/{id}/pdf streams a library PDF fetched with the
-			// pilot token, so the Documents tab can render it in place.
-			Middleware: appInstance.DocumentPDFMiddleware,
-		},
-		Windows: application.WindowsOptions{
-			DisableQuitOnLastWindowClosed: true,
-		},
-		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: false,
-		},
-	})
+	for _, svc := range []application.Service{
+		application.NewService(flightDataSvc),
+		application.NewService(flightSvc),
+		application.NewService(authSvc),
+		application.NewService(chatSvc),
+		application.NewService(notamSvc),
+		application.NewService(documentSvc),
+		application.NewService(audioSvc),
+		application.NewService(settingsSvc),
+		application.NewService(updateSvc),
+		application.NewService(discordSvc),
+		application.NewService(profileSvc),
+		application.NewService(flightLogSvc),
+		application.NewService(debugSvc),
+		application.NewService(attendantSvc),
+	} {
+		wailsApp.RegisterService(svc)
+	}
 
-	// Wire the Wails app back to the emitter and set quit function
+	// Wire the Wails app back to the emitter
+	windowMgr := windowadapter.New("")
 	wailsEmitter.SetApp(wailsApp)
-	appInstance.QuitFunc = func() { wailsApp.Quit() }
 
-	// --- Create window ---
-	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	windowOpts := application.WebviewWindowOptions{
 		Title:  "Airspace ACARS",
-		Width:  1100,
-		Height: 700,
+		Width:  domain.DefaultWindowWidth,
+		Height: domain.DefaultWindowHeight,
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,
@@ -161,18 +195,77 @@ func main() {
 		},
 		BackgroundColour: application.NewRGB(10, 10, 10),
 		URL:              "/",
-	})
+	}
+	initial := windowMgr.InitialBounds()
+	windowOpts.Width = initial.Width
+	windowOpts.Height = initial.Height
+	if initial.HasPosition {
+		windowOpts.X = initial.X
+		windowOpts.Y = initial.Y
+		windowOpts.InitialPosition = application.WindowXY
+	} else {
+		windowOpts.InitialPosition = application.WindowCentered
+	}
+	windowOpts.StartState = application.WindowStateNormal
+	windowOpts.Hidden = initial.Hidden
 
-	si.SetOnShow(func() {
+	// --- Create window ---
+	window := wailsApp.Window.NewWithOptions(windowOpts)
+	wrappedWin := wailsWindow{w: window}
+
+	changed := func(*application.WindowEvent) { windowMgr.ScheduleObserve(wrappedWin) }
+	for _, ev := range []events.WindowEventType{
+		events.Common.WindowDidResize,
+		events.Common.WindowDidMove,
+		events.Common.WindowMaximise,
+		events.Common.WindowUnMaximise,
+		events.Common.WindowFullscreen,
+		events.Common.WindowUnFullscreen,
+	} {
+		window.OnWindowEvent(ev, changed)
+	}
+
+	var once sync.Once
+	reveal := func() {
+		once.Do(func() {
+			var screens []*application.Screen
+			if wailsApp.Screen != nil {
+				screens = wailsApp.Screen.GetAll()
+			}
+			windowMgr.Reveal(wrappedWin, screenBounds(screens))
+		})
+	}
+
+	if windowMgr.StartsHidden() {
+		// The runtime-ready event also fires on every reload in development;
+		// once makes only the first count.
+		window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) { reveal() })
+		time.AfterFunc(windowadapter.RevealTimeout, func() {
+			defer observability.Recover()
+			reveal()
+		})
+	}
+
+	// Both quit paths run off the UI thread (a service call and a menu
+	// callback), which the flush waits on to read the window.
+	quit := func() {
+		windowMgr.Flush(wrappedWin)
+		wailsApp.Quit()
+	}
+	appInstance.QuitFunc = quit
+
+	showWindow := func() {
+		reveal()
 		window.Show()
 		window.Focus()
-	})
+	}
+
+	showOnRelaunch.Store(&showWindow)
 
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		if appInstance.GetSettings().ConfirmCloseApp {
 			wailsApp.Event.Emit("request-window-close", true)
-			window.Show()
-			window.Focus()
+			showWindow()
 			e.Cancel()
 			return
 		}
@@ -194,12 +287,11 @@ func main() {
 	}
 	trayMenu := wailsApp.NewMenu()
 	trayMenu.Add(labels[0]).OnClick(func(ctx *application.Context) {
-		window.Show()
-		window.Focus()
+		showWindow()
 	})
 	trayMenu.AddSeparator()
 	trayMenu.Add(labels[1]).OnClick(func(ctx *application.Context) {
-		wailsApp.Quit()
+		quit()
 	})
 
 	systray := wailsApp.SystemTray.New()
@@ -207,8 +299,7 @@ func main() {
 	systray.SetTooltip("Airspace ACARS")
 	systray.SetMenu(trayMenu)
 	systray.OnClick(func() {
-		window.Show()
-		window.Focus()
+		showWindow()
 	})
 
 	// --- Start background services ---
@@ -236,4 +327,43 @@ func main() {
 	if err := wailsApp.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// wailsWindow wraps *application.WebviewWindow to satisfy windowadapter.Window
+// without exposing Wails types through the adapter interface.
+type wailsWindow struct {
+	w *application.WebviewWindow
+}
+
+func (w wailsWindow) IsMaximised() bool    { return w.w.IsMaximised() }
+func (w wailsWindow) IsFullscreen() bool   { return w.w.IsFullscreen() }
+func (w wailsWindow) IsMinimised() bool    { return w.w.IsMinimised() }
+func (w wailsWindow) Size() (int, int)     { return w.w.Size() }
+func (w wailsWindow) Position() (int, int) { return w.w.Position() }
+func (w wailsWindow) SetBounds(x, y, width, height int) {
+	w.w.SetBounds(application.Rect{X: x, Y: y, Width: width, Height: height})
+}
+func (w wailsWindow) Center()     { w.w.Center() }
+func (w wailsWindow) Maximise()   { w.w.Maximise() }
+func (w wailsWindow) Fullscreen() { w.w.Fullscreen() }
+func (w wailsWindow) Show()       { w.w.Show() }
+
+// screenBounds converts Wails' displays to the domain's, preferring the work
+// area, which excludes the taskbar.
+func screenBounds(screens []*application.Screen) []domain.ScreenBounds {
+	var out []domain.ScreenBounds
+	for _, s := range screens {
+		if s == nil {
+			continue
+		}
+		area := s.WorkArea
+		if area.Width == 0 || area.Height == 0 {
+			area = s.Bounds
+		}
+		out = append(out, domain.ScreenBounds{
+			X: area.X, Y: area.Y, Width: area.Width, Height: area.Height,
+			Primary: s.IsPrimary,
+		})
+	}
+	return out
 }

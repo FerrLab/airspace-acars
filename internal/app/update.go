@@ -240,11 +240,29 @@ func (a *App) AutoUpdate() {
 		slog.Error("failed to get executable path", "error", err)
 		return
 	}
-	if err := exec.Command(exe).Start(); err != nil {
-		slog.Error("failed to restart after update", "error", err)
+	if !relaunch(exe, startProcess) {
 		return
 	}
 	if a.QuitFunc != nil {
 		a.QuitFunc()
 	}
+}
+
+// startProcess launches the executable at path without waiting for it.
+func startProcess(path string) error {
+	return exec.Command(path).Start()
+}
+
+// relaunch starts the freshly installed executable and reports whether it
+// did. A failure is logged at Warn, not Error: the update is already on
+// disk and the running copy stays up, so the pilot loses nothing. The usual
+// cause is the machine refusing to launch the new binary (Windows App
+// Control / antivirus blocking it, Sentry AIRSPACE-ACARS-F), which is the
+// pilot's environment and not something a developer can fix from a report.
+func relaunch(path string, start func(string) error) bool {
+	if err := start(path); err != nil {
+		slog.Warn("failed to restart after update; keeping the running version", "error", err)
+		return false
+	}
+	return true
 }

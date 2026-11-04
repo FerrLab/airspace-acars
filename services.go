@@ -42,6 +42,9 @@ func (s *FlightService) GetFlightState() string { return s.app.GetFlightState() 
 func (s *FlightService) GetActiveFlightInfo() map[string]string {
 	return s.app.GetActiveFlightInfo()
 }
+func (s *FlightService) GetFlightRoute() (*domain.FlightRoute, error) {
+	return s.app.GetFlightRoute()
+}
 func (s *FlightService) GetBooking() (map[string]interface{}, error) { return s.app.GetBooking() }
 func (s *FlightService) GetPilot() (map[string]interface{}, error)   { return s.app.GetPilot() }
 func (s *FlightService) StartFlight(callsign, departure, arrival, bookingID string) error {
@@ -105,6 +108,17 @@ type FlightLogService struct{ app *app.App }
 func (s *FlightLogService) GetMyFlights(page int, limit int) (*domain.MyFlightsResponse, error) {
 	return s.app.GetMyFlights(page, limit)
 }
+
+// GetFlightDetail returns one of the pilot's flights with its landing,
+// takeoff, score and points analysis.
+func (s *FlightLogService) GetFlightDetail(id string) (*domain.FlightDetailResponse, error) {
+	return s.app.GetFlightDetail(id)
+}
+
+// GetFlightTrack returns the flight's recorded positions in time order.
+func (s *FlightLogService) GetFlightTrack(id string) (*domain.FlightTrackResponse, error) {
+	return s.app.GetFlightTrack(id)
+}
 func (s *ChatService) GetMessages(page int) (*domain.MessagesResponse, error) {
 	return s.app.GetMessages(page)
 }
@@ -124,6 +138,45 @@ func (s *AudioService) GetAudioData(filename string) (*domain.AudioData, error) 
 	return s.app.GetAudioData(filename)
 }
 func (s *AudioService) ClearCache() { s.app.ClearCache() }
+
+// --- AttendantService: the flight attendant ---
+
+// AttendantService plays the airline's cabin announcements: the webview's
+// player pulls clips from it, and the Flight Attendant tab shows and steers it.
+type AttendantService struct{ app *app.App }
+
+// GetSnapshot returns everything the Flight Attendant tab shows.
+func (s *AttendantService) GetSnapshot() domain.AttendantSnapshot {
+	return s.app.GetAttendantSnapshot()
+}
+
+// TakeClip hands the player the next clip, or nil when none is waiting.
+func (s *AttendantService) TakeClip() *domain.AttendantClip { return s.app.TakeAttendantClip() }
+
+// ClipFinished reports that a clip played to the end.
+func (s *AttendantService) ClipFinished(id string) { s.app.AttendantClipFinished(id) }
+
+// ClipFailed reports that a clip could not be played.
+func (s *AttendantService) ClipFailed(id string) { s.app.AttendantClipFailed(id) }
+
+// Skip cuts the current announcement short.
+func (s *AttendantService) Skip() { s.app.SkipAttendantClip() }
+
+// Replay plays the last announcement again.
+func (s *AttendantService) Replay() { s.app.ReplayAttendantClip() }
+
+// StopAll silences the cabin until the next phase.
+func (s *AttendantService) StopAll() { s.app.StopAttendant() }
+
+// PlayPhase plays a phase's lines now; service picks a meal service.
+func (s *AttendantService) PlayPhase(phase string, service int) error {
+	return s.app.PlayAttendantPhase(phase, service)
+}
+
+// SetEnabled turns the flight attendant on or off and remembers it.
+func (s *AttendantService) SetEnabled(enabled bool) error {
+	return s.app.SetAttendantEnabled(enabled)
+}
 
 // --- SettingsService: user preferences ---
 

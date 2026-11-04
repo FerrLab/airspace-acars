@@ -47,7 +47,9 @@ func (a *App) GetFlightState() string {
 
 // GetActiveFlightInfo returns callsign, departure and arrival for the current
 // flight, plus finishCooldownSec — how long until minFlightDuration allows the
-// flight to be finished (0 once finishable).
+// flight to be finished (0 once finishable) — and startTimeMs, the flight start
+// timestamp in Unix milliseconds, which lets the dashboard's elapsed time
+// survive a reload of the webview.
 func (a *App) GetActiveFlightInfo() map[string]string {
 	a.flightMu.Lock()
 	defer a.flightMu.Unlock()
@@ -58,12 +60,16 @@ func (a *App) GetActiveFlightInfo() map[string]string {
 	if cooldown < 0 {
 		cooldown = 0
 	}
-	return map[string]string{
+	res := map[string]string{
 		"callsign":          a.callsign,
 		"departure":         a.departure,
 		"arrival":           a.arrival,
 		"finishCooldownSec": strconv.Itoa(int((cooldown + time.Second - 1) / time.Second)),
 	}
+	if !a.startTime.IsZero() {
+		res["startTimeMs"] = strconv.FormatInt(a.startTime.UnixMilli(), 10)
+	}
+	return res
 }
 
 // GetBooking fetches the current booking from the API.
@@ -161,6 +167,10 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 		"departure": departure,
 		"arrival":   arrival,
 		"timestamp": time.Now().UnixMilli(),
+		// This ACARS plays the cabin announcements itself, so the server
+		// must not queue them for GET /sound too. A server that predates
+		// client playback ignores the field.
+		"speech": "client",
 	}
 
 	_, status, err := a.Airspace.DoRequest("POST", "/api/v2/acars/start", payload)
@@ -185,8 +195,9 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 
 	go a.positionLoop(a.stopCh)
 	if bookingID != "" {
-		a.bookingWatch = a.startBookingWatcher(bookingID, arrival)
+		a.bookingWatch = a.startBookingWatcher(bookingID, departure, arrival)
 	}
+	a.attendant.Start(bookingID, a.startTime)
 
 	slog.Info("flight started", "callsign", callsign, "dep", departure, "arr", arrival)
 	a.UI.EmitEvent("flight-state", "active")
@@ -416,6 +427,7 @@ func (a *App) endFlight() {
 	}
 	a.bookingWatch.Stop()
 	a.bookingWatch = nil
+	a.attendant.Stop()
 	a.state = "idle"
 	a.callsign = ""
 	a.departure = ""
@@ -718,6 +730,9 @@ func (a *App) positionLoop(stopCh chan struct{}) {
 				slog.Warn("high-res collect tick: no data", "error", err)
 				continue
 			}
+			// The flight attendant takes the touchdown's rate and load from
+			// these samples too; the data stream's once a second misses it.
+			a.attendant.Observe(fd)
 			// The data stream owns the locator, and a reconnect replaces it,
 			// so it is asked for per sample. Observe never blocks.
 			highResQueue = append(highResQueue, a.buildPositionReport(fd, a.currentLocator().Observe(fd)))

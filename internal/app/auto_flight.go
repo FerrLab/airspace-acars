@@ -184,6 +184,14 @@ func (a *App) checkAutoFlight(data *domain.FlightData) {
 func (a *App) tryAutoStartFlight(lat, lon float64) {
 	defer observability.Recover()
 
+	// Before a tenant is picked (or after sign-out) the sim can already be
+	// ready; asking for the booking then fails inside the adapter and is
+	// reported as a fault (Sentry AIRSPACE-ACARS-K). There is nothing to start.
+	if a.Airspace.BaseURL() == "" {
+		slog.Debug("auto-start: no tenant selected")
+		return
+	}
+
 	booking, err := a.fetchBooking()
 	if errors.Is(err, errNoBooking) {
 		slog.Debug("auto-start: no booking available")

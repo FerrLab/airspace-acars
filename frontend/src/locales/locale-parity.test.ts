@@ -61,6 +61,15 @@ describe("Locale Parity", () => {
     }
   });
 
+  it("ensures all flight attendant keys in en.json exist in pt, es, and fr", () => {
+    const enKeys = Object.keys(en).filter((k) => k.startsWith("attendant.") || k === "sidebar.attendant");
+    expect(enKeys.length).toBeGreaterThan(0);
+    for (const locale of locales) {
+      const missingKeys = enKeys.filter((k) => !(k in locale.data));
+      expect(missingKeys, `${locale.name}.json is missing flight attendant keys`).toEqual([]);
+    }
+  });
+
   it("ensures no duplicate keys in JSON source files", () => {
     const files = ["en.json", "pt.json", "es.json", "fr.json"];
     for (const file of files) {

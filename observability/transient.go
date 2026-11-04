@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"strings"
 )
 
 // Transient reports whether err is a network failure rather than a fault in
@@ -54,6 +55,16 @@ func Transient(err error) bool {
 	// A connection cut mid-response, and our own timeouts.
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	// net/http's HTTP/2 transport reports a connection it tore down itself
+	// ("client connection force closed via ClientConn.Close", "client
+	// connection lost") with unexported sentinels, so the message is all
+	// there is to match. It happens when the pool closes an idle or broken
+	// connection under an in-flight request (AIRSPACE-ACARS-H, -J); the
+	// outbox resends on the next drain.
+	if strings.Contains(err.Error(), "http2: client connection") {
 		return true
 	}
 
