@@ -139,6 +139,34 @@ func TestFetchSpeechLineMapsTheRefusals(t *testing.T) {
 	assert.True(t, l.hasAudio())
 }
 
+// The server refuses a line with 422 for two different things: audio it could
+// not produce yet (the TTS provider timed out, or is still working), which is
+// worth asking for again, and a line that can never play (no voice, empty,
+// disabled). The reason says which; a refusal without one is final, as
+// before the server sent it.
+func TestFetchSpeechLineTellsAWaitFromARefusal(t *testing.T) {
+	cases := []struct {
+		name     string
+		body     string
+		notReady bool
+		inError  string
+	}{
+		{"audio not generated yet", `{"message":"This line cannot be played","reason":"not_generated","data":{"id":5}}`, true, ""},
+		{"no voice for the language", `{"message":"This line cannot be played","reason":"no_voice","data":{"id":5}}`, false, "no_voice"},
+		{"an older server without a reason", `{"message":"This line cannot be played"}`, false, ""},
+		{"garbage", `<html>422</html>`, false, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := fetchSpeechLine(&stubAPI{status: 422, body: []byte(c.body)}, 5, lineQuery{})
+			require.Error(t, err)
+			assert.Equal(t, c.notReady, errors.Is(err, errLineNotReady), "is %q worth asking again?", err)
+			assert.Equal(t, !c.notReady, errors.Is(err, errLineUnvoiced), "is %q final?", err)
+			assert.Contains(t, err.Error(), c.inError, "the reason is kept for the log")
+		})
+	}
+}
+
 func TestLineQueryEncodesOnlyWhatIsSet(t *testing.T) {
 	assert.Equal(t, "", lineQuery{}.encode())
 	assert.Equal(t, "?arrival=SBKP&landing=smooth&service=2",

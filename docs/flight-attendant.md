@@ -73,6 +73,13 @@ or the line's `segments` when the server could not combine them), and reports
   downloaded in the background, in flight order, as soon as it is read. Audio
   is cached by URL in the system temp folder.
 - A line the server no longer has (404) makes the ACARS read the pack again.
+- A line the server could not voice yet (422 with reason `not_generated`:
+  its text-to-speech provider failed or timed out), or lost to the network or
+  a 5xx, is asked for again after 30 s, 1 min and 2 min, while the flight is
+  still at the phase that fired it (`internal/app/attendant_retry.go`). It
+  plays for that phase when it comes. One the flight has moved past, or still
+  not ready after the third retry, shows as failed. Any other 422 reason
+  (`no_voice`, `empty`, …) is final.
 
 ## Seatbelt sign
 

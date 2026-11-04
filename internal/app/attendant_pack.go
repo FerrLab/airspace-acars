@@ -36,6 +36,15 @@ var errLineGone = errors.New("line is not part of the active speech pack")
 // language, or empty text).
 var errLineUnvoiced = errors.New("line cannot be voiced")
 
+// errLineNotReady means the server could not produce a line's audio yet: its
+// text-to-speech provider failed or timed out, or is still at work. Unlike
+// errLineUnvoiced, the line is worth asking for again.
+var errLineNotReady = errors.New("line audio is not ready on the server")
+
+// reasonNotGenerated is the reason a 422 for a line gives when the audio
+// could not be produced yet, as opposed to a line that can never play.
+const reasonNotGenerated = "not_generated"
+
 // speechPack is GET /speech/pack, decoded.
 type speechPack struct {
 	Revision string       `json:"revision"`
@@ -219,6 +228,25 @@ func messageOf(body []byte) string {
 	return strings.ToLower(strings.TrimSpace(e.Message))
 }
 
+// refusalOf reads a 422 for a line: errLineNotReady for audio the server
+// could not produce yet, errLineUnvoiced naming the reason for a line that
+// can never play. A body without a reason, from a server older than the
+// field, is final as it always was.
+func refusalOf(body []byte) error {
+	var r struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.Unmarshal(body, &r) // a body that is not JSON gives no reason
+	switch reason := strings.ToLower(strings.TrimSpace(r.Reason)); reason {
+	case reasonNotGenerated:
+		return errLineNotReady
+	case "":
+		return errLineUnvoiced
+	default:
+		return fmt.Errorf("%w: %s", errLineUnvoiced, reason)
+	}
+}
+
 // fetchSpeechPack reads the booking's pack, at another arrival airport when
 // arrival is set. It tells an old server (errSpeechUnsupported) from a pilot
 // without a booking (errNoBooking): both answer 404, but only the second says
@@ -286,7 +314,7 @@ func fetchSpeechLine(api AirspaceAPI, id int, q lineQuery) (speechLine, error) {
 		}
 		return speechLine{}, errLineGone
 	case http.StatusUnprocessableEntity:
-		return speechLine{}, errLineUnvoiced
+		return speechLine{}, refusalOf(body)
 	}
 	if err := domain.NewStatusError(http.MethodGet, path, status, body); err != nil {
 		return speechLine{}, err

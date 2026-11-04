@@ -19,8 +19,10 @@ const defaultRepeatEvery = 5 * time.Minute
 var errPackNotLoaded = errors.New("the speech pack is not loaded")
 
 // play fetches what a fired phase plays and queues it, all of it at once so
-// the phase's lines play back to back.
-func (e *attendant) play(gen int, f phaseFire) {
+// the phase's lines play back to back. during is the flight's step when it
+// fired; a line the server could not voice yet is asked for again while the
+// flight is still there.
+func (e *attendant) play(gen int, f phaseFire, during string) {
 	_, span := observability.Start(context.Background(), "attendant.play_phase", "attendant.phase", f.phase)
 	defer span.Finish()
 
@@ -36,7 +38,7 @@ func (e *attendant) play(gen int, f phaseFire) {
 	for _, l := range lines {
 		rendered, segs, err := e.prepare(l, arrival, fresh)
 		if err != nil {
-			e.lineFailed(gen, l, f, err)
+			e.lineNotReady(gen, lineRetry{line: l, fire: f, fresh: fresh, during: during}, err)
 			continue
 		}
 		clips = append(clips, clipFor(rendered, f, segs))
@@ -165,9 +167,7 @@ func (e *attendant) lineFailed(gen int, l speechLine, f phaseFire, err error) {
 	if e.gen != gen {
 		return
 	}
-	e.history = appendHistory(e.history, domain.AttendantHistoryEntry{
-		At: e.deps.now(), Phase: f.phase, Service: l.service(), Text: l.Text,
-		Language: l.Language, Voice: l.Voice, Outcome: domain.ClipFailed, Reason: f.reason})
+	e.history = appendHistory(e.history, failedEntry(e.deps.now(), l, f))
 	if errors.Is(err, errLineGone) {
 		e.sendLocked(attendantJob{gen: gen, kind: jobLoad})
 	}
@@ -488,7 +488,7 @@ func (e *attendant) PlayPhaseNow(phase string, service int) error {
 	if phase == domain.PhaseAfterLanding {
 		f.landing = domain.LandingNormal
 	}
-	e.sendLocked(attendantJob{gen: e.gen, kind: jobFire, fire: f})
+	e.sendLocked(attendantJob{gen: e.gen, kind: jobFire, fire: f, during: e.current})
 	return nil
 }
 
