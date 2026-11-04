@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import { AttendantService, AudioService } from "../../bindings/airspace-acars";
 import { applyAudioSink, subscribeAudioDeviceChange } from "@/lib/audio-manager";
 import type { AttendantClip } from "@/lib/attendant";
-import { abortableSleep, playClip } from "@/lib/clip-player";
+import { abortableSleep, gapRemaining, playClip } from "@/lib/clip-player";
 
 interface InterruptEvent {
   data: string;
@@ -48,6 +48,11 @@ export function useAttendantPlayer(volume: number, active: boolean) {
     let cancelled = false;
     let busy = false;
     let current: { id: string; abort: AbortController } | null = null;
+    // Ends the gap wait when the player is torn down.
+    const stop = new AbortController();
+    // When the last clip ended. The next one waits out the gap from here,
+    // also when it arrives a moment later through a fresh clip-ready event.
+    let lastEnded = Number.NEGATIVE_INFINITY;
 
     function playAudio(base64: string, contentType: string, signal: AbortSignal): Promise<boolean> {
       return new Promise((resolve) => {
@@ -84,6 +89,11 @@ export function useAttendantPlayer(volume: number, active: boolean) {
       busy = true;
       try {
         while (!cancelled) {
+          // Wait before taking the clip, so the backend still shows it
+          // queued, and Skip or Stop all act on it, during the pause.
+          const wait = gapRemaining(lastEnded, Date.now());
+          if (wait > 0) await abortableSleep(wait, stop.signal);
+          if (cancelled) break;
           const clip = (await AttendantService.TakeClip()) as unknown as AttendantClip | null;
           if (!clip || cancelled) break;
           const abort = new AbortController();
@@ -97,6 +107,7 @@ export function useAttendantPlayer(volume: number, active: boolean) {
             sleep: abortableSleep,
           }, abort.signal);
           current = null;
+          lastEnded = Date.now();
           // An interrupted clip was already recorded by the backend.
           if (outcome === "played") await AttendantService.ClipFinished(clip.id);
           else if (outcome === "failed") await AttendantService.ClipFailed(clip.id);
@@ -116,6 +127,7 @@ export function useAttendantPlayer(volume: number, active: boolean) {
 
     return () => {
       cancelled = true;
+      stop.abort();
       current?.abort.abort();
       offReady();
       offInterrupt();

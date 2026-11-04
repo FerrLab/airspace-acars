@@ -44,7 +44,7 @@ Universal Announcer (manual v0.9.9.7), with the deviations noted.
 | `cruise` | Within 300 fpm of level above 10,000 ft for **two minutes**. The server used ten minutes; one minute is an ordinary level-off on the climb. |
 | `cruise` at 25/50/75 % | At that share of the planned block time from flight start, once cruising; held while below 10,000 ft or sinking over 500 fpm, dropped once the descent begins. |
 | `meal_service` | `after_cruise`: N minutes after reaching cruise. `before_descent`: N minutes before the estimated top of descent, taken as flight start + planned block − 30 min. Dropped once the descent begins. |
-| `seatbelt_on` / `seatbelt_off` | In flight, after the climb-out, when the aircraft's seatbelt sign changes, and not within the pack's cooldown for that announcement. Only aircraft that report the sign (see below). |
+| `seatbelt_on` / `seatbelt_off` | In flight, after the climb-out, when the aircraft's seatbelt sign changes and holds the new state for 2 s, and not within the pack's cooldown for that announcement. A sign switched and back within the 2 s is no change; one toggled a few times is announced once, for where it ends up. Only aircraft that report the sign (see below). |
 | `descend` | After cruise, sinking over 500 fpm for 10 s and 500 ft below the cruise level (1,000 ft below the highest point when no cruise was held). |
 | `descending_10000` | Descending through 10,000 ft MSL after cruise or descent. |
 | `final_approach` | Gear down below 2,000 ft AGL, sinking over 300 fpm. Universal Announcer uses 3,000 ft. |
@@ -65,6 +65,11 @@ until there are none, plays each clip's segments in order (one combined file,
 or the line's `segments` when the server could not combine them), and reports
 `ClipFinished` or `ClipFailed`. `attendant-interrupt` cuts a clip short.
 
+- Clips are 1.5 s apart (`CLIP_GAP_MS` in `lib/clip-player.ts`): the player
+  waits that long after a clip ends, however it ended, before it takes the
+  next, so a phase's lines and phases that fire together do not run into each
+  other. The waiting clip stays in the backend's queue, where Skip and Stop all
+  reach it. The segments inside a clip get no gap: they are one line.
 - Boarding lines with `repeat` play again `repeat_every_minutes` after they
   last **finished**. Uploaded audio with `repeat` is boarding music: it loops
   whenever nothing else is waiting, and an announcement cuts it short.

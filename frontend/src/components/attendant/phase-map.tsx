@@ -75,9 +75,14 @@ export function PhaseMap({ snapshot }: { snapshot: AttendantSnapshot }) {
           );
         })}
 
+        {/* The aircraft sits on the line over its phase's marker: airborne
+            labels sit above the line and ground ones below, so off the line
+            there is no side it clears for every phase. The disc masks the
+            line and marker, which a stroke-only icon would show through. */}
         {plane && (
           <g role="img" aria-label={t("attendant.aircraft")}>
-            <Plane x={plane.x - 9} y={plane.y - 30} width={18} height={18} className="text-primary" />
+            <circle cx={plane.x} cy={plane.y} r="10" className="fill-card" />
+            <Plane x={plane.x - 9} y={plane.y - 9} width={18} height={18} className="text-primary" />
           </g>
         )}
       </svg>

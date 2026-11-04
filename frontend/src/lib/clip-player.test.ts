@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { abortableSleep, playClip, type ClipDeps } from "./clip-player";
+import { abortableSleep, CLIP_GAP_MS, gapRemaining, playClip, type ClipDeps } from "./clip-player";
 
 function deps(overrides: Partial<ClipDeps> = {}): ClipDeps & { played: string[] } {
   const played: string[] = [];
@@ -43,6 +43,24 @@ describe("playClip", () => {
       { type: "play", localFile: "b.mp3", duration_ms: 0 },
     ] };
     expect(await playClip(clip, d, c.signal)).toBe("aborted");
+  });
+});
+
+// Clips do not run into each other: the next one waits out what is left of
+// the gap since the last one ended, and nothing once it has passed.
+describe("gapRemaining", () => {
+  it("does not hold back the first clip of the flight", () => {
+    expect(gapRemaining(Number.NEGATIVE_INFINITY, 1_000_000)).toBe(0);
+  });
+
+  it("waits out the rest of the gap after a clip ended", () => {
+    expect(gapRemaining(10_000, 10_000)).toBe(CLIP_GAP_MS);
+    expect(gapRemaining(10_000, 10_400)).toBe(CLIP_GAP_MS - 400);
+  });
+
+  it("does not wait once the gap has passed", () => {
+    expect(gapRemaining(10_000, 10_000 + CLIP_GAP_MS)).toBe(0);
+    expect(gapRemaining(10_000, 60_000)).toBe(0);
   });
 });
 
