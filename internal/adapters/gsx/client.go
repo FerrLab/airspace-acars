@@ -21,9 +21,13 @@ import (
 // DefaultURL is where GSX's remote control server listens. It takes no path.
 const DefaultURL = "ws://127.0.0.1:8744"
 
-// maxMessageBytes caps one frame from the server. A full state snapshot is a
-// few kilobytes; anything far past that is not GSX.
-const maxMessageBytes = 1 << 20
+// maxMessageBytes caps one frame from the server, so a runaway peer cannot
+// take the ACARS's memory. A real state snapshot is over a megabyte, almost
+// all of it the airport's handlerData: 1.2 MB at SBBR, measured against GSX
+// on 2026-11-04. The old 1 MiB cap ended every session on its first
+// snapshot, so the flight attendant never saw GSX. 16 MiB leaves room for
+// bigger airports and is still a bound.
+const maxMessageBytes = 16 << 20
 
 // How the client reaches GSX. Variables so a test can run the reconnect path
 // without waiting out the real interval.

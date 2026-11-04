@@ -52,16 +52,21 @@ const (
 	jobFire
 	jobRepeat
 	jobArrival
+	jobRetry
 )
 
 // attendantJob is network work for the worker, tagged with the flight it
 // belongs to so work left over from a flight that ended is dropped.
 type attendantJob struct {
-	gen     int
-	kind    jobKind
-	fire    phaseFire
+	gen  int
+	kind jobKind
+	fire phaseFire
+	// during is the flight's step when fire happened (jobFire), which a
+	// line that has to be asked for again must still be at to play.
+	during  string
 	line    speechLine // jobRepeat
 	arrival string     // jobArrival
+	retry   lineRetry  // jobRetry
 }
 
 // queuedClip is a clip with what the attendant needs to know once it ends.
@@ -132,6 +137,9 @@ type attendant struct {
 	// pending counts announcements handed to the worker and not yet queued;
 	// the boarding music waits for them.
 	pending int
+	// retries are the lines the server could not voice yet, waiting to be
+	// asked for again; Observe hands each to the worker when it is due.
+	retries []lineRetry
 
 	reasons  map[string]domain.AttendantReason
 	counts   map[string]int
@@ -165,6 +173,7 @@ func (e *attendant) SetEnabled(on bool) {
 	var cut string
 	if !on {
 		cut = e.clearLocked(domain.ClipStopped)
+		e.retries = nil
 	}
 	e.mu.Unlock()
 	e.interrupt(cut)
@@ -199,6 +208,7 @@ func (e *attendant) Start(bookingID string, start time.Time) {
 	e.prepared, e.prefetch = map[string][]domain.SoundInstruction{}, nil
 	e.queue, e.playing, e.lastPlayed, e.history = nil, nil, nil, nil
 	e.repeatDue, e.musicOff, e.musicIdx, e.pending = map[int]time.Time{}, false, 0, 0
+	e.retries = nil
 	e.reasons, e.counts, e.current = map[string]domain.AttendantReason{}, map[string]int{}, ""
 	e.jobs = make(chan attendantJob, attendantJobDepth)
 	e.stop = make(chan struct{})
@@ -264,6 +274,7 @@ func (e *attendant) Observe(fd *domain.FlightData) {
 		}
 	}
 	e.repeatsLocked(now)
+	e.retriesLocked(now)
 	e.mu.Unlock()
 
 	e.interrupt(cut)
@@ -294,7 +305,7 @@ func (e *attendant) firedLocked(f phaseFire, now time.Time) (cut string) {
 			At: now, Phase: f.phase, Service: f.service, Outcome: domain.ClipMuted, Reason: f.reason})
 		return cut
 	}
-	e.sendLocked(attendantJob{gen: e.gen, kind: jobFire, fire: f})
+	e.sendLocked(attendantJob{gen: e.gen, kind: jobFire, fire: f, during: e.current})
 	return cut
 }
 
@@ -302,7 +313,7 @@ func (e *attendant) firedLocked(f phaseFire, now time.Time) (cut string) {
 func (e *attendant) sendLocked(j attendantJob) {
 	select {
 	case e.jobs <- j:
-		if j.kind == jobFire || j.kind == jobRepeat {
+		if j.kind == jobFire || j.kind == jobRepeat || j.kind == jobRetry {
 			e.pending++
 		}
 	default:
@@ -373,10 +384,13 @@ func (e *attendant) handle(j attendantJob) (retry bool) {
 	case jobLoad:
 		return e.load(j.gen)
 	case jobFire:
-		e.play(j.gen, j.fire)
+		e.play(j.gen, j.fire, j.during)
 		e.settled(j.gen)
 	case jobRepeat:
 		e.repeat(j.gen, j.line)
+		e.settled(j.gen)
+	case jobRetry:
+		e.retryLine(j.gen, j.retry)
 		e.settled(j.gen)
 	case jobArrival:
 		e.divert(j.gen, j.arrival)

@@ -62,14 +62,19 @@ func (s *speechAPI) set(key string, r reply) {
 }
 
 func (s *speechAPI) wasAsked(key string) bool {
+	return s.timesAsked(key) > 0
+}
+
+func (s *speechAPI) timesAsked(key string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	n := 0
 	for _, k := range s.asked {
 		if k == key {
-			return true
+			n++
 		}
 	}
-	return false
+	return n
 }
 
 // harness runs an attendant against a speechAPI, a clock the test moves and
