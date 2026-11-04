@@ -119,6 +119,26 @@ func TestClientReconnectsAfterTheServerGoes(t *testing.T) {
 	assert.True(t, s.Connected)
 }
 
+// A real GSX snapshot is over a megabyte, nearly all of it handlerData: one
+// captured at SBBR with boarding under way was 1,217,565 bytes. The client
+// must read it; a smaller cap ends every session on its first snapshot and
+// the pilot sees GSX as not running for the whole flight.
+func TestClientReadsASnapshotTheSizeOfARealOne(t *testing.T) {
+	handlerData := strings.Repeat("x", 1_200_000)
+	snapshot := `{"v":1,"type":"snapshot","state":0,"handlerData":"` + handlerData +
+		`","services":[{"id":"Boarding","stateRaw":5,"progressText":"66/156"}]}`
+	srv := fakeGSX(t, 0, snapshot)
+	states := make(chan domain.GSXState, 16)
+	c := NewClient(wsURL(srv))
+	c.OnChange = func(s domain.GSXState) { states <- s }
+	c.Start()
+	defer c.Stop()
+
+	s := waitFor(t, states, func(s domain.GSXState) bool { return s.Boarding.State == domain.GSXActive })
+	assert.True(t, s.Connected, "a %d-byte snapshot dropped the connection", len(snapshot))
+	assert.Equal(t, "66/156", s.Boarding.Progress)
+}
+
 // Nothing listening is the normal case on most machines: the client stays
 // disconnected and Stop still returns promptly.
 func TestClientWithoutGSXStaysDisconnected(t *testing.T) {

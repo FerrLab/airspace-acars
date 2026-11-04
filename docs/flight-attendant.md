@@ -95,7 +95,9 @@ made reading by reading, so starting GSX mid-turnaround switches to it.
 `ws://127.0.0.1:8744` (GSX 4.0.6 or later, "Remote control server" enabled,
 which is the default), subscribes to its state channel, and follows the
 Boarding, Departure (pushback) and Deboarding services. It retries every five
-seconds while GSX is not running and logs that at Debug only.
+seconds while GSX is not running and logs that at Debug only. A state
+snapshot is over a megabyte once an airport is loaded (1.2 MB at SBBR, almost
+all of it `handlerData`), so one message may be up to 16 MiB.
 
 The protocol comes from the third-party client Fragtality/Any2GSX; the official
 guide ships only inside the GSX installer. `stateRaw` is assumed to carry the
