@@ -65,6 +65,11 @@ until there are none, plays each clip's segments in order (one combined file,
 or the line's `segments` when the server could not combine them), and reports
 `ClipFinished` or `ClipFailed`. `attendant-interrupt` cuts a clip short.
 
+- Clips are 1.5 s apart (`CLIP_GAP_MS` in `lib/clip-player.ts`): the player
+  waits that long after a clip ends, however it ended, before it takes the
+  next, so a phase's lines and phases that fire together do not run into each
+  other. The waiting clip stays in the backend's queue, where Skip and Stop all
+  reach it. The segments inside a clip get no gap: they are one line.
 - Boarding lines with `repeat` play again `repeat_every_minutes` after they
   last **finished**. Uploaded audio with `repeat` is boarding music: it loops
   whenever nothing else is waiting, and an announcement cuts it short.
