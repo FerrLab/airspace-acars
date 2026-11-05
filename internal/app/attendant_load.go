@@ -10,8 +10,9 @@ import (
 	"airspace-acars/observability"
 )
 
-// load reads the pack and decides the mode.
-func (e *attendant) load(gen int) (retry bool) {
+// load reads the pack and decides the mode. It returns how long to wait
+// before reading it again, 0 once the mode is decided.
+func (e *attendant) load(gen int) (retryIn time.Duration) {
 	e.mu.Lock()
 	arrival, bookingID := e.packArrival, e.bookingID
 	e.mu.Unlock()
@@ -23,19 +24,32 @@ func (e *attendant) load(gen int) (retry bool) {
 	e.mu.Lock()
 	if e.gen != gen {
 		e.mu.Unlock()
-		return false
+		return 0
 	}
+	var preparing *packPreparing
 	switch {
 	case errors.Is(err, errSpeechUnsupported):
 		span.Expected(err)
 		e.mode, e.detector, e.loadErr, e.current = domain.AttendantLegacy, nil, "", ""
+		e.preparing, e.early = nil, nil
 		slog.Info("attendant: the airline's server plays announcements itself; using the legacy player")
 	case errors.Is(err, errNoBooking):
 		span.Expected(err)
 		e.mode, e.detector, e.loadErr, e.current = domain.AttendantNoBooking, nil, "", ""
+		e.preparing, e.early = nil, nil
 		slog.Info("attendant: no active booking; no announcements this flight")
+	case errors.As(err, &preparing):
+		// The server is still voicing the pack: part of a normal start, so
+		// no error on the tab and nothing counted against the server.
+		span.Expected(err)
+		e.loadErr = ""
+		e.preparing = &domain.AttendantPreparing{LinesReady: preparing.linesReady, LinesTotal: preparing.linesTotal}
+		slog.Debug("attendant: speech pack is being prepared; will ask again",
+			"attendant.lines_ready", preparing.linesReady, "attendant.lines_total", preparing.linesTotal,
+			"attendant.wait", preparing.retryAfter)
+		retryIn = preparing.retryAfter
 	case err != nil:
-		e.loadErr = err.Error()
+		e.loadErr, e.preparing = err.Error(), nil
 		e.loadFailures++
 		// Retried every packRetryEvery for the whole flight, so only the
 		// first failure of a streak is worth reporting.
@@ -46,17 +60,51 @@ func (e *attendant) load(gen int) (retry bool) {
 			span.Fail(err)
 			slog.Warn("attendant: speech pack could not be read; will retry", "error", err)
 		}
-		retry = true
+		retryIn = packRetryEvery
 	default:
 		span.Set("attendant.revision", pack.Revision)
 		e.installPackLocked(pack, arrival)
-		e.mode, e.loadErr, e.loadFailures = domain.AttendantClient, "", 0
+		e.mode, e.loadErr, e.loadFailures, e.preparing = domain.AttendantClient, "", 0, nil
 		slog.Info("attendant: speech pack loaded", "attendant.revision", pack.Revision,
 			"attendant.phases", len(pack.Phases))
+		e.playEarlyLocked()
 	}
 	e.mu.Unlock()
 	e.notify()
-	return retry
+	return retryIn
+}
+
+// holdUntilLoaded keeps a phase that fired before the pack was in, to play
+// once it is. Callers do not hold e.mu.
+func (e *attendant) holdUntilLoaded(gen int, f phaseFire, during string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.gen != gen || e.mode != domain.AttendantLoading {
+		return
+	}
+	// The flight has left the step of anything held earlier: drop it, so
+	// the list is no longer than one step's phases.
+	kept := e.early[:0]
+	for _, j := range e.early {
+		if j.during == e.current {
+			kept = append(kept, j)
+		}
+	}
+	e.early = append(kept, attendantJob{gen: gen, kind: jobFire, fire: f, during: during})
+}
+
+// playEarlyLocked hands the worker the phases held while the pack loaded,
+// those the flight is still at. Callers hold e.mu.
+func (e *attendant) playEarlyLocked() {
+	for _, j := range e.early {
+		if j.during != e.current {
+			slog.Info("attendant: phase given up; the flight moved on before the pack was in",
+				"attendant.phase", j.fire.stepKey())
+			continue
+		}
+		e.sendLocked(j)
+	}
+	e.early = nil
 }
 
 // installPackLocked makes pack the flight's pack: the detector learns the

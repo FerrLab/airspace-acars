@@ -175,6 +175,16 @@ type AttendantSnapshot struct {
 	Seatbelts  SeatbeltCounts          `json:"seatbelts"`
 	// Error is the last reason the pack could not be read, "" when it was.
 	Error string `json:"error"`
+	// Preparing is the server's progress voicing the pack while it answers
+	// 202 to GET /speech/pack; nil otherwise.
+	Preparing *AttendantPreparing `json:"preparing"`
+}
+
+// AttendantPreparing is how many of the pack's lines the server has voiced,
+// while the pack is still being prepared.
+type AttendantPreparing struct {
+	LinesReady int `json:"linesReady"`
+	LinesTotal int `json:"linesTotal"`
 }
 
 // LandingThresholds classify a touchdown. A landing is smooth when both its

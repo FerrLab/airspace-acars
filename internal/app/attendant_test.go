@@ -212,6 +212,82 @@ func TestAFailedPackIsRetried(t *testing.T) {
 	h.waitMode(domain.AttendantClient)
 }
 
+// quickPreparing lets a test poll a pack being prepared without waiting out
+// the real minimum pause.
+func quickPreparing(t *testing.T) {
+	prev := packPreparingMin
+	packPreparingMin = time.Millisecond
+	t.Cleanup(func() { packPreparingMin = prev })
+}
+
+// While the server prepares the pack (202) the ACARS polls at the pause the
+// server names, shows the progress instead of an error, counts no failure,
+// and the boarding announcement that fired meanwhile plays once the pack is
+// in.
+func TestAPackBeingPreparedIsPolledAndBoardingWaitsForIt(t *testing.T) {
+	quickPreparing(t)
+	prev := packRetryEvery
+	packRetryEvery = time.Hour // a 202 treated as a failure would never be asked again
+	t.Cleanup(func() { packRetryEvery = prev })
+
+	routes := packRoutes()
+	routes["GET "+speechPackPath] = reply{202,
+		`{"message":"The speech pack is being prepared","data":{"status":"preparing","lines_ready":12,"lines_total":28,"retry_after":0.005}}`}
+	h := newHarness(t, routes)
+	h.e.Start("123", flightStart)
+	h.waitFor(attendantStateEvent, func(d interface{}) bool {
+		s := d.(*domain.AttendantSnapshot)
+		return s.Mode == domain.AttendantLoading && s.Preparing != nil
+	})
+	snap := h.e.Snapshot()
+	assert.Equal(t, &domain.AttendantPreparing{LinesReady: 12, LinesTotal: 28}, snap.Preparing)
+	assert.Empty(t, snap.Error, "a pack being prepared is shown as an error")
+
+	h.e.Observe(atTheGate()) // boarding fires before the pack is in
+
+	h.waitFor(attendantStateEvent, func(interface{}) bool { return h.api.timesAsked("GET "+speechPackPath) >= 3 })
+	h.e.mu.Lock()
+	failures := h.e.loadFailures
+	h.e.mu.Unlock()
+	assert.Zero(t, failures, "a pack being prepared counted as a failed read")
+
+	h.api.set("GET "+speechPackPath, reply{200, testPack})
+	h.waitMode(domain.AttendantClient)
+	assert.Nil(t, h.e.Snapshot().Preparing)
+
+	welcome := h.take()
+	assert.Equal(t, "Welcome aboard, flight to São Paulo", welcome.Text,
+		"the boarding welcome that fired while the pack was prepared was lost")
+	assert.Equal(t, domain.ReasonFlightStarted, welcome.Reason.Code)
+}
+
+// A phase held for the pack is dropped if the flight has left its step by
+// the time the pack is in.
+func TestAPhaseHeldForThePackIsDroppedOnceTheFlightMovesOn(t *testing.T) {
+	quickPreparing(t)
+	routes := packRoutes()
+	routes["GET "+speechPackPath] = reply{202, `{"data":{"status":"preparing","retry_after":0.005}}`}
+	h := newHarness(t, routes)
+	h.e.Start("123", flightStart)
+	h.waitMode(domain.AttendantLoading)
+
+	h.e.mu.Lock()
+	h.e.firedLocked(phaseFire{phase: domain.PhaseBoarding, reason: domain.AttendantReason{Code: domain.ReasonFlightStarted}}, flightStart)
+	h.e.mu.Unlock()
+	h.waitFor(attendantStateEvent, func(interface{}) bool {
+		h.e.mu.Lock()
+		defer h.e.mu.Unlock()
+		return len(h.e.early) == 1
+	})
+	h.e.mu.Lock()
+	h.e.current = domain.PhasePushback
+	h.e.mu.Unlock()
+
+	h.api.set("GET "+speechPackPath, reply{200, testPack})
+	h.waitMode(domain.AttendantClient)
+	assert.Nil(t, h.e.TakeClip(), "a welcome aboard played after the flight left the gate")
+}
+
 // Boarding plays its lines, then loops the boarding music; a repeat line
 // comes back repeat_every_minutes after it last finished, cutting the music
 // short; boarding complete (here, without GSX, the aircraft leaving the

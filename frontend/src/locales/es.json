@@ -566,6 +566,7 @@
   "attendant.mode.client": "Reproduciendo el paquete de anuncios de tu aerolínea.",
   "attendant.mode.legacy": "El servidor de tu aerolínea reproduce los anuncios (Airspace antiguo).",
   "attendant.mode.no_booking": "No hay reserva activa, así que este vuelo no tiene anuncios.",
+  "attendant.preparing": "Preparando los anuncios ({{ready}}/{{total}})…",
   "attendant.loadError": "No se pudo leer el paquete de anuncios ({{error}}). Reintentando.",
   "attendant.disabled": "La tripulación de cabina está desactivada.",
   "attendant.map": "Perfil de vuelo",
