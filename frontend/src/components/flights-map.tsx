@@ -115,6 +115,11 @@ export function FlightsMap({
         attributionControl: false,
         minZoom: 2,
         maxZoom: 16,
+        // Leaflet finishes an animated zoom from a 250 ms timer it never
+        // cancels. Leaving the tab in that window runs the timer against a
+        // removed map and throws "reading '_leaflet_pos'" (Sentry
+        // AIRSPACE-ACARS-M). Without the animation there is no timer.
+        zoomAnimation: false,
       }).setView([-14.235, -51.9253], 4); // Centered over South America / Brazil by default
 
       // Add zoom control at bottom right
@@ -185,6 +190,8 @@ export function FlightsMap({
     if (!map || !layersGroup) return;
 
     layersGroup.clearLayers();
+
+    let fitTimer: ReturnType<typeof setTimeout> | undefined;
 
     const airportMap = new Map<
       string,
@@ -375,7 +382,7 @@ export function FlightsMap({
     // Fit view bounds with generous padding so the route breathes
     if (selectedFlightBounds) {
       const bounds: L.LatLngBounds = selectedFlightBounds;
-      setTimeout(() => {
+      fitTimer = setTimeout(() => {
         if (mapRef.current) {
           mapRef.current.invalidateSize();
           mapRef.current.fitBounds(bounds, {
@@ -388,7 +395,7 @@ export function FlightsMap({
     } else if (validFlightsWithCoords.length > 0) {
       const allBounds = layersGroup.getBounds();
       if (allBounds.isValid()) {
-        setTimeout(() => {
+        fitTimer = setTimeout(() => {
           if (mapRef.current) {
             mapRef.current.invalidateSize();
             mapRef.current.fitBounds(allBounds, {
@@ -400,6 +407,10 @@ export function FlightsMap({
         }, 100);
       }
     }
+
+    return () => {
+      clearTimeout(fitTimer);
+    };
   }, [flights, selectedFlightId, onSelectFlight, isDark, isSingleFlight, t]);
 
   const handleResetBounds = () => {
