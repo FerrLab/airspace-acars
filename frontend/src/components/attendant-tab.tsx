@@ -24,7 +24,11 @@ export function AttendantTab({ volume, onVolumeChange }: AttendantTabProps) {
       </header>
 
       <div role="status" className="rounded-md border border-border/60 px-3 py-2 text-xs">
-        {snapshot.enabled ? t(`attendant.mode.${snapshot.mode}`) : t("attendant.disabled")}
+        {!snapshot.enabled
+          ? t("attendant.disabled")
+          : snapshot.preparing
+            ? t("attendant.preparing", { ready: snapshot.preparing.linesReady, total: snapshot.preparing.linesTotal })
+            : t(`attendant.mode.${snapshot.mode}`)}
         {snapshot.error && <span className="block text-destructive">{t("attendant.loadError", { error: snapshot.error })}</span>}
       </div>
 

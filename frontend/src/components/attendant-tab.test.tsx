@@ -97,3 +97,14 @@ it("says why nothing plays against an old server", async () => {
   expect(screen.getByRole("status")).toHaveTextContent(en["attendant.mode.legacy"]);
   expect(screen.queryByRole("button", { name: /Play now/ })).not.toBeInTheDocument();
 });
+
+it("shows the server's progress, not an error, while the pack is being prepared", async () => {
+  vi.mocked(AttendantService.GetSnapshot).mockResolvedValue({
+    ...EMPTY_ATTENDANT, mode: "loading", preparing: { linesReady: 12, linesTotal: 28 },
+  });
+  view();
+  await act(async () => { await Promise.resolve(); });
+  const status = screen.getByRole("status");
+  expect(status).toHaveTextContent("Preparing announcements (12/28)");
+  expect(status).not.toHaveTextContent(en["attendant.mode.loading"]);
+});

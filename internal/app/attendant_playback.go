@@ -30,6 +30,7 @@ func (e *attendant) play(gen int, f phaseFire, during string) {
 	pack, arrival := e.pack, e.packArrival
 	e.mu.Unlock()
 	if pack == nil {
+		e.holdUntilLoaded(gen, f, during)
 		return
 	}
 

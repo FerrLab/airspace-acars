@@ -566,6 +566,7 @@
   "attendant.mode.client": "Diffusion du pack d'annonces de votre compagnie.",
   "attendant.mode.legacy": "Le serveur de votre compagnie diffuse lui-même les annonces (ancien Airspace).",
   "attendant.mode.no_booking": "Aucune réservation active : pas d'annonces pour ce vol.",
+  "attendant.preparing": "Préparation des annonces ({{ready}}/{{total}})…",
   "attendant.loadError": "Impossible de lire le pack d'annonces ({{error}}). Nouvel essai.",
   "attendant.disabled": "L'équipage de cabine est désactivé.",
   "attendant.map": "Profil de vol",

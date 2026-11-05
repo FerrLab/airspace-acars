@@ -88,6 +88,8 @@ export interface AttendantSnapshot {
   seatbelt: { seatbeltSign: boolean; seatbeltKnown: boolean };
   seatbelts: { on: number; off: number };
   error: string;
+  /** The server's progress voicing the pack while it answers 202; null otherwise. */
+  preparing: { linesReady: number; linesTotal: number } | null;
 }
 
 const GO_ZERO_TIME = "0001-01-01T00:00:00Z";
@@ -106,6 +108,7 @@ export const EMPTY_ATTENDANT: AttendantSnapshot = {
   seatbelt: { seatbeltSign: false, seatbeltKnown: false },
   seatbelts: { on: 0, off: 0 },
   error: "",
+  preparing: null,
 };
 
 // --- the phase map ---------------------------------------------------------

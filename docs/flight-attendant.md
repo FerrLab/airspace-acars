@@ -13,7 +13,7 @@ aircraft gets there. The contract with the server is in
 | `client` | `GET /speech/pack` answered with a pack | This ACARS detects the phases and plays the pack |
 | `legacy` | The route is missing (404 without "No active booking", or 405) | The old `GET /sound` poll, every ten seconds, as before |
 | `no_booking` | 404 "No active booking" | Nothing |
-| `loading` | Before the pack is in, and while it is retried after a failure (every 30 s) | Nothing yet |
+| `loading` | Before the pack is in: while the server prepares it (202, polled every `retry_after`), and while it is retried after a failure (every 30 s) | Nothing yet; phases that fire wait for the pack |
 | `idle` | No flight | Nothing |
 
 `POST /start` carries `"speech": "client"`, so a server that knows the field
@@ -54,6 +54,29 @@ Universal Announcer (manual v0.9.9.7), with the deviations noted.
 
 Each phase fires once per flight except the seatbelt announcements and a
 diversion. Phases queue and never cut each other off.
+
+## Loading the pack
+
+`GET /speech/pack` may answer **202 Accepted** while the server is still
+voicing the booking's lines:
+`{"data":{"status":"preparing","lines_ready":12,"lines_total":28,"retry_after":10}}`.
+The server answers 200 with the pack once every playable non-dynamic line has
+its audio, or 120 s after the booking's first request, whichever comes first;
+a request with `?arrival=` (a diversion) never gets a 202. The ACARS
+(`fetchSpeechPack` and `load` in `internal/app/attendant_pack.go` and
+`attendant_load.go`):
+
+- asks again after `data.retry_after` seconds, 10 s when it is missing,
+  clamped to 2–60 s. The server's `Retry-After` header carries the same
+  number, but `DoRequest` returns only the body;
+- shows *Preparing announcements (12/28)…* on the tab instead of an error,
+  logs at `Debug` and counts no failure;
+- keeps the phases that fire meanwhile (boarding fires on the first reading)
+  and plays them once the pack is in, if the flight is still at the step they
+  fired at. One the flight has moved past is dropped.
+
+Any other failure (the network, a 5xx, a body that is not a pack) is retried
+every 30 s and shown as an error, as before.
 
 ## Playback
 
