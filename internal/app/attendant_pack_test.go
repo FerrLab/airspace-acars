@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"airspace-acars/internal/domain"
 
@@ -171,4 +172,54 @@ func TestLineQueryEncodesOnlyWhatIsSet(t *testing.T) {
 	assert.Equal(t, "", lineQuery{}.encode())
 	assert.Equal(t, "?arrival=SBKP&landing=smooth&service=2",
 		lineQuery{arrival: "SBKP", service: 2, landing: "smooth"}.encode())
+}
+
+// A 202 for the pack means the server is still voicing it: the ACARS asks
+// again after the pause the server names, and shows how far it has got.
+func TestAPackBeingPreparedSaysWhenToAskAgain(t *testing.T) {
+	cases := []struct {
+		name       string
+		body       string
+		wait       time.Duration
+		ready, all int
+	}{
+		{"the server names the pause",
+			`{"message":"The speech pack is being prepared","data":{"status":"preparing","lines_ready":12,"lines_total":28,"retry_after":10}}`,
+			10 * time.Second, 12, 28},
+		{"the pause as a string", `{"data":{"status":"preparing","lines_ready":"3","lines_total":"9","retry_after":"15"}}`,
+			15 * time.Second, 3, 9},
+		{"no pause given", `{"data":{"status":"preparing","lines_ready":0,"lines_total":5}}`, packPreparingDefault, 0, 5},
+		{"a body that is not JSON", `accepted`, packPreparingDefault, 0, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			api := newSpeechAPI(map[string]reply{"GET " + speechPackPath: {202, c.body}})
+			pack, err := fetchSpeechPack(api, "")
+			assert.Nil(t, pack)
+			var p *packPreparing
+			require.True(t, errors.As(err, &p), "a 202 is read as a failure (%v); the pilot sees an error while the pack is voiced", err)
+			assert.Equal(t, c.wait, p.retryAfter)
+			assert.Equal(t, c.ready, p.linesReady)
+			assert.Equal(t, c.all, p.linesTotal)
+		})
+	}
+}
+
+// The pause the server asks for is bounded, so a bad number neither spins
+// the worker nor leaves the cabin silent past the server's own two minutes.
+func TestThePreparingPauseIsBounded(t *testing.T) {
+	cases := []struct {
+		asked, want time.Duration
+	}{
+		{0, packPreparingDefault},
+		{-5 * time.Second, packPreparingDefault},
+		{time.Millisecond, packPreparingMin},
+		{packPreparingMin, packPreparingMin},
+		{10 * time.Second, 10 * time.Second},
+		{packPreparingMax, packPreparingMax},
+		{time.Hour, packPreparingMax},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, clampPreparing(c.asked), "asked to wait %v", c.asked)
+	}
 }

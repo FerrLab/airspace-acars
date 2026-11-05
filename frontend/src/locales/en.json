@@ -566,6 +566,7 @@
   "attendant.mode.client": "Playing your airline's speech pack.",
   "attendant.mode.legacy": "Your airline's server plays the announcements itself (older Airspace).",
   "attendant.mode.no_booking": "No active booking, so there are no announcements for this flight.",
+  "attendant.preparing": "Preparing announcements ({{ready}}/{{total}})…",
   "attendant.loadError": "The speech pack could not be read ({{error}}). Trying again.",
   "attendant.disabled": "The flight attendant is off.",
   "attendant.map": "Flight profile",

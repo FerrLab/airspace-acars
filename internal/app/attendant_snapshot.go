@@ -44,6 +44,10 @@ func (e *attendant) Snapshot() domain.AttendantSnapshot {
 			Off: e.counts[domain.PhaseSeatbeltOff],
 		},
 	}
+	if e.preparing != nil {
+		p := *e.preparing
+		snap.Preparing = &p
+	}
 	if e.pack != nil && e.pack.Flight.Arrival != "" {
 		snap.Arrival = e.pack.Flight.Arrival
 	}

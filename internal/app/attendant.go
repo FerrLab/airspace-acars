@@ -105,6 +105,15 @@ type attendant struct {
 	// loadFailures how many reads in a row have failed.
 	loadErr      string
 	loadFailures int
+	// preparing is the server's progress while it answers 202 for the
+	// pack, nil otherwise.
+	preparing *domain.AttendantPreparing
+	// early holds the phases that fired before the pack was in, to play
+	// once it is: boarding fires on the first reading, and the server may
+	// take up to two minutes to prepare the pack. Only those fired at the
+	// flight's current step are kept; a welcome aboard heard during the
+	// pushback is worse than none.
+	early []attendantJob
 
 	bookingID string
 	start     time.Time
@@ -202,7 +211,7 @@ func (e *attendant) Start(bookingID string, start time.Time) {
 	e.gen++
 	gen := e.gen
 	e.bookingID, e.start = bookingID, start
-	e.mode, e.loadErr, e.loadFailures = domain.AttendantLoading, "", 0
+	e.mode, e.loadErr, e.loadFailures, e.preparing, e.early = domain.AttendantLoading, "", 0, nil, nil
 	e.packArrival, e.pack = "", nil
 	e.detector = newPhaseDetector(phaseConfig{start: start, landing: domain.DefaultLandingThresholds})
 	e.prepared, e.prefetch = map[string][]domain.SoundInstruction{}, nil
@@ -345,8 +354,8 @@ func (e *attendant) run(gen int, jobs <-chan attendantJob, stop <-chan struct{})
 
 	var retry <-chan time.Time
 	do := func(j attendantJob) {
-		if e.handle(j) {
-			retry = time.After(packRetryEvery)
+		if wait := e.handle(j); wait > 0 {
+			retry = time.After(wait)
 		}
 	}
 	for {
@@ -375,10 +384,11 @@ func (e *attendant) run(gen int, jobs <-chan attendantJob, stop <-chan struct{})
 	}
 }
 
-// handle does one job and reports whether the pack must be read again later.
-func (e *attendant) handle(j attendantJob) (retry bool) {
+// handle does one job and returns how long to wait before the pack is read
+// again, 0 when it need not be.
+func (e *attendant) handle(j attendantJob) (retryIn time.Duration) {
 	if !e.isGen(j.gen) {
-		return false
+		return 0
 	}
 	switch j.kind {
 	case jobLoad:
@@ -395,7 +405,7 @@ func (e *attendant) handle(j attendantJob) (retry bool) {
 	case jobArrival:
 		e.divert(j.gen, j.arrival)
 	}
-	return false
+	return 0
 }
 
 // settled counts an announcement job done, and lets the boarding music

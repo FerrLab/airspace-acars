@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"airspace-acars/internal/domain"
 )
@@ -40,6 +41,70 @@ var errLineUnvoiced = errors.New("line cannot be voiced")
 // text-to-speech provider failed or timed out, or is still at work. Unlike
 // errLineUnvoiced, the line is worth asking for again.
 var errLineNotReady = errors.New("line audio is not ready on the server")
+
+// packPreparing is a 202 from GET /speech/pack: the server is still voicing
+// the booking's lines and asks to be asked again after retryAfter. It is part
+// of a normal start, not a failure. The server gives up waiting on its
+// text-to-speech provider 120 s after the booking's first request, so a
+// flight sees a few of these at most.
+type packPreparing struct {
+	retryAfter time.Duration
+	linesReady int
+	linesTotal int
+}
+
+func (p *packPreparing) Error() string {
+	return fmt.Sprintf("speech pack is being prepared (%d/%d lines)", p.linesReady, p.linesTotal)
+}
+
+// The pause before a pack the server is still preparing is asked for again.
+// The server says how long in data.retry_after (10 s today); the bounds keep
+// a server that says 0 from turning the worker into a busy loop, and one
+// that says an hour from leaving the cabin silent past its own 120 s limit.
+const (
+	packPreparingDefault = 10 * time.Second
+	packPreparingMax     = 60 * time.Second
+)
+
+// packPreparingMin is the shortest such pause; a variable so a test can poll
+// without waiting it out.
+var packPreparingMin = 2 * time.Second
+
+// parsePreparing reads the body of a 202 for the pack. It never fails: a
+// body it cannot read still means "ask again", after the default pause.
+//
+// The server also sends the pause as a Retry-After header, but
+// AirspaceAPI.DoRequest returns only the body and the status; the body
+// carries the same number.
+func parsePreparing(body []byte) *packPreparing {
+	var p struct {
+		LinesReady flexFloat `json:"lines_ready"`
+		LinesTotal flexFloat `json:"lines_total"`
+		RetryAfter flexFloat `json:"retry_after"`
+	}
+	if raw, err := unwrapData(body); err == nil {
+		_ = json.Unmarshal(raw, &p) // a body that is not this shape still means wait
+	}
+	return &packPreparing{
+		retryAfter: clampPreparing(time.Duration(float64(p.RetryAfter) * float64(time.Second))),
+		linesReady: int(p.LinesReady),
+		linesTotal: int(p.LinesTotal),
+	}
+}
+
+// clampPreparing bounds the pause the server asked for; none (0 or less)
+// is packPreparingDefault.
+func clampPreparing(d time.Duration) time.Duration {
+	switch {
+	case d <= 0:
+		return packPreparingDefault
+	case d < packPreparingMin:
+		return packPreparingMin
+	case d > packPreparingMax:
+		return packPreparingMax
+	}
+	return d
+}
 
 // reasonNotGenerated is the reason a 422 for a line gives when the audio
 // could not be produced yet, as opposed to a line that can never play.
@@ -250,7 +315,7 @@ func refusalOf(body []byte) error {
 // fetchSpeechPack reads the booking's pack, at another arrival airport when
 // arrival is set. It tells an old server (errSpeechUnsupported) from a pilot
 // without a booking (errNoBooking): both answer 404, but only the second says
-// so in its message.
+// so in its message. A 202 is a *packPreparing: the pack is not voiced yet.
 func fetchSpeechPack(api AirspaceAPI, arrival string) (*speechPack, error) {
 	path := speechPackPath
 	if arrival != "" {
@@ -265,6 +330,8 @@ func fetchSpeechPack(api AirspaceAPI, arrival string) (*speechPack, error) {
 		return nil, errNoBooking
 	case status == http.StatusNotFound || status == http.StatusMethodNotAllowed:
 		return nil, errSpeechUnsupported
+	case status == http.StatusAccepted:
+		return nil, parsePreparing(body)
 	}
 	if err := domain.NewStatusError(http.MethodGet, speechPackPath, status, body); err != nil {
 		return nil, err

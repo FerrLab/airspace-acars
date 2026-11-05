@@ -566,6 +566,7 @@
   "attendant.mode.client": "Tocando o pacote de anúncios da sua companhia.",
   "attendant.mode.legacy": "O servidor da sua companhia toca os anúncios (Airspace antigo).",
   "attendant.mode.no_booking": "Sem reserva ativa, este voo não tem anúncios.",
+  "attendant.preparing": "Preparando os anúncios ({{ready}}/{{total}})…",
   "attendant.loadError": "Não foi possível ler o pacote de anúncios ({{error}}). Tentando de novo.",
   "attendant.disabled": "O comissário de bordo está desligado.",
   "attendant.map": "Perfil do voo",
