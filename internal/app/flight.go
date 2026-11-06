@@ -144,12 +144,13 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 	}
 	if !fd.Sensors.OnGround {
 		err = fmt.Errorf("aircraft must be on the ground to start a flight")
-		span.Fail(err)
+		span.Expected(err)
 		return err
 	}
 	if fd.Attitude.GS >= 1.0 {
 		err = fmt.Errorf("aircraft must be stationary to start a flight")
-		span.Fail(err)
+		// The pilot pressed start while rolling: expected input, not a fault (AIRSPACE-ACARS-P).
+		span.Expected(err)
 		return err
 	}
 

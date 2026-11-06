@@ -29,6 +29,11 @@ const (
 // playback: GET /speech/pack is not a route there.
 var errSpeechUnsupported = errors.New("server does not serve speech packs")
 
+// errEmptyPack means the server answered 200 with a pack that has no phases:
+// the airline has not set up announcements for this booking yet (AIRSPACE-ACARS-N).
+// That is a configuration state to wait out, not a fault of the ACARS.
+var errEmptyPack = errors.New("parse speech pack: no phases")
+
 // errLineGone means a line id is no longer in the booking's resolved pack,
 // which happens when the pack changed under the flight.
 var errLineGone = errors.New("line is not part of the active speech pack")
@@ -254,7 +259,7 @@ func parseSpeechPack(body []byte) (*speechPack, error) {
 		return nil, fmt.Errorf("parse speech pack: %w", err)
 	}
 	if len(p.Phases) == 0 {
-		return nil, errors.New("parse speech pack: no phases")
+		return nil, errEmptyPack
 	}
 	p.lines = map[string][]speechLine{}
 	for _, ph := range p.Phases {
