@@ -97,6 +97,15 @@ func TestParseSpeechPackRejectsGarbage(t *testing.T) {
 	}
 }
 
+// A pack without phases is the airline not having set announcements up: it
+// is recognisable by errors.Is so the loader keeps it out of the error tracker.
+func TestAnEmptyPackIsRecognisedAsSuch(t *testing.T) {
+	_, err := parseSpeechPack([]byte(`{"data":{"phases":[]}}`))
+	assert.ErrorIs(t, err, errEmptyPack)
+	_, err = parseSpeechPack([]byte(`{"data":"nope"}`))
+	assert.NotErrorIs(t, err, errEmptyPack)
+}
+
 // An old server and a pilot without a booking both answer 404; only the
 // second says so. Every other failure is an error to retry, never a mode.
 func TestFetchSpeechPackTellsTheAnswersApart(t *testing.T) {

@@ -53,7 +53,7 @@ func (e *attendant) load(gen int) (retryIn time.Duration) {
 		e.loadFailures++
 		// Retried every packRetryEvery for the whole flight, so only the
 		// first failure of a streak is worth reporting.
-		if observability.Transient(err) || e.loadFailures > 1 {
+		if observability.Transient(err) || errors.Is(err, errEmptyPack) || e.loadFailures > 1 {
 			span.Expected(err)
 			slog.Debug("attendant: speech pack unavailable; will retry", "error", err)
 		} else {
