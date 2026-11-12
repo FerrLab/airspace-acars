@@ -1,9 +1,10 @@
 # Aircraft State Client: the ACARS keeps the aircraft as the airline says it is
 
-Status: proposed. Airspace side: FerrLab/airspace,
-`docs/plans/2026-11-12-aircraft-state-client-design.md`, branch
-`claude/compassionate-darwin-sxliyf`. That note owns the API contract; the copy
-below is for reading convenience.
+Status: accepted, not started. Airspace side: FerrLab/airspace,
+`docs/plans/2026-11-12-aircraft-state-client-design.md`. That note owns the
+API contract; the copy below is for reading convenience. The
+[implementation plan](#implementation-plan) at the end is the order to build
+it in.
 
 ## Goal
 
@@ -22,6 +23,38 @@ active defect is held in the position its MEL procedure prescribes, e.g.
 "PACK 1 pushbutton OFF". The design leaves room for the second kind, **wear
 levels** (brake and tyre wear, oil quantity and the like, set at the start of
 a flight and read back at the end), sketched under [Phase 3](#phase-3-wear-levels).
+
+## Background: what we found before deciding (2026-11-12)
+
+- **The ACARS reads from the sim and never writes to it.** Today:
+  - `internal/simconnect/simconnect.go` loads no `SetDataOnSimObject`,
+    `MapClientEventToSimEvent` or `TransmitClientEvent`;
+  - profile sources (`internal/profiles/schema.go`) only feed data points we
+    read;
+  - `cmd/hubhop/gen.go` drops HubHop input presets (line 65, `Output` only)
+    and K: events (line 178).
+- **Fenix cockpit switches are local variables.** MobiFlight hardware panels
+  drive them by writing those LVars, and HubHop's Fenix input presets are
+  mostly single assignments like `1 (>L:S_OH_…)`. Holding a switch from
+  outside is therefore a known-good path. The ACARS already reads `L:`
+  variables through SimConnect (`internal/adapters/simconnect/profile.go`).
+- **Real failures are not reachable, and not wanted.** Fenix runs its systems
+  in its own process and ignores the stock MSFS failure events. Its failure
+  system has no public interface. Only INOP (placarded controls) is in scope,
+  and that needs none of it.
+- **TechLog cannot be integrated.** The maintenance add-on for
+  Fenix/PMDG/FSLabs/iniBuilds, by NaughtyPickle, published as
+  `ersindevrim/TechLog-releases`, is closed-source freeware. It has no API,
+  no documented file format and no hooks. Its LAN page on port 7720 is a
+  tablet UI, and its virtual-airline mode talks only to its own host
+  program. It also competes with Airspace's MEL rather than complementing
+  it. We build our own.
+- **Coexistence.** A pilot may run TechLog, a MobiFlight panel or another
+  add-on that holds the same switch. The enforcer's `overridden` rule exists
+  for that case. The pilot docs should say to use one tool per flight.
+- **GSX plays no part.** It handles ground services, not aircraft systems.
+  At most, a later item could check that an APU-INOP flight called for
+  ground power or an air start unit, which the GSX client already reads.
 
 ## Out of scope
 
@@ -492,6 +525,131 @@ comes before this phase is planned in detail.
   - a fight with a MobiFlight panel ends in `overridden`.
 
   Recorded in the PR.
+
+## Implementation plan
+
+The order to build it in. Each step is its own PR with its own tests, per
+AGENTS.md §8.3. Steps marked **(airspace)** are in FerrLab/airspace and are
+detailed in its note.
+
+### Step 0: spike on Windows (no PR, a written result)
+
+Before writing production code, prove the one unknown. On a Windows machine
+with MSFS and the Fenix A320, a throwaway program built from
+`internal/simconnect` should:
+
+1. Add `SimConnect_SetDataOnSimObject`.
+2. Define one `L:` variable for a latching overhead pushbutton taken from
+   HubHop's Fenix input presets (a pack, for example).
+3. Write 0, then 1, and read both the variable and the related annunciator
+   back.
+
+Record in this note which variables move the switch, which light confirms
+it, and whether a panel-state load (cold and dark, turnaround) overwrites the
+value and after how long. That measurement sets `settleDelay`.
+
+If the write does not move the switch, stop. The fallback (the MobiFlight
+WASM module) changes the adapter section of this design.
+
+### Step 1: catalogue and export
+
+- `internal/aircraftstate/catalog.go`: schema, `//go:embed`, `Load`,
+  `Validate`.
+- `internal/aircraftstate/catalog/fenix-a32x.json`: the items the spike
+  verified. Start with packs, APU bleed, one fuel pump, weather radar and
+  one generator; add only verified items.
+- `internal/aircraftstate/export.go` and `cmd/aircraftstate` with the
+  `export` subcommand. Commit the generated `catalog.json` with a golden
+  test.
+- Tests:
+  - every file validates;
+  - unknown profile ID refused;
+  - missing position refused;
+  - duplicate key refused;
+  - retired item exported with `retired`;
+  - stale export fails.
+- Hand the export to **(airspace)** step A.
+
+### Step 2: resolve and enforce (pure)
+
+- `domain`: `SimVarRef`, `SimWrite`, `AircraftState`, `AircraftStateSnapshot`.
+- `internal/aircraftstate/resolve.go`: one test per reason (`no_model`,
+  `not_mapped`, `unknown_item`, `placard`, `no_part`) and the happy path.
+- `internal/aircraftstate/enforcer.go`: a fake-clock test for every
+  transition in the diagram, a test that nothing is written before
+  `settleDelay`, and one that `overridden` stops writes.
+- `internal/aircraftstate/report.go`: building the report from the targets.
+
+### Step 3: write path in the adapters
+
+- `internal/simconnect`: `SetDataOnSimObject` proc and method.
+- `internal/adapters/simconnect`:
+  - `WatchState`, `StateReadings` and `WriteState`, with a data definition
+    separate from the profile's;
+  - writes queued to the dispatch thread;
+  - no-op stubs in `adapter_stub.go`.
+- `internal/adapters/xplane`: `DREF` write, readbacks in the `RREF`
+  subscription. Test the packet bytes.
+- Must still build on Linux. Say in the PR that the Windows path was tested
+  by hand, with what.
+
+### Step 4: the client in `app`
+
+**(airspace)** step C (`GET /aircraft-state`) must be deployed, or stubbed
+in tests.
+
+- `internal/app/aircraft_state_api.go`:
+  - fetch and parse;
+  - one test per accepted variant (numeric or string IDs, `data`-wrapped);
+  - 404 → empty state;
+  - garbage → error.
+- `internal/app/aircraft_state.go`, `aircraftStateClient`:
+  - fetch on dashboard and at `StartFlight`, frozen for the flight;
+  - ticker, gates, stop channel, `observability.Recover`;
+  - `stateAware` assertion on the adapter.
+- `services.go`: `GetAircraftState`, `RefreshAircraftState`.
+- `main.go`: register `aircraft-state` with `*domain.AircraftStateSnapshot`.
+- A beta switch in Settings, off by default.
+- Tests against fake `stateAware` and `AirspaceAPI`:
+  - writes only with every gate open;
+  - nothing written after stop;
+  - a profile change re-plans from the same frozen state;
+  - a refresh during the flight changes the snapshot but not the writes.
+- `docs/observability.md`: the new spans and counters.
+
+### Step 5: the Aircraft tab
+
+- `frontend/src/lib/aircraft-state.ts` and its test.
+- `frontend/src/components/aircraft-state-tab.tsx` and
+  `components/aircraft-state/*`, each with tests.
+- Sidebar entry with the INOP count, and the dashboard summary.
+- `aircraftState.*` keys in `en`, `es`, `pt`, `fr`; prefix added to
+  `locale-parity.test.ts`.
+- Mock in `frontend/src/__mocks__/` for the new bindings.
+
+### Step 6: reporting
+
+**(airspace)** step E must be deployed first.
+
+- SQLite table `aircraft_state_report` and retry with backoff, tested with
+  shortened timings.
+- `POST /aircraft-state/report` while flying; `aircraft_state` in the
+  `/finish` body.
+
+### Step 7: docs and release
+
+- `docs/aircraft-state.md`: the pilot-facing feature doc. It covers what the
+  tab means and the one-tool-per-flight advice.
+- README feature list.
+- Remove the beta switch once a few airlines have flown with it.
+
+### Later
+
+- Wear levels (phase 3): needs research first into which values each add-on
+  lets us write.
+- More models: ToLiss on X-Plane first; FSLabs once its cockpit variables
+  are known.
+- A HubHop step that drafts recipes from input presets.
 
 ## Open questions
 
