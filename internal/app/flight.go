@@ -136,20 +136,22 @@ func (a *App) StartFlight(callsign, departure, arrival, bookingID string) error 
 		"flight.booking_id", bookingID)
 	defer span.Finish()
 
+	// The three refusals below are the pilot pressing Start too early, not a
+	// fault: they go back to the UI without a Sentry event (AIRSPACE-ACARS-P).
 	fd, err := a.GetFlightDataNow()
 	if err != nil {
 		err = fmt.Errorf("simulator not connected")
-		span.Fail(err)
+		span.Expected(err)
 		return err
 	}
 	if !fd.Sensors.OnGround {
 		err = fmt.Errorf("aircraft must be on the ground to start a flight")
-		span.Fail(err)
+		span.Expected(err)
 		return err
 	}
 	if fd.Attitude.GS >= 1.0 {
 		err = fmt.Errorf("aircraft must be stationary to start a flight")
-		span.Fail(err)
+		span.Expected(err)
 		return err
 	}
 

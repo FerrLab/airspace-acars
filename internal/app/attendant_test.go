@@ -528,3 +528,18 @@ func TestAudioDownloadRefusesAnErrorPage(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, strings.HasSuffix(name, ".mp3"))
 }
+
+// Pressing Start while the aircraft is still rolling is refused with a
+// message the pilot can act on, and the booking is never started.
+func TestStartFlightRefusesAMovingAircraft(t *testing.T) {
+	api := newSpeechAPI(packRoutes())
+	a, _, sim := newAutoApp(t, &routeAPI{})
+	a.Airspace = api
+	fd := atTheGate()
+	fd.Attitude.GS = 12
+	sim.set(fd)
+
+	err := a.StartFlight("AZU4512", "SBGR", "SBRJ", "42")
+	require.EqualError(t, err, "aircraft must be stationary to start a flight")
+	assert.Empty(t, api.started, "a refused start must not reach the server")
+}
