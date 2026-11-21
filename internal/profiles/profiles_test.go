@@ -1007,7 +1007,7 @@ func TestAutopilotValueBindingsAreStable(t *testing.T) {
 			"autopilot.vs": "MD11_AFS_VS", "autopilot.speed": "MD11_AFS_SPD",
 		},
 		"fbw-a32nx": {
-			"autopilot.heading": "A32NX_AUTOPILOT_HEADING_SELECTED",
+			"autopilot.heading":  "A32NX_AUTOPILOT_HEADING_SELECTED",
 			"autopilot.altitude": "A32NX_FCU_ALT_SELECTED",
 		},
 		"inibuilds-a350": {
