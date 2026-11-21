@@ -39,6 +39,16 @@ function view() {
   return render(<I18nextProvider i18n={i18n}><AttendantTab volume={70} onVolumeChange={() => {}} /></I18nextProvider>);
 }
 
+// Until GetSnapshot resolves, the tab draws the empty snapshot: the map and a
+// row for every phase are already there, all pending. A findBy* on either
+// returns that placeholder at once, and the assertions after it race the
+// mocked reply; a loaded CI runner read "CruisePending". Wait for text that
+// only the loaded snapshot has.
+async function viewLoaded() {
+  view();
+  await screen.findByText("The captain has switched on the seatbelt sign.");
+}
+
 beforeEach(() => {
   vi.spyOn(AttendantService, "GetSnapshot").mockResolvedValue(inCruise);
 });
@@ -53,8 +63,8 @@ it("shows what is playing, in which language and voice, and why", async () => {
 });
 
 it("draws the phase map with each marker's state and the aircraft", async () => {
-  view();
-  const map = await screen.findByRole("group", { name: en["attendant.map"] });
+  await viewLoaded();
+  const map = screen.getByRole("group", { name: en["attendant.map"] });
   expect(within(map).getByRole("img", { name: "Boarding: Played" })).toBeInTheDocument();
   expect(within(map).getByRole("img", { name: "Pushback: Silent" })).toBeInTheDocument();
   expect(within(map).getByRole("img", { name: "Meal 1: Pending" })).toBeInTheDocument();
@@ -63,8 +73,8 @@ it("draws the phase map with each marker's state and the aircraft", async () => 
 });
 
 it("lists the phases with their lines, time and reason, and the history", async () => {
-  view();
-  const cruise = await screen.findByRole("listitem", { name: "Cruise" });
+  await viewLoaded();
+  const cruise = screen.getByRole("listitem", { name: "Cruise" });
   expect(cruise).toHaveTextContent("Lines: 1");
   expect(cruise).toHaveTextContent("Level at 36,000 ft for 120 s");
   expect(screen.getByText("Welcome aboard")).toBeInTheDocument();
@@ -77,8 +87,7 @@ it("sends the pilot's controls to the attendant", async () => {
   const stop = vi.spyOn(AttendantService, "StopAll");
   const play = vi.spyOn(AttendantService, "PlayPhase");
   const enable = vi.spyOn(AttendantService, "SetEnabled");
-  view();
-  await screen.findByText("The captain has switched on the seatbelt sign.");
+  await viewLoaded();
 
   fireEvent.click(screen.getByRole("button", { name: en["attendant.skip"] }));
   fireEvent.click(screen.getByRole("button", { name: en["attendant.stop"] }));
