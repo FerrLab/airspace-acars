@@ -1007,7 +1007,7 @@ func TestAutopilotValueBindingsAreStable(t *testing.T) {
 			"autopilot.vs": "MD11_AFS_VS", "autopilot.speed": "MD11_AFS_SPD",
 		},
 		"fbw-a32nx": {
-			"autopilot.heading": "A32NX_AUTOPILOT_HEADING_SELECTED",
+			"autopilot.heading":  "A32NX_AUTOPILOT_HEADING_SELECTED",
 			"autopilot.altitude": "A32NX_FCU_ALT_SELECTED",
 		},
 		"inibuilds-a350": {
@@ -1093,6 +1093,41 @@ func TestSeatbeltSignFollowsTheAircraftSwitch(t *testing.T) {
 
 		simOnly := reg.Resolve(ctx, []SourceKind{SourceSimVar})
 		b = find(simOnly, "cabin.seatbeltSwitch")
+		fd := &domain.FlightData{Position: domain.PositionData{Altitude: 35000}}
+		simOnly.Apply(fd, map[string]float64{b.Sources[0].Key: 1})
+		assert.True(t, fd.Cabin.SeatbeltSign, "the stock on/off variable must read as ON, never as AUTO")
+	})
+
+	// The iFly never moves CABIN SEATBELTS ALERT SWITCH, so without its own
+	// switch the sign read OFF with the overhead set to ON.
+	t.Run("iFly 737 MAX reads its overhead switch and falls back to the stock variable", func(t *testing.T) {
+		ctx := Context{AircraftName: "iFly 737 MAX 8", AircraftType: "B38M", Simulator: SimSimConnect, EngineCount: 2}
+		plan := reg.Resolve(ctx, lvars)
+		b := find(plan, "cabin.seatbeltSwitch")
+		require.Len(t, b.Sources, 1)
+		assert.Equal(t, "VC_Fasten_Belts_SW_VAL", b.Sources[0].Name)
+		key := b.Sources[0].Key
+		for _, tc := range []struct {
+			name     string
+			raw, alt float64
+			want     bool
+		}{
+			{"OFF", 0, 2000, false},
+			{"AUTO below 10,000 ft", 10, 2000, true},
+			{"AUTO above 10,000 ft", 10, 35000, false},
+			{"ON at cruise", 20, 35000, true},
+			{"between AUTO and ON", 15, 35000, true},
+		} {
+			fd := &domain.FlightData{Position: domain.PositionData{Altitude: tc.alt}}
+			plan.Apply(fd, map[string]float64{key: tc.raw})
+			assert.Equal(t, tc.want, fd.Cabin.SeatbeltSign, "%s: switch %v at %v ft", tc.name, tc.raw, tc.alt)
+			assert.True(t, fd.Cabin.SeatbeltKnown, "%s: the sign was read, so it is known", tc.name)
+		}
+
+		simOnly := reg.Resolve(ctx, []SourceKind{SourceSimVar})
+		b = find(simOnly, "cabin.seatbeltSwitch")
+		require.Len(t, b.Sources, 1)
+		assert.Equal(t, "CABIN SEATBELTS ALERT SWITCH", b.Sources[0].Name)
 		fd := &domain.FlightData{Position: domain.PositionData{Altitude: 35000}}
 		simOnly.Apply(fd, map[string]float64{b.Sources[0].Key: 1})
 		assert.True(t, fd.Cabin.SeatbeltSign, "the stock on/off variable must read as ON, never as AUTO")
