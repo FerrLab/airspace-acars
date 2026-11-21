@@ -1098,6 +1098,41 @@ func TestSeatbeltSignFollowsTheAircraftSwitch(t *testing.T) {
 		assert.True(t, fd.Cabin.SeatbeltSign, "the stock on/off variable must read as ON, never as AUTO")
 	})
 
+	// The iFly never moves CABIN SEATBELTS ALERT SWITCH, so without its own
+	// switch the sign read OFF with the overhead set to ON.
+	t.Run("iFly 737 MAX reads its overhead switch and falls back to the stock variable", func(t *testing.T) {
+		ctx := Context{AircraftName: "iFly 737 MAX 8", AircraftType: "B38M", Simulator: SimSimConnect, EngineCount: 2}
+		plan := reg.Resolve(ctx, lvars)
+		b := find(plan, "cabin.seatbeltSwitch")
+		require.Len(t, b.Sources, 1)
+		assert.Equal(t, "VC_Fasten_Belts_SW_VAL", b.Sources[0].Name)
+		key := b.Sources[0].Key
+		for _, tc := range []struct {
+			name     string
+			raw, alt float64
+			want     bool
+		}{
+			{"OFF", 0, 2000, false},
+			{"AUTO below 10,000 ft", 10, 2000, true},
+			{"AUTO above 10,000 ft", 10, 35000, false},
+			{"ON at cruise", 20, 35000, true},
+			{"between AUTO and ON", 15, 35000, true},
+		} {
+			fd := &domain.FlightData{Position: domain.PositionData{Altitude: tc.alt}}
+			plan.Apply(fd, map[string]float64{key: tc.raw})
+			assert.Equal(t, tc.want, fd.Cabin.SeatbeltSign, "%s: switch %v at %v ft", tc.name, tc.raw, tc.alt)
+			assert.True(t, fd.Cabin.SeatbeltKnown, "%s: the sign was read, so it is known", tc.name)
+		}
+
+		simOnly := reg.Resolve(ctx, []SourceKind{SourceSimVar})
+		b = find(simOnly, "cabin.seatbeltSwitch")
+		require.Len(t, b.Sources, 1)
+		assert.Equal(t, "CABIN SEATBELTS ALERT SWITCH", b.Sources[0].Name)
+		fd := &domain.FlightData{Position: domain.PositionData{Altitude: 35000}}
+		simOnly.Apply(fd, map[string]float64{b.Sources[0].Key: 1})
+		assert.True(t, fd.Cabin.SeatbeltSign, "the stock on/off variable must read as ON, never as AUTO")
+	})
+
 	t.Run("Zibo reads its own switch with AUTO", func(t *testing.T) {
 		plan := reg.Resolve(Context{AircraftName: "Boeing 737-800X", AircraftType: "B738", Simulator: SimXPlane, EngineCount: 2}, []SourceKind{SourceDataRef})
 		b := find(plan, "cabin.seatbeltSwitch")

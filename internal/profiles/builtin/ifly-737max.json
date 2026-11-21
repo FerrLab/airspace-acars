@@ -1,8 +1,8 @@
 {
   "id": "ifly-737max",
   "name": "iFly 737 MAX",
-  "description": "iFly 737 MAX 8 on MSFS. Reads CMD A/B and LNAV from the iFly annunciators, and the selected altitude from the third autopilot altitude slot the aircraft actually drives.",
-  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. AUTOPILOT ALTITUDE LOCK VAR:3 is a stock simulation variable, so the selected altitude is corrected even on a simulator build that cannot read local variables.",
+  "description": "iFly 737 MAX 8 on MSFS. Reads CMD A/B and LNAV from the iFly annunciators, the selected altitude from the third autopilot altitude slot the aircraft actually drives, and the seatbelt sign from the overhead FASTEN BELTS switch.",
+  "notes": "Variable names cross-checked against the MobiFlight HubHop community database (hubhop.mobiflight.com). SimConnect reads local variables directly since Sim Update 12, so these bindings are live; the stock simulation variable stays behind each one as the fallback for older simulator builds. AUTOPILOT ALTITUDE LOCK VAR:3 is a stock simulation variable, so the selected altitude is corrected even on a simulator build that cannot read local variables. The iFly does not move CABIN SEATBELTS ALERT SWITCH, so the seatbelt sign is read from VC_Fasten_Belts_SW_VAL, 0 OFF, 10 AUTO, 20 ON, with AUTO lit below 10,000 ft. HubHop lists only the switch's input triggers (16 and 17 on VC_Miscellaneous_trigger_VAL); the readable name comes from community iFly variable dumps, and the order of positions from those triggers being named seatbelt on and off and raising and lowering the value. Not yet confirmed against a running aircraft. The stock variable stays behind it for simulator builds that cannot read local variables, read as off or on. The aircraft also publishes VC_Fasten_Belts_Light_L_On_VAL, which may carry its own AUTO logic; its meaning is unverified, so it is not used.",
   "priority": 100,
   "match": {
     "all": [
@@ -114,6 +114,38 @@
         "name": "AUTOPILOT ALTITUDE LOCK VAR:3",
         "unit": "feet"
       }
-    }
+    },
+    "cabin.seatbeltSwitch": [
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "lvar",
+          "name": "VC_Fasten_Belts_SW_VAL"
+        },
+        "transform": [
+          {
+            "op": "divide",
+            "value": 10
+          }
+        ]
+      },
+      {
+        "sim": "simconnect",
+        "source": {
+          "kind": "simvar",
+          "name": "CABIN SEATBELTS ALERT SWITCH",
+          "unit": "Bool"
+        },
+        "transform": [
+          {
+            "op": "bool"
+          },
+          {
+            "op": "scale",
+            "value": 2
+          }
+        ]
+      }
+    ]
   }
 }
