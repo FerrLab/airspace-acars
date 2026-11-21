@@ -114,9 +114,10 @@ or the line's `segments` when the server could not combine them), and reports
 `FlightData.Cabin` carries the sign. The stock route reads `CABIN SEATBELTS
 ALERT SWITCH` on MSFS and `sim/cockpit2/switches/fasten_seat_belts` on X-Plane
 (AUTO is lit below 10,000 ft). Profiles bind the aircraft's own switch where it
-has one: Fenix `S_OH_SIGNS`, the Zibo `seatbelt_sign_pos`, and an unverified
-PMDG 737 `switch_104_73X`; FBW and the PMDG 777 keep the stock variable. Each
-profile's `notes` say where its variable comes from.
+has one: Fenix `S_OH_SIGNS`, the Zibo `seatbelt_sign_pos`, the iFly 737 MAX
+`VC_Fasten_Belts_SW_VAL` (which never moves the stock variable), and an
+unverified PMDG 737 `switch_104_73X`; FBW and the PMDG 777 keep the stock
+variable. Each profile's `notes` say where its variable comes from.
 
 ## GSX
 
