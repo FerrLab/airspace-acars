@@ -342,7 +342,7 @@ and hand-written:
 | `msfs-atr72` | ATR 42-600 / 72-600 | MSFS | 100 | 2 |
 | `pmdg-737` | PMDG 737 | MSFS | 100 | 12 |
 | `pmdg-777` | PMDG 777 | MSFS | 100 | 8 |
-| `rotate-md11` | Rotate MD-11 | X-Plane | 100 | 1 |
+| `rotate-md11` | Rotate MD-11 | X-Plane | 100 | 3 |
 | `salty-747` | Salty 747-8i | MSFS | 100 | 3 |
 | `tfdi-md11` | TFDi MD-11 | MSFS | 100 | 4 |
 | `xplane-com-833` | X-Plane 8.33 kHz radios | X-Plane | 10 | 2 |
@@ -351,7 +351,11 @@ and hand-written:
 `rotate-md11` is the exception to the first line. HubHop has nothing readable
 for the aircraft, so its flap handle variable comes from a shared-cockpit
 configuration for it, and the handle's scale is the one Rotate's MD-80 uses
-rather than one read in the simulator. Its `notes` say what to check. It also
+rather than one read in the simulator. Its beacon and HI-INT strobe switches
+(`Rotate/aircraft/controls/beacon_lts`, `strobe_lts`) are inferred from the
+same configuration's click commands (`controls_c/…`) and have not been seen in
+the simulator either; each is ored with the stock dataref, so a wrong name
+changes nothing. Its `notes` say what to check. It also
 matches any X-Plane trijet, because the title the MD-11 reports has not been
 seen yet; an aircraft without the variable keeps its stock reading.
 
