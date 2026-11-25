@@ -914,6 +914,63 @@ func TestRotateMD11ReadsTheFlapHandle(t *testing.T) {
 	}
 }
 
+// The Rotate MD-11 drives its own beacon and HI-INT strobe switches and leaves
+// the stock sim/cockpit/electrical datarefs at zero, so every flight was
+// flagged for running the engines with the beacon off and flying with the
+// strobes off. Each switch is ored with the stock dataref: the Rotate names are
+// inferred, and on X-Plane a dataref the aircraft does not have reads nothing
+// or zero, so a wrong name — or any other trijet — keeps the stock reading.
+func TestRotateMD11ReadsTheBeaconAndStrobeSwitches(t *testing.T) {
+	reg := NewRegistry()
+	ctx := Context{AircraftName: "Rotate MD-11F", AircraftType: "MD11", Simulator: SimXPlane, EngineCount: 3}
+	plan := reg.Resolve(ctx, []SourceKind{SourceDataRef})
+	require.Contains(t, plan.ProfileIDs(), "rotate-md11")
+
+	lights := map[string]struct {
+		rotate, stock string
+		read          func(*domain.FlightData) bool
+	}{
+		"lights.beacon": {"Rotate/aircraft/controls/beacon_lts", "sim/cockpit/electrical/beacon_lights_on",
+			func(fd *domain.FlightData) bool { return fd.Lights.Beacon }},
+		"lights.strobe": {"Rotate/aircraft/controls/strobe_lts", "sim/cockpit/electrical/strobe_lights_on",
+			func(fd *domain.FlightData) bool { return fd.Lights.Strobe }},
+	}
+	for point, want := range lights {
+		t.Run(point, func(t *testing.T) {
+			var light ResolvedBinding
+			for _, b := range plan.Bindings {
+				if b.Point == point {
+					light = b
+				}
+			}
+			assert.Equal(t, ReduceOr, light.Reduce)
+			require.Len(t, light.Sources, 2)
+			assert.Equal(t, want.rotate, light.Sources[0].Name)
+			assert.Equal(t, want.stock, light.Sources[1].Name)
+			sw, stock := light.Sources[0].Key, light.Sources[1].Key
+
+			cases := []struct {
+				name   string
+				values map[string]float64
+				want   bool
+			}{
+				{"the Rotate switch on, with the stock dataref stuck at zero", map[string]float64{sw: 1, stock: 0}, true},
+				{"the Rotate switch off", map[string]float64{sw: 0, stock: 0}, false},
+				{"a switch caught early in its animation still reads off", map[string]float64{sw: 0.3, stock: 0}, false},
+				{"any other trijet keeps its stock reading", map[string]float64{sw: 0, stock: 1}, true},
+				{"a switch X-Plane never reports leaves the stock reading", map[string]float64{stock: 1}, true},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					fd := &domain.FlightData{}
+					plan.Apply(fd, tc.values)
+					assert.Equal(t, tc.want, want.read(fd), "%s is wrong for the pilot", point)
+				})
+			}
+		})
+	}
+}
+
 // The flights that showed the fault ran a client that did not read the X-Plane
 // title or ICAO type at all, so what the Rotate MD-11 reports for them has not
 // been seen. The engine count does not depend on either.
